@@ -16,6 +16,7 @@ type Period = 'jour' | 'semaine' | 'mois';
 export default function ProgresScreen() {
   const [period, setPeriod] = useState<Period>('semaine');
   const [stats, setStats] = useState<ProgressStats | null>(null);
+  const [weekSessions, setWeekSessions] = useState<LearningSession[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -33,6 +34,7 @@ export default function ProgresScreen() {
 
     const computed = computeProgressStats(config, sessions, memorized, reviewCount);
     setStats(computed);
+    setWeekSessions(sessions);
   }, []);
 
   useEffect(() => {
@@ -117,7 +119,7 @@ export default function ProgresScreen() {
         {/* Graphique simple de la semaine */}
         <Card>
           <Text style={styles.cardTitle}>Activité de la semaine</Text>
-          <WeekChart sessions={[]} />
+          <WeekChart sessions={weekSessions} />
         </Card>
 
         {/* Estimation */}
@@ -148,17 +150,34 @@ function StatCard({ label, value, icon }: { label: string; value: number; icon: 
 }
 
 function WeekChart({ sessions }: { sessions: LearningSession[] }) {
-  const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-  // Placeholder: données simulées pour la démonstration
-  const data = [3, 5, 0, 7, 4, 0, 0];
+  const dayLabels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  const dayOffsets = [1, 2, 3, 4, 5, 6, 0]; // Lundi=1, ..., Dimanche=0
+
+  // Calculer les versets mémorisés pour chaque jour de la semaine en cours
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  const dayOfWeek = today.getDay(); // 0=Dim, 1=Lun, ...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  startOfWeek.setDate(today.getDate() + mondayOffset);
+
+  const data = dayOffsets.map((_, i) => {
+    const dayDate = new Date(startOfWeek);
+    dayDate.setDate(startOfWeek.getDate() + i);
+    const dateStr = dayDate.toISOString().split('T')[0];
+    return sessions
+      .filter((s) => s.date === dateStr && s.status === 'completed')
+      .reduce((sum, s) => sum + (s.endAyah - s.startAyah + 1), 0);
+  });
+
   const max = Math.max(...data, 1);
 
   return (
     <View style={styles.chartContainer}>
       {data.map((value, i) => (
         <View key={i} style={styles.chartBar}>
-          <View style={[styles.bar, { height: `${(value / max) * 100}%` }]} />
-          <Text style={styles.chartLabel}>{days[i]}</Text>
+          <View style={[styles.bar, { height: `${Math.max((value / max) * 100, value > 0 ? 8 : 0)}%` }]} />
+          <Text style={styles.chartLabel}>{dayLabels[i]}</Text>
+          {value > 0 && <Text style={styles.chartValue}>{value}</Text>}
         </View>
       ))}
     </View>
@@ -291,5 +310,10 @@ const styles = StyleSheet.create({
   chartLabel: {
     fontSize: fontSizes.xs,
     color: colors.textTertiary,
+  },
+  chartValue: {
+    fontSize: fontSizes.xs,
+    color: colors.primary,
+    fontWeight: fontWeights.semibold,
   },
 });

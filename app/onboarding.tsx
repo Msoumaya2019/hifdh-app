@@ -20,6 +20,7 @@ import { getAllSurahs, getAllJuz, getAllHizb } from '@/data/quranData';
 import { saveUserConfig, addMemorizedPassage } from '@/lib/database';
 import { generateProgram } from '@/lib/programGenerator';
 import { saveSession } from '@/lib/database';
+import { ScrollView as RNScrollView } from 'react-native';
 import type {
   UserConfig,
   MemorizedPassage,
@@ -283,6 +284,89 @@ function StepObjective({
           )}
         </Pressable>
       ))}
+
+      {/* Sélecteur de juz' */}
+      {objective.type === 'specific_juz' && (
+        <View style={styles.pickerContainer}>
+          <Text style={styles.pickerLabel}>Choisis ton juz' (1-30) :</Text>
+          <View style={styles.juzGrid}>
+            {Array.from({ length: 30 }, (_, i) => i + 1).map((juzNum) => (
+              <Pressable
+                key={juzNum}
+                onPress={() => setObjective({ type: 'specific_juz', juzNumber: juzNum })}
+                style={[styles.juzItem, objective.juzNumber === juzNum && styles.juzItemActive]}
+              >
+                <Text style={[styles.juzItemText, objective.juzNumber === juzNum && styles.juzItemTextActive]}>
+                  {juzNum}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Sélecteur de hizb */}
+      {objective.type === 'specific_hizb' && (
+        <View style={styles.pickerContainer}>
+          <Text style={styles.pickerLabel}>Choisis un ou plusieurs hizb (1-60) :</Text>
+          <View style={styles.juzGrid}>
+            {Array.from({ length: 60 }, (_, i) => i + 1).map((hizbNum) => {
+              const selected = objective.hizbNumbers?.includes(hizbNum) ?? false;
+              return (
+                <Pressable
+                  key={hizbNum}
+                  onPress={() => {
+                    const current = objective.hizbNumbers ?? [];
+                    const newHizbs = selected
+                      ? current.filter((h) => h !== hizbNum)
+                      : [...current, hizbNum].sort();
+                    setObjective({ type: 'specific_hizb', hizbNumbers: newHizbs });
+                  }}
+                  style={[styles.juzItem, selected && styles.juzItemActive]}
+                >
+                  <Text style={[styles.juzItemText, selected && styles.juzItemTextActive]}>
+                    {hizbNum}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* Objectif personnalisé */}
+      {objective.type === 'custom' && (
+        <View style={styles.pickerContainer}>
+          <Text style={styles.pickerLabel}>Sélectionne les sourates à mémoriser :</Text>
+          <Text style={styles.pickerHint}>
+            L'objectif doit représenter au minimum un hizb (environ 100 versets).
+          </Text>
+          <View style={styles.juzGrid}>
+            {getAllSurahs().map((surah) => {
+              const selected = objective.passages?.some(
+                (p) => p.surah === surah.number && p.startAyah === 1 && p.endAyah === surah.ayahCount
+              ) ?? false;
+              return (
+                <Pressable
+                  key={surah.number}
+                  onPress={() => {
+                    const current = objective.passages ?? [];
+                    const newPassages = selected
+                      ? current.filter((p) => p.surah !== surah.number)
+                      : [...current, { surah: surah.number, startAyah: 1, endAyah: surah.ayahCount }];
+                    setObjective({ type: 'custom', passages: newPassages });
+                  }}
+                  style={[styles.juzItem, selected && styles.juzItemActive]}
+                >
+                  <Text style={[styles.juzItemText, selected && styles.juzItemTextActive]}>
+                    {surah.number}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -609,5 +693,52 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fontSizes.md,
     fontWeight: fontWeights.semibold,
+  },
+  pickerContainer: {
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pickerLabel: {
+    fontSize: fontSizes.md,
+    fontWeight: fontWeights.semibold,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  pickerHint: {
+    fontSize: fontSizes.sm,
+    color: colors.textTertiary,
+    marginBottom: spacing.md,
+    fontStyle: 'italic',
+  },
+  juzGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  juzItem: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceVariant,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  juzItemActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  juzItemText: {
+    fontSize: fontSizes.md,
+    fontWeight: fontWeights.semibold,
+    color: colors.textPrimary,
+  },
+  juzItemTextActive: {
+    color: colors.textOnPrimary,
   },
 });
