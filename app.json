@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Hifdh - Memorisation du Coran",
+    "slug": "hifdh-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "hifdh",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hifdh.app",
+      "infoPlist": {
+        "UIAppFonts": ["fonts/AmiriQuran.ttf", "fonts/Amiri-Regular.ttf", "fonts/Amiri-Bold.ttf"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0B4D3B"
+      },
+      "package": "com.hifdh.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      },
+      "supabaseUrl": "",
+      "supabaseAnonKey": ""
+    },
+    "updates": {
+      "url": ""
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}

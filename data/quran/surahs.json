@@ -1,0 +1,1142 @@
+[
+  {
+    "number": 1,
+    "name": "Al-Fatiha",
+    "nameFr": "Al-Fatiha (L'Ouverture)",
+    "ayahCount": 7,
+    "startAyahId": 1,
+    "surahOrder": 5,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 2,
+    "name": "Al-Baqarah",
+    "nameFr": "Al-Baqarah (La Vache)",
+    "ayahCount": 286,
+    "startAyahId": 8,
+    "surahOrder": 87,
+    "rukuCount": 40,
+    "isMeccan": false
+  },
+  {
+    "number": 3,
+    "name": "Al-Imran",
+    "nameFr": "Al-Imran (La Famille d'Imran)",
+    "ayahCount": 200,
+    "startAyahId": 294,
+    "surahOrder": 89,
+    "rukuCount": 20,
+    "isMeccan": false
+  },
+  {
+    "number": 4,
+    "name": "An-Nisa",
+    "nameFr": "An-Nisa (Les Femmes)",
+    "ayahCount": 176,
+    "startAyahId": 494,
+    "surahOrder": 92,
+    "rukuCount": 24,
+    "isMeccan": false
+  },
+  {
+    "number": 5,
+    "name": "Al-Maidah",
+    "nameFr": "Al-Maidah (La Table Servie)",
+    "ayahCount": 120,
+    "startAyahId": 670,
+    "surahOrder": 112,
+    "rukuCount": 16,
+    "isMeccan": false
+  },
+  {
+    "number": 6,
+    "name": "Al-Anam",
+    "nameFr": "Al-Anam (Les Bestiaux)",
+    "ayahCount": 165,
+    "startAyahId": 790,
+    "surahOrder": 55,
+    "rukuCount": 20,
+    "isMeccan": true
+  },
+  {
+    "number": 7,
+    "name": "Al-Araf",
+    "nameFr": "Al-Araf (Les Murailles)",
+    "ayahCount": 206,
+    "startAyahId": 955,
+    "surahOrder": 39,
+    "rukuCount": 24,
+    "isMeccan": true
+  },
+  {
+    "number": 8,
+    "name": "Al-Anfal",
+    "nameFr": "Al-Anfal (Le Butin)",
+    "ayahCount": 75,
+    "startAyahId": 1161,
+    "surahOrder": 88,
+    "rukuCount": 10,
+    "isMeccan": false
+  },
+  {
+    "number": 9,
+    "name": "At-Tawbah",
+    "nameFr": "At-Tawbah (Le Repentir)",
+    "ayahCount": 129,
+    "startAyahId": 1236,
+    "surahOrder": 113,
+    "rukuCount": 16,
+    "isMeccan": false
+  },
+  {
+    "number": 10,
+    "name": "Yunus",
+    "nameFr": "Yunus (Jonas)",
+    "ayahCount": 109,
+    "startAyahId": 1365,
+    "surahOrder": 51,
+    "rukuCount": 11,
+    "isMeccan": true
+  },
+  {
+    "number": 11,
+    "name": "Hud",
+    "nameFr": "Hud (Hud)",
+    "ayahCount": 123,
+    "startAyahId": 1474,
+    "surahOrder": 52,
+    "rukuCount": 10,
+    "isMeccan": true
+  },
+  {
+    "number": 12,
+    "name": "Yusuf",
+    "nameFr": "Yusuf (Joseph)",
+    "ayahCount": 111,
+    "startAyahId": 1597,
+    "surahOrder": 53,
+    "rukuCount": 12,
+    "isMeccan": true
+  },
+  {
+    "number": 13,
+    "name": "Ar-Rad",
+    "nameFr": "Ar-Rad (Le Tonnerre)",
+    "ayahCount": 43,
+    "startAyahId": 1708,
+    "surahOrder": 96,
+    "rukuCount": 6,
+    "isMeccan": false
+  },
+  {
+    "number": 14,
+    "name": "Ibrahim",
+    "nameFr": "Ibrahim (Abraham)",
+    "ayahCount": 52,
+    "startAyahId": 1751,
+    "surahOrder": 72,
+    "rukuCount": 7,
+    "isMeccan": true
+  },
+  {
+    "number": 15,
+    "name": "Al-Hijr",
+    "nameFr": "Al-Hijr (Al-Hijr)",
+    "ayahCount": 99,
+    "startAyahId": 1803,
+    "surahOrder": 54,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 16,
+    "name": "An-Nahl",
+    "nameFr": "An-Nahl (Les Abeilles)",
+    "ayahCount": 128,
+    "startAyahId": 1902,
+    "surahOrder": 70,
+    "rukuCount": 16,
+    "isMeccan": true
+  },
+  {
+    "number": 17,
+    "name": "Al-Isra",
+    "nameFr": "Al-Isra (Le Voyage Nocturne)",
+    "ayahCount": 111,
+    "startAyahId": 2030,
+    "surahOrder": 50,
+    "rukuCount": 12,
+    "isMeccan": true
+  },
+  {
+    "number": 18,
+    "name": "Al-Kahf",
+    "nameFr": "Al-Kahf (La Caverne)",
+    "ayahCount": 110,
+    "startAyahId": 2141,
+    "surahOrder": 69,
+    "rukuCount": 12,
+    "isMeccan": true
+  },
+  {
+    "number": 19,
+    "name": "Maryam",
+    "nameFr": "Maryam (Marie)",
+    "ayahCount": 98,
+    "startAyahId": 2251,
+    "surahOrder": 44,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 20,
+    "name": "Ta-Ha",
+    "nameFr": "Ta-Ha (Ta-Ha)",
+    "ayahCount": 135,
+    "startAyahId": 2349,
+    "surahOrder": 45,
+    "rukuCount": 8,
+    "isMeccan": true
+  },
+  {
+    "number": 21,
+    "name": "Al-Anbiya",
+    "nameFr": "Al-Anbiya (Les Prophetes)",
+    "ayahCount": 112,
+    "startAyahId": 2484,
+    "surahOrder": 73,
+    "rukuCount": 7,
+    "isMeccan": true
+  },
+  {
+    "number": 22,
+    "name": "Al-Hajj",
+    "nameFr": "Al-Hajj (Le Pelerinage)",
+    "ayahCount": 78,
+    "startAyahId": 2596,
+    "surahOrder": 103,
+    "rukuCount": 10,
+    "isMeccan": false
+  },
+  {
+    "number": 23,
+    "name": "Al-Muminun",
+    "nameFr": "Al-Muminun (Les Croyants)",
+    "ayahCount": 118,
+    "startAyahId": 2674,
+    "surahOrder": 74,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 24,
+    "name": "An-Nur",
+    "nameFr": "An-Nur (La Lumiere)",
+    "ayahCount": 64,
+    "startAyahId": 2792,
+    "surahOrder": 102,
+    "rukuCount": 9,
+    "isMeccan": false
+  },
+  {
+    "number": 25,
+    "name": "Al-Furqan",
+    "nameFr": "Al-Furqan (Le Discernement)",
+    "ayahCount": 77,
+    "startAyahId": 2856,
+    "surahOrder": 42,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 26,
+    "name": "Ash-Shuara",
+    "nameFr": "Ash-Shuara (Les Poetes)",
+    "ayahCount": 227,
+    "startAyahId": 2933,
+    "surahOrder": 47,
+    "rukuCount": 11,
+    "isMeccan": true
+  },
+  {
+    "number": 27,
+    "name": "An-Naml",
+    "nameFr": "An-Naml (Les Fourmis)",
+    "ayahCount": 93,
+    "startAyahId": 3160,
+    "surahOrder": 48,
+    "rukuCount": 7,
+    "isMeccan": true
+  },
+  {
+    "number": 28,
+    "name": "Al-Qasas",
+    "nameFr": "Al-Qasas (Le Recit)",
+    "ayahCount": 88,
+    "startAyahId": 3253,
+    "surahOrder": 49,
+    "rukuCount": 8,
+    "isMeccan": true
+  },
+  {
+    "number": 29,
+    "name": "Al-Ankabut",
+    "nameFr": "Al-Ankabut (L'Araignee)",
+    "ayahCount": 69,
+    "startAyahId": 3341,
+    "surahOrder": 85,
+    "rukuCount": 7,
+    "isMeccan": true
+  },
+  {
+    "number": 30,
+    "name": "Ar-Rum",
+    "nameFr": "Ar-Rum (Les Romains)",
+    "ayahCount": 60,
+    "startAyahId": 3410,
+    "surahOrder": 84,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 31,
+    "name": "Luqman",
+    "nameFr": "Luqman (Luqman)",
+    "ayahCount": 34,
+    "startAyahId": 3470,
+    "surahOrder": 57,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 32,
+    "name": "As-Sajdah",
+    "nameFr": "As-Sajdah (La Prosternation)",
+    "ayahCount": 30,
+    "startAyahId": 3504,
+    "surahOrder": 75,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 33,
+    "name": "Al-Ahzab",
+    "nameFr": "Al-Ahzab (Les Coalises)",
+    "ayahCount": 73,
+    "startAyahId": 3534,
+    "surahOrder": 90,
+    "rukuCount": 9,
+    "isMeccan": false
+  },
+  {
+    "number": 34,
+    "name": "Saba",
+    "nameFr": "Saba (Saba)",
+    "ayahCount": 54,
+    "startAyahId": 3607,
+    "surahOrder": 58,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 35,
+    "name": "Fatir",
+    "nameFr": "Fatir (Le Createur)",
+    "ayahCount": 45,
+    "startAyahId": 3661,
+    "surahOrder": 43,
+    "rukuCount": 5,
+    "isMeccan": true
+  },
+  {
+    "number": 36,
+    "name": "Ya-Sin",
+    "nameFr": "Ya-Sin (Ya-Sin)",
+    "ayahCount": 83,
+    "startAyahId": 3706,
+    "surahOrder": 41,
+    "rukuCount": 5,
+    "isMeccan": true
+  },
+  {
+    "number": 37,
+    "name": "As-Saffat",
+    "nameFr": "As-Saffat (Les Ranges)",
+    "ayahCount": 182,
+    "startAyahId": 3789,
+    "surahOrder": 56,
+    "rukuCount": 5,
+    "isMeccan": true
+  },
+  {
+    "number": 38,
+    "name": "Sad",
+    "nameFr": "Sad (Sad)",
+    "ayahCount": 88,
+    "startAyahId": 3971,
+    "surahOrder": 38,
+    "rukuCount": 5,
+    "isMeccan": true
+  },
+  {
+    "number": 39,
+    "name": "Az-Zumar",
+    "nameFr": "Az-Zumar (Les Groupes)",
+    "ayahCount": 75,
+    "startAyahId": 4059,
+    "surahOrder": 59,
+    "rukuCount": 8,
+    "isMeccan": true
+  },
+  {
+    "number": 40,
+    "name": "Ghafir",
+    "nameFr": "Ghafir (Le Pardonneur)",
+    "ayahCount": 85,
+    "startAyahId": 4134,
+    "surahOrder": 60,
+    "rukuCount": 9,
+    "isMeccan": true
+  },
+  {
+    "number": 41,
+    "name": "Fussilat",
+    "nameFr": "Fussilat (Les Detailles)",
+    "ayahCount": 54,
+    "startAyahId": 4219,
+    "surahOrder": 61,
+    "rukuCount": 6,
+    "isMeccan": true
+  },
+  {
+    "number": 42,
+    "name": "Ash-Shura",
+    "nameFr": "Ash-Shura (La Consultation)",
+    "ayahCount": 53,
+    "startAyahId": 4273,
+    "surahOrder": 62,
+    "rukuCount": 5,
+    "isMeccan": true
+  },
+  {
+    "number": 43,
+    "name": "Az-Zukhruf",
+    "nameFr": "Az-Zukhruf (L'Ornement)",
+    "ayahCount": 89,
+    "startAyahId": 4326,
+    "surahOrder": 63,
+    "rukuCount": 7,
+    "isMeccan": true
+  },
+  {
+    "number": 44,
+    "name": "Ad-Dukhan",
+    "nameFr": "Ad-Dukhan (La Fumee)",
+    "ayahCount": 59,
+    "startAyahId": 4415,
+    "surahOrder": 64,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 45,
+    "name": "Al-Jathiyah",
+    "nameFr": "Al-Jathiyah (L'Agenouillee)",
+    "ayahCount": 37,
+    "startAyahId": 4474,
+    "surahOrder": 65,
+    "rukuCount": 4,
+    "isMeccan": true
+  },
+  {
+    "number": 46,
+    "name": "Al-Ahqaf",
+    "nameFr": "Al-Ahqaf (Al-Ahqaf)",
+    "ayahCount": 35,
+    "startAyahId": 4511,
+    "surahOrder": 66,
+    "rukuCount": 4,
+    "isMeccan": true
+  },
+  {
+    "number": 47,
+    "name": "Muhammad",
+    "nameFr": "Muhammad (Muhammad)",
+    "ayahCount": 38,
+    "startAyahId": 4546,
+    "surahOrder": 95,
+    "rukuCount": 4,
+    "isMeccan": false
+  },
+  {
+    "number": 48,
+    "name": "Al-Fath",
+    "nameFr": "Al-Fath (La Victoire Eclatante)",
+    "ayahCount": 29,
+    "startAyahId": 4584,
+    "surahOrder": 111,
+    "rukuCount": 4,
+    "isMeccan": false
+  },
+  {
+    "number": 49,
+    "name": "Al-Hujurat",
+    "nameFr": "Al-Hujurat (Les Appartements)",
+    "ayahCount": 18,
+    "startAyahId": 4613,
+    "surahOrder": 106,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 50,
+    "name": "Qaf",
+    "nameFr": "Qaf (Qaf)",
+    "ayahCount": 45,
+    "startAyahId": 4631,
+    "surahOrder": 34,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 51,
+    "name": "Adh-Dhariyat",
+    "nameFr": "Adh-Dhariyat (Qui Eparpillent)",
+    "ayahCount": 60,
+    "startAyahId": 4676,
+    "surahOrder": 67,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 52,
+    "name": "At-Tur",
+    "nameFr": "At-Tur (Le Mont)",
+    "ayahCount": 49,
+    "startAyahId": 4736,
+    "surahOrder": 76,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 53,
+    "name": "An-Najm",
+    "nameFr": "An-Najm (L'Etoile)",
+    "ayahCount": 62,
+    "startAyahId": 4785,
+    "surahOrder": 23,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 54,
+    "name": "Al-Qamar",
+    "nameFr": "Al-Qamar (La Lune)",
+    "ayahCount": 55,
+    "startAyahId": 4847,
+    "surahOrder": 37,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 55,
+    "name": "Ar-Rahman",
+    "nameFr": "Ar-Rahman (Le Tout Misericordieux)",
+    "ayahCount": 78,
+    "startAyahId": 4902,
+    "surahOrder": 97,
+    "rukuCount": 3,
+    "isMeccan": false
+  },
+  {
+    "number": 56,
+    "name": "Al-Waqiah",
+    "nameFr": "Al-Waqiah (L'Inevitable)",
+    "ayahCount": 96,
+    "startAyahId": 4980,
+    "surahOrder": 46,
+    "rukuCount": 3,
+    "isMeccan": true
+  },
+  {
+    "number": 57,
+    "name": "Al-Hadid",
+    "nameFr": "Al-Hadid (Le Fer)",
+    "ayahCount": 29,
+    "startAyahId": 5076,
+    "surahOrder": 94,
+    "rukuCount": 4,
+    "isMeccan": false
+  },
+  {
+    "number": 58,
+    "name": "Al-Mujadilah",
+    "nameFr": "Al-Mujadilah (La Discussion)",
+    "ayahCount": 22,
+    "startAyahId": 5105,
+    "surahOrder": 105,
+    "rukuCount": 3,
+    "isMeccan": false
+  },
+  {
+    "number": 59,
+    "name": "Al-Hashr",
+    "nameFr": "Al-Hashr (L'Exode)",
+    "ayahCount": 24,
+    "startAyahId": 5127,
+    "surahOrder": 101,
+    "rukuCount": 3,
+    "isMeccan": false
+  },
+  {
+    "number": 60,
+    "name": "Al-Mumtahanah",
+    "nameFr": "Al-Mumtahanah (L'Eprouvee)",
+    "ayahCount": 13,
+    "startAyahId": 5151,
+    "surahOrder": 91,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 61,
+    "name": "As-Saff",
+    "nameFr": "As-Saff (Les Rangs)",
+    "ayahCount": 14,
+    "startAyahId": 5164,
+    "surahOrder": 109,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 62,
+    "name": "Al-Jumuah",
+    "nameFr": "Al-Jumuah (Le Vendredi)",
+    "ayahCount": 11,
+    "startAyahId": 5178,
+    "surahOrder": 110,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 63,
+    "name": "Al-Munafiqun",
+    "nameFr": "Al-Munafiqun (Les Hypocrites)",
+    "ayahCount": 11,
+    "startAyahId": 5189,
+    "surahOrder": 104,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 64,
+    "name": "At-Taghabun",
+    "nameFr": "At-Taghabun (La Grande Perte)",
+    "ayahCount": 18,
+    "startAyahId": 5200,
+    "surahOrder": 108,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 65,
+    "name": "At-Talaq",
+    "nameFr": "At-Talaq (Le Divorce)",
+    "ayahCount": 12,
+    "startAyahId": 5218,
+    "surahOrder": 99,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 66,
+    "name": "At-Tahrim",
+    "nameFr": "At-Tahrim (L'Interdiction)",
+    "ayahCount": 12,
+    "startAyahId": 5230,
+    "surahOrder": 107,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 67,
+    "name": "Al-Mulk",
+    "nameFr": "Al-Mulk (La Royaute)",
+    "ayahCount": 30,
+    "startAyahId": 5242,
+    "surahOrder": 77,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 68,
+    "name": "Al-Qalam",
+    "nameFr": "Al-Qalam (La Plume)",
+    "ayahCount": 52,
+    "startAyahId": 5272,
+    "surahOrder": 2,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 69,
+    "name": "Al-Haqqah",
+    "nameFr": "Al-Haqqah (L'Ineluctable)",
+    "ayahCount": 52,
+    "startAyahId": 5324,
+    "surahOrder": 78,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 70,
+    "name": "Al-Maarij",
+    "nameFr": "Al-Maarij (Les Voies d'Ascension)",
+    "ayahCount": 44,
+    "startAyahId": 5376,
+    "surahOrder": 79,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 71,
+    "name": "Nuh",
+    "nameFr": "Nuh (Noe)",
+    "ayahCount": 28,
+    "startAyahId": 5420,
+    "surahOrder": 71,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 72,
+    "name": "Al-Jinn",
+    "nameFr": "Al-Jinn (Les Djinns)",
+    "ayahCount": 28,
+    "startAyahId": 5448,
+    "surahOrder": 40,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 73,
+    "name": "Al-Muzzammil",
+    "nameFr": "Al-Muzzammil (L'Enveloppe)",
+    "ayahCount": 20,
+    "startAyahId": 5476,
+    "surahOrder": 3,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 74,
+    "name": "Al-Muddaththir",
+    "nameFr": "Al-Muddaththir (Le Couvert d'un Manteau)",
+    "ayahCount": 56,
+    "startAyahId": 5496,
+    "surahOrder": 4,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 75,
+    "name": "Al-Qiyamah",
+    "nameFr": "Al-Qiyamah (La Resurrection)",
+    "ayahCount": 40,
+    "startAyahId": 5552,
+    "surahOrder": 31,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 76,
+    "name": "Al-Insan",
+    "nameFr": "Al-Insan (L'Homme)",
+    "ayahCount": 31,
+    "startAyahId": 5592,
+    "surahOrder": 98,
+    "rukuCount": 2,
+    "isMeccan": false
+  },
+  {
+    "number": 77,
+    "name": "Al-Mursalat",
+    "nameFr": "Al-Mursalat (Les Envoyees)",
+    "ayahCount": 50,
+    "startAyahId": 5623,
+    "surahOrder": 33,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 78,
+    "name": "An-Naba",
+    "nameFr": "An-Naba (La Nouvelle)",
+    "ayahCount": 40,
+    "startAyahId": 5673,
+    "surahOrder": 80,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 79,
+    "name": "An-Naziat",
+    "nameFr": "An-Naziat (Les Anges qui Arrachent)",
+    "ayahCount": 46,
+    "startAyahId": 5713,
+    "surahOrder": 81,
+    "rukuCount": 2,
+    "isMeccan": true
+  },
+  {
+    "number": 80,
+    "name": "Abasa",
+    "nameFr": "Abasa (Il s'est Fronce les Sourcils)",
+    "ayahCount": 42,
+    "startAyahId": 5759,
+    "surahOrder": 24,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 81,
+    "name": "At-Takwir",
+    "nameFr": "At-Takwir (L'Obscurcissement)",
+    "ayahCount": 29,
+    "startAyahId": 5801,
+    "surahOrder": 7,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 82,
+    "name": "Al-Infitar",
+    "nameFr": "Al-Infitar (La Rupture)",
+    "ayahCount": 19,
+    "startAyahId": 5830,
+    "surahOrder": 82,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 83,
+    "name": "Al-Mutaffifin",
+    "nameFr": "Al-Mutaffifin (Les Fraudeurs)",
+    "ayahCount": 36,
+    "startAyahId": 5849,
+    "surahOrder": 86,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 84,
+    "name": "Al-Inshiqaq",
+    "nameFr": "Al-Inshiqaq (La Dechirure)",
+    "ayahCount": 25,
+    "startAyahId": 5885,
+    "surahOrder": 83,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 85,
+    "name": "Al-Buruj",
+    "nameFr": "Al-Buruj (Les Constellations)",
+    "ayahCount": 22,
+    "startAyahId": 5910,
+    "surahOrder": 27,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 86,
+    "name": "At-Tariq",
+    "nameFr": "At-Tariq (L'Astre Nocturne)",
+    "ayahCount": 17,
+    "startAyahId": 5932,
+    "surahOrder": 36,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 87,
+    "name": "Al-Ala",
+    "nameFr": "Al-Ala (Le Très-Haut)",
+    "ayahCount": 19,
+    "startAyahId": 5949,
+    "surahOrder": 8,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 88,
+    "name": "Al-Ghashiyah",
+    "nameFr": "Al-Ghashiyah (L'Enveloppante)",
+    "ayahCount": 26,
+    "startAyahId": 5968,
+    "surahOrder": 68,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 89,
+    "name": "Al-Fajr",
+    "nameFr": "Al-Fajr (L'Aube)",
+    "ayahCount": 30,
+    "startAyahId": 5994,
+    "surahOrder": 10,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 90,
+    "name": "Al-Balad",
+    "nameFr": "Al-Balad (La Cite)",
+    "ayahCount": 20,
+    "startAyahId": 6024,
+    "surahOrder": 35,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 91,
+    "name": "Ash-Shams",
+    "nameFr": "Ash-Shams (Le Soleil)",
+    "ayahCount": 15,
+    "startAyahId": 6044,
+    "surahOrder": 26,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 92,
+    "name": "Al-Layl",
+    "nameFr": "Al-Layl (La Nuit)",
+    "ayahCount": 21,
+    "startAyahId": 6059,
+    "surahOrder": 9,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 93,
+    "name": "Ad-Duha",
+    "nameFr": "Ad-Duha (Le Jour Montant)",
+    "ayahCount": 11,
+    "startAyahId": 6080,
+    "surahOrder": 11,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 94,
+    "name": "Ash-Sharh",
+    "nameFr": "Ash-Sharh (L'Ecartement)",
+    "ayahCount": 8,
+    "startAyahId": 6091,
+    "surahOrder": 12,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 95,
+    "name": "At-Tin",
+    "nameFr": "At-Tin (Le Figuier)",
+    "ayahCount": 8,
+    "startAyahId": 6099,
+    "surahOrder": 28,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 96,
+    "name": "Al-Alaq",
+    "nameFr": "Al-Alaq (L'Adherence)",
+    "ayahCount": 19,
+    "startAyahId": 6107,
+    "surahOrder": 1,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 97,
+    "name": "Al-Qadr",
+    "nameFr": "Al-Qadr (La Destinee)",
+    "ayahCount": 5,
+    "startAyahId": 6126,
+    "surahOrder": 25,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 98,
+    "name": "Al-Bayyinah",
+    "nameFr": "Al-Bayyinah (La Preuve Evidente)",
+    "ayahCount": 8,
+    "startAyahId": 6131,
+    "surahOrder": 100,
+    "rukuCount": 1,
+    "isMeccan": false
+  },
+  {
+    "number": 99,
+    "name": "Az-Zalzalah",
+    "nameFr": "Az-Zalzalah (La Secousse)",
+    "ayahCount": 8,
+    "startAyahId": 6139,
+    "surahOrder": 93,
+    "rukuCount": 1,
+    "isMeccan": false
+  },
+  {
+    "number": 100,
+    "name": "Al-Adiyat",
+    "nameFr": "Al-Adiyat (Les Coursiers)",
+    "ayahCount": 11,
+    "startAyahId": 6147,
+    "surahOrder": 14,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 101,
+    "name": "Al-Qariah",
+    "nameFr": "Al-Qariah (Le Fracas)",
+    "ayahCount": 11,
+    "startAyahId": 6158,
+    "surahOrder": 30,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 102,
+    "name": "At-Takathur",
+    "nameFr": "At-Takathur (La Course a La Richesse)",
+    "ayahCount": 8,
+    "startAyahId": 6169,
+    "surahOrder": 16,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 103,
+    "name": "Al-Asr",
+    "nameFr": "Al-Asr (Le Temps)",
+    "ayahCount": 3,
+    "startAyahId": 6177,
+    "surahOrder": 13,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 104,
+    "name": "Al-Humazah",
+    "nameFr": "Al-Humazah (Les Calomniateurs)",
+    "ayahCount": 9,
+    "startAyahId": 6180,
+    "surahOrder": 32,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 105,
+    "name": "Al-Fil",
+    "nameFr": "Al-Fil (L'Elephant)",
+    "ayahCount": 5,
+    "startAyahId": 6189,
+    "surahOrder": 19,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 106,
+    "name": "Quraysh",
+    "nameFr": "Quraysh (Quraysh)",
+    "ayahCount": 4,
+    "startAyahId": 6194,
+    "surahOrder": 29,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 107,
+    "name": "Al-Maun",
+    "nameFr": "Al-Maun (Le Petit Service)",
+    "ayahCount": 7,
+    "startAyahId": 6198,
+    "surahOrder": 17,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 108,
+    "name": "Al-Kawthar",
+    "nameFr": "Al-Kawthar (L'Abondance)",
+    "ayahCount": 3,
+    "startAyahId": 6205,
+    "surahOrder": 15,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 109,
+    "name": "Al-Kafirun",
+    "nameFr": "Al-Kafirun (Les Mecreants)",
+    "ayahCount": 6,
+    "startAyahId": 6208,
+    "surahOrder": 18,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 110,
+    "name": "An-Nasr",
+    "nameFr": "An-Nasr (Le Secours)",
+    "ayahCount": 3,
+    "startAyahId": 6214,
+    "surahOrder": 114,
+    "rukuCount": 1,
+    "isMeccan": false
+  },
+  {
+    "number": 111,
+    "name": "Al-Masad",
+    "nameFr": "Al-Masad (Les Fibres)",
+    "ayahCount": 5,
+    "startAyahId": 6217,
+    "surahOrder": 6,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 112,
+    "name": "Al-Ikhlas",
+    "nameFr": "Al-Ikhlas (Le Culte Pur)",
+    "ayahCount": 4,
+    "startAyahId": 6222,
+    "surahOrder": 22,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 113,
+    "name": "Al-Falaq",
+    "nameFr": "Al-Falaq (L'Aube Naissante)",
+    "ayahCount": 5,
+    "startAyahId": 6226,
+    "surahOrder": 20,
+    "rukuCount": 1,
+    "isMeccan": true
+  },
+  {
+    "number": 114,
+    "name": "An-Nas",
+    "nameFr": "An-Nas (Les Hommes)",
+    "ayahCount": 6,
+    "startAyahId": 6231,
+    "surahOrder": 21,
+    "rukuCount": 1,
+    "isMeccan": true
+  }
+]

@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Supabase (ne jamais publier)
+supabase/
+.env
+
+# GitHub Actions secrets - les clés vont dans les secrets GitHub, pas ici
+# Voir la documentation dans docs/SECRETS.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Temporary
+*.log
