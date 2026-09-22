@@ -24,7 +24,7 @@
       "versionCode": 7,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#0B4D3B"
+        "backgroundColor": "#04361F"
       },
       "package": "com.hifdh.app"
     },
