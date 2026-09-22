@@ -18,7 +18,10 @@
 //   - l'étape de compilation Xcode n'a pas de `working-directory`, qui
 //     doublerait le préfixe des chemins trouvés à l'étape précédente ;
 //   - l'action qui publie un artefact n'est pas épinglée à une version dont le
-//     moteur est abandonné.
+//     moteur est abandonné ;
+//   - un flux qui publie une version (`gh release create`) déclare le droit
+//     d'écriture correspondant : sans lui, tout réussit jusqu'à la dernière
+//     étape, qui échoue alors en « HTTP 403 ».
 
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -135,6 +138,28 @@ for (const nomFichier of fichiers) {
             `l'étape de compilation « ${nomEtape} » déclare un « working-directory », qui ` +
               'doublerait le préfixe des chemins produits par le repérage.'
           );
+        }
+
+        // Publier une version écrit dans le dépôt. Le jeton par défaut n'a que
+        // la lecture, et le refus n'arrive qu'à la toute fin : après la
+        // compilation, après l'artefact, quand tout le reste a réussi.
+        // `permissions` au niveau du job REMPLACE celui de la racine — c'est la
+        // sémantique de GitHub, et la seule lecture correcte ici.
+        if (/\bgh\s+release\s+create\b/.test(etape.run)) {
+          const effectives = job.permissions ?? flux.permissions;
+          const droitEcriture =
+            effectives === 'write-all' ||
+            (typeof effectives === 'object' &&
+              effectives !== null &&
+              effectives.contents === 'write');
+          if (!droitEcriture) {
+            signaler(
+              nomFichier,
+              `l'étape « ${nomEtape} » publie une version (« gh release create ») sans ` +
+                "l'autorisation « contents: write ». Le jeton par défaut n'a que la lecture : " +
+                'la publication échouerait en « HTTP 403: Resource not accessible by integration ».'
+            );
+          }
         }
       }
 

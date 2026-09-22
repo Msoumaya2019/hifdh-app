@@ -18,6 +18,13 @@ on:
     tags:
       - 'v*'
 
+# `gh release create` écrit dans les « releases » du dépôt. Le jeton par défaut
+# n'a que le droit de lecture : sans cette autorisation, la compilation réussit,
+# l'artefact est publié, puis l'étape de version échoue en
+# « HTTP 403: Resource not accessible by integration ».
+permissions:
+  contents: write
+
 jobs:
   ipa:
     name: Compiler un IPA non signé

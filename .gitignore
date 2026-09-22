@@ -50,7 +50,11 @@ coverage/
 
 # Dossiers de travail : telechargements, export local du paquet, bundle extrait
 # d'un IPA ou d'un APK. Regenerables, et volumineux.
-.tmp-*/
+#
+# Le motif couvre aussi les FICHIERS `.tmp-*` : `.tmp-*/` seul laissait passer
+# un `.tmp-message.txt` ecrit pour un `git commit -F`, qu'un `git add -A`
+# embarque alors dans le commit.
+.tmp-*
 .tmp-main.jsbundle
 
 # Projets natifs : regeneres par `expo prebuild --clean`, jamais versionnes.
