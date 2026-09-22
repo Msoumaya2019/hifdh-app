@@ -156,6 +156,7 @@ export default function ProfilScreen() {
             Récitation: Hafs an Asim{'\n'}
             Texte: Tanzil (Uthmani){'\n'}
             Métadonnées: quran-meta (MIT){'\n'}
+            Divisions: 480 toumoun, dont 151 bornes estimées{'\n'}
             Version: {version}
           </Text>
         </Card>

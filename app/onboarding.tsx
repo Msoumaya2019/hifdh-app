@@ -460,6 +460,18 @@ function StepRhythm({
           </Text>
         </Pressable>
       ))}
+
+      {/* Une borne estimee est presentee dans l'application comme n'importe
+          quelle autre. Le choix du toumoun comme rythme est donc le seul endroit
+          ou l'utilisateur doit apprendre que 151 des 480 limites sont deduites
+          et non relevees. Le dire ici plutot que de le taire. */}
+      {unit.type === 'thumn' && (
+        <Text style={styles.precisionNote}>
+          151 des 480 limites de toumoun ne sont pas vérifiées : elles ont été
+          reportées depuis la lecture Qaloun et peuvent s'écarter d'un verset.
+          Les 240 limites de rub' al-hizb, elles, viennent des données Hafs.
+        </Text>
+      )}
     </View>
   );
 }
@@ -562,6 +574,12 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
+  },
+  precisionNote: {
+    fontSize: fontSizes.sm,
+    color: colors.textTertiary,
+    lineHeight: 20,
+    marginTop: spacing.lg,
   },
   legend: {
     flexDirection: 'row',
