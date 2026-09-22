@@ -160,3 +160,53 @@ qui permet à l'écran de page de l'application d'être la page imprimée — le
 mêmes coupures, les mêmes places — plutôt qu'une composition qui lui ressemble.
 Aucun texte coranique n'y est stocké : le texte reste celui de Tanzil, et la
 police ne fait que le dessiner.
+
+---
+
+## 3 ter. Images des pages du moushaf (604 pages)
+
+L'affichage « page du moushaf » montre désormais l'**image** de la page
+imprimée, et non plus une composition de cette page. Les 604 images ne sont pas
+redistribuées dans ce dépôt : elles sont téléchargées à la demande, puis gardées
+dans le cache local de l'appareil.
+
+- **Œuvre** : photographies numériques du moushaf de Madine, narration Hafs
+  'an Asim, 604 pages (1 à 604, sans page manquante).
+- **Source** : jeu `Zohanur2026/zohanur-mushaf-pages-hafs`, servi par le CDN
+  jsDelivr — <https://cdn.jsdelivr.net/gh/Zohanur2026/zohanur-mushaf-pages-hafs@main/{page}.jpg>
+- **Licence** : **non déclarée** par la source. Voir l'avertissement ci-dessous.
+- **Code** : `src/lib/pagesMoushaf.ts` — `getMushafPageImage(page)` est le seul
+  point de contact avec cette source ; `SOURCE_PAGES` en est le seul endroit à
+  modifier pour en changer.
+- **Cache** : `src/lib/cachePagesMoushaf.ts` — une page téléchargée est écrite
+  sur le disque et n'est plus retéléchargée.
+- **Vérification** : `npm run verifier:pages-moushaf` (et son falsificateur
+  `npm run falsifier:pages-moushaf`), qui contrôle les invariants de la source
+  et, avec `--reseau`, l'existence réelle des pages.
+
+### Avertissement sur la licence des images
+
+Contrairement au texte de Tanzil (CC-BY 3.0), aux métadonnées et aux polices,
+**le jeu d'images ne porte aucune licence explicite**. Le dépôt qui les héberge
+n'en déclare aucune. C'est signalé ici plutôt que passé sous silence, et c'est
+la raison pour laquelle :
+
+1. les images ne sont **pas** redistribuées dans ce dépôt ;
+2. la source est isolée derrière une seule fonction, pour qu'un remplacement
+   soit possible sans toucher au reste de l'application ;
+3. **avant toute distribution de l'application**, il appartient à la personne
+   qui la publie de vérifier que l'usage de ces images est autorisé — ou de les
+   remplacer par une source dont la licence est établie.
+
+Le code des pages du moushaf est écrit pour que ce remplacement soit une
+modification d'une seule constante.
+
+### Pourquoi pas quran.com
+
+Quran.com a été essayé en premier, comme demandé à l'origine. Son API v4 — et la
+nouvelle API de la Quran Foundation, qui demande désormais des identifiants
+d'application — expose le texte, les traductions, l'audio et la recherche, mais
+**aucune image de page** : ni champ `image` sur un verset, ni ressource
+« pages ». Les URL d'images du site ne sont pas non plus adressables (essayées :
+404 ou 403). Quran.com n'est donc pas exploitable pour les images, et c'est la
+solution de repli qui a été mise en place.

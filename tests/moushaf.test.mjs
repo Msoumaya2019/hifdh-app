@@ -34,6 +34,7 @@ import {
 } from '@/data/quranData';
 
 import largeursPages from '@data/quran/largeurs_pages.json' with { type: 'json' };
+import { getMushafPageImage, pageValide, pageBornee } from '@/lib/pagesMoushaf';
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LARGEURS = largeursPages;
@@ -331,36 +332,96 @@ test('les ornements portent les teintes relevées sur la page imprimée', () => 
   }
 });
 
-test('le médaillon reçoit le numéro au lieu de le dessiner', () => {
-  // Le caractère du numéro de verset vient de la police de page : c'est un
-  // glyphe du moushaf, et le redessiner à la main donnerait un chiffre qui ne
-  // serait plus celui du calligraphe. Trois choses doivent tenir ensemble :
-  // le composant déclare un emplacement pour ce caractère, il le rend dans son
-  // `Svg`, et le lecteur lui passe bien le code du numéro.
-  const corpsDuMedaillon = ORNEMENTS.match(
-    /export function MedaillonVerset\(\{[\s\S]*?\n\}\n/
-  );
-  assert.ok(corpsDuMedaillon, 'le composant MedaillonVerset est introuvable');
-  assert.match(corpsDuMedaillon[0], /children\?: ReactNode/);
-  // Le rendu effectif du caractère, et non seulement sa déclaration : un
-  // composant qui accepterait `children` sans le dessiner ne montrerait rien.
-  assert.match(corpsDuMedaillon[0], /\{children\}/);
-
+test('le mode page affiche une image, jamais une composition', () => {
+  // Le mode « page » composait la page avec la police du complexe KFGQPC — un
+  // point de code par mot imprimé. Le calcul de la moindre mesure décidait donc
+  // de la place des mots, et une erreur d'estimation déplaçait un mot ou faisait
+  // déborder une ligne. Il affiche désormais l'image de la page imprimée.
+  //
+  // Ce contrôle tient la règle inverse de celle qu'il tenait avant : le lecteur
+  // ne doit plus **composer** la page. Si un `MedaillonVerset`, un
+  // `CartoucheNumero`, un `CadreDePage` ou un `BandeauSourate` réapparaissait
+  // dans le lecteur, c'est que la composition serait revenue — et avec elle les
+  // superpositions qu'on a justement retirées.
   const lecteur = readFileSync(join(RACINE, 'app/lecteur.tsx'), 'utf8');
-  assert.match(lecteur, /<MedaillonVerset taille=\{[^}]+\}>/);
-  assert.match(lecteur, /element\.mot/);
+
+  assert.match(
+    lecteur,
+    /<LecteurPageMoushaf\b/,
+    'le lecteur doit monter le composant d’image de page'
+  );
+
+  for (const ornement of ['MedaillonVerset', 'CartoucheNumero', 'CadreDePage', 'BandeauSourate']) {
+    assert.ok(
+      !new RegExp(`<${ornement}\\b`).test(lecteur),
+      `le lecteur rend encore <${ornement}> : la composition de page est revenue`
+    );
+  }
+
+  // Et l'image affichée vient bien de la source centralisée, jamais d'une URL
+  // écrite dans le composant.
+  const composant = readFileSync(
+    join(RACINE, 'src/components/LecteurPageMoushaf.tsx'),
+    'utf8'
+  );
+  assert.match(composant, /usePageMoushaf\(/);
+  assert.match(composant, /\bresizeMode="contain"/);
+  assert.ok(
+    !/https?:\/\//.test(composant),
+    'une URL d’image est écrite dans le composant : elle doit venir de pagesMoushaf'
+  );
+});
+
+test('la source des pages est centralisée et bornée', () => {
+  // `getMushafPageImage` est le seul point de contact avec la source : changer
+  // de fournisseur doit se faire en un endroit. Et une page hors bornes doit
+  // rendre `null` plutôt que fabriquer une URL qui répondrait 404.
+  const source = readFileSync(join(RACINE, 'src/lib/pagesMoushaf.ts'), 'utf8');
+
+  assert.match(source, /export function getMushafPageImage\(/);
+  assert.match(source, /nombreDePages: 604/);
+  // L'URL n'est écrite qu'ici : une seule occurrence de gabarit.
+  assert.match(source, /gabarit: \(page: number\) =>/);
+
+  assert.equal(getMushafPageImage(0), null, 'la page 0 doit être refusée');
+  assert.equal(getMushafPageImage(605), null, 'la page 605 doit être refusée');
+  assert.equal(getMushafPageImage(1.5), null, 'une page non entière doit être refusée');
+  assert.ok(getMushafPageImage(1), 'la page 1 doit rendre une URL');
+  assert.ok(getMushafPageImage(604), 'la page 604 doit rendre une URL');
+  assert.match(getMushafPageImage(177), /177\.jpg$/);
+  assert.match(getMushafPageImage(177), /^https:\/\//, 'l’URL doit être absolue');
+
+  // Les deux prédicats qui vont avec : `pageValide` dit si une page existe,
+  // `pageBornee` ramène un numéro dans les bornes. Ils servent au champ « Aller
+  // à… », où l'utilisateur peut saisir n'importe quoi.
+  assert.equal(pageValide(1), true);
+  assert.equal(pageValide(604), true);
+  assert.equal(pageValide(0), false);
+  assert.equal(pageValide(605), false);
+  assert.equal(pageBornee(0), 1, 'un numéro trop bas est ramené à 1');
+  assert.equal(pageBornee(605), 604, 'un numéro trop haut est ramené à 604');
+  assert.equal(pageBornee(177), 177, 'un numéro valide est laissé tel quel');
+  assert.equal(pageBornee(Number.NaN), 1, 'une saisie vide retombe sur la page 1');
 });
 
 test('les cartouches se dimensionnent sur le pas des lignes', () => {
-  // Le pas est la hauteur d'une ligne, calculée d'après la largeur du bloc. Un
-  // cartouche qui aurait une taille fixe en pixels ne suivrait pas la page d'un
-  // écran à l'autre — il déborderait sur un petit écran, ou flotterait au
-  // milieu d'une grande page.
-  const lecteur = readFileSync(join(RACINE, 'app/lecteur.tsx'), 'utf8');
-  assert.match(lecteur, /<CartoucheNumero largeur=\{[^}]*largeurDuBloc[^}]*\} hauteur=\{/);
-  assert.match(lecteur, /<BandeauSourate largeur=\{largeurDuBloc\} hauteur=\{pas\}/);
-  // Et la taille du support du médaillon se prend aussi sur le pas.
-  assert.match(lecteur, /taille=\{pas \* 0\.78\}/);
+  // Garde conservée pour le module d'ornements, qui reste la référence des
+  // teintes relevées sur l'imprimé. Les cartouches ne sont plus montés par le
+  // lecteur, mais un cartouche à taille fixe en pixels resterait un défaut : il
+  // déborderait sur un petit écran. On vérifie donc que le composant prend
+  // toujours ses dimensions en paramètre, au lieu de les fixer.
+  const ornements = readFileSync(join(RACINE, 'src/components/ornementsMoushaf.tsx'), 'utf8');
+
+  for (const composant of ['CartoucheNumero', 'BandeauSourate', 'CadreDePage', 'MedaillonVerset']) {
+    const corps = ornements.match(
+      new RegExp(`export function ${composant}\\(\\{[\\s\\S]*?\\n\\}\\n`)
+    );
+    assert.ok(corps, `le composant ${composant} est introuvable`);
+  }
+
+  // Les dimensions arrivent bien par les propriétés, jamais écrites en dur.
+  assert.match(ornements, /largeur[,:]/, 'CartoucheNumero doit recevoir sa largeur');
+  assert.match(ornements, /hauteur[,:]/, 'CartoucheNumero doit recevoir sa hauteur');
 });
 
 test("aucun ornement ne dessine de texte coranique", () => {
@@ -382,13 +443,23 @@ test("aucun ornement ne dessine de texte coranique", () => {
   );
 });
 
-test('le cadre se dessine en fond, sans occuper de place dans le flux', () => {
-  // Un `Svg` posé en fond doit être en position absolue : sinon il pousserait
-  // les quinze lignes vers le bas, et la page ne tiendrait plus dans l'écran.
+test('l’encadrement et le bandeau restent en fond, sans occuper de place', () => {
+  // Le cadre et le bandeau de sourate ont été retirés du lecteur en même temps
+  // que la composition : l'image de la page les porte déjà, et les superposer
+  // donnerait deux encadrements décalés — exactement le défaut qu'on corrige.
+  //
+  // Mais le module d'ornements reste, et la propriété qui les rendait inoffensifs
+  // doit y survivre : un `Svg` de fond posé en flux pousserait le texte vers le
+  // bas. On garde donc le contrôle sur le module.
   assert.match(ORNEMENTS, /position: 'absolute'/);
+
   const lecteur = readFileSync(join(RACINE, 'app/lecteur.tsx'), 'utf8');
-  assert.match(lecteur, /<CadreDePage largeur=\{mesure\.largeur\} hauteur=\{mesure\.hauteur\} \/>/);
-  // Et le bandeau de sourate est en fond de la ligne qui le porte.
-  assert.match(lecteur, /styles\.bandeauDerriereLigne/);
-  assert.match(lecteur, /pointerEvents="none"/);
+  assert.ok(
+    !/styles\.bandeauDerriereLigne/.test(lecteur),
+    'le lecteur pose encore un bandeau de fond : l’image le porte déjà'
+  );
+  assert.ok(
+    !/<CadreDePage\b/.test(lecteur),
+    'le lecteur redessine un cadre : l’image le porte déjà'
+  );
 });
