@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hifdh - Memorisation du Coran",
     "slug": "hifdh-app",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hifdh",
