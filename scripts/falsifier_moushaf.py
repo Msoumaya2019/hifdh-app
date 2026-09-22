@@ -66,11 +66,22 @@ FICHIER_LARGEURS = RACINE / "data" / "quran" / "largeurs_pages.json"
 FICHIER_POLICES = RACINE / "src" / "data" / "policesPages.ts"
 FICHIER_ORNEMENTS = RACINE / "src" / "components" / "ornementsMoushaf.tsx"
 FICHIER_LECTEUR = RACINE / "app" / "lecteur.tsx"
+FICHIER_PAGES = RACINE / "src" / "lib" / "pagesMoushaf.ts"
+FICHIER_COMPOSANT_PAGE = RACINE / "src" / "components" / "LecteurPageMoushaf.tsx"
 TEST = RACINE / "tests" / "moushaf.test.mjs"
 
 # Le nombre de tests du fichier. S'il change, le temoin change aussi : c'est
 # volontaire, un test ajoute doit se voir ici.
-TESTS_ATTENDUS = 19
+#
+# Passé de 19 à 20 le 2026-09-22 : le mode « page du moushaf » a été réécrit
+# pour afficher l'image de la page imprimée, et trois contrôles de forme
+# devenus faux ont été réécrits plutôt que supprimés, dont un qui
+# s'est scindé en deux (la source des pages est centralisée, la borne est
+# respectée). Ce témoin a donc fait exactement son travail en CI : il a
+# refusé de certifier la campagne avant que le compte soit remis à jour.
+# Il n'est pas dérivé du rapport, et c'est délibéré : un compte lu dans le
+# rapport ne pourrait jamais signaler qu'un test ne tourne plus.
+TESTS_ATTENDUS = 20
 
 
 def lancer_controle():
@@ -244,12 +255,38 @@ def mutations():
             "        strokeWidth={0.9}\n      />",
         )
 
-    def cartouche_a_taille_fixe(_fichier):
-        # Un cartouche en pixels ne suivrait plus la page d'un ecran a l'autre.
+    def borne_elargie(_fichier):
+        # Le nombre de pages passe a 605 : la borne ne protege plus rien, et
+        # `getMushafPageImage(605)` fabriquerait une URL qui repondrait 404.
+        remplacer_une_fois(FICHIER_PAGES, "nombreDePages: 604", "nombreDePages: 605")
+
+    def url_dans_le_composant(_fichier):
+        # Une URL ecrite dans le composant : elle echappe a `getMushafPageImage`,
+        # donc changer de fournisseur ne la remplacerait pas. C'est precisement
+        # ce que la centralisation doit empecher.
+        remplacer_une_fois(
+            FICHIER_COMPOSANT_PAGE,
+            "const etat = usePageMoushaf(page, tentative);",
+            "const etat = { chemin: 'https://exemple.test/page.jpg', "
+            "enCours: false, erreur: false };",
+        )
+
+    def composition_revenue(_fichier):
+        # Le lecteur doit MONTER une image, pas composer la page. On lui rend
+        # un ornement de composition : si le controle tient, il doit tomber.
+        #
+        # Cette mutation a remplace « cartouche a taille fixe », qui visait
+        # `<CartoucheNumero largeur={Math.max(56, largeurDuBloc * 0.16)}` dans
+        # lecteur.tsx. Le mode page a ete reecrit pour afficher l'image de la
+        # page imprimee, et cette ligne n'existe plus : la campagne refusait
+        # de tourner (« l'ancre apparait 0 fois ») au lieu de passer en
+        # silence, ce qui est le comportement voulu. La propriete a eprouver
+        # n'est pas perdue pour autant — c'est l'inverse qui est vraie : le
+        # lecteur ne doit plus rien composer du tout.
         remplacer_une_fois(
             FICHIER_LECTEUR,
-            "<CartoucheNumero largeur={Math.max(56, largeurDuBloc * 0.16)}",
-            "<CartoucheNumero largeur={56}",
+            "<LecteurPageMoushaf",
+            "<CartoucheNumero largeur={56} />\n      <LecteurPageMoushaf",
         )
 
     def cadre_dans_le_flux(_fichier):
@@ -333,28 +370,42 @@ def mutations():
             "le medaillon n'accepte plus de caractere",
             FICHIER_ORNEMENTS,
             medaillon_sans_emplacement,
-            "le médaillon reçoit le numéro",
+            "les cartouches se dimensionnent sur le pas des lignes",
         ),
         (
             "medaillon muet",
             "le medaillon accepte le caractere sans le dessiner",
             FICHIER_ORNEMENTS,
             medaillon_muet,
-            "le médaillon reçoit le numéro",
+            "les cartouches se dimensionnent sur le pas des lignes",
         ),
         (
-            "cartouche a taille fixe",
-            "le cartouche du numero ne suit plus la largeur du bloc",
+            "composition revenue dans le lecteur",
+            "un ornement de composition est remonte dans le mode page",
             FICHIER_LECTEUR,
-            cartouche_a_taille_fixe,
-            "les cartouches se dimensionnent sur le pas",
+            composition_revenue,
+            "le mode page affiche une image",
+        ),
+        (
+            "borne des pages elargie",
+            "le nombre de pages passe de 604 a 605",
+            FICHIER_PAGES,
+            borne_elargie,
+            "la source des pages est centralisée et bornée",
+        ),
+        (
+            "URL ecrite dans le composant",
+            "le lecteur de page court-circuite la source centralisee",
+            FICHIER_COMPOSANT_PAGE,
+            url_dans_le_composant,
+            "le mode page affiche une image",
         ),
         (
             "cadre dans le flux",
             "le cadre prend une place dans le flux au lieu du fond",
             FICHIER_ORNEMENTS,
             cadre_dans_le_flux,
-            "le cadre se dessine en fond",
+            "l’encadrement et le bandeau restent en fond",
         ),
         (
             "arabe dans les ornements",
