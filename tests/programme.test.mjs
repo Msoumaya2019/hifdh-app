@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeObjectiveRanges, subtractMemorized, splitIntoSessions, generateProgram } from '@/lib/programGenerator';
+import { computeObjectiveRanges, subtractMemorized, splitIntoSessions, generateProgram, reporterSeance, prochainJourApprentissage } from '@/lib/programGenerator';
 import { getSurah } from '@/data/quranData';
 
 function versetsDe(ranges) {
@@ -199,6 +199,70 @@ test('chaque séance porte sur des versets qui existent réellement', () => {
   }
   assert.deepEqual(fautives.slice(0, 10), []);
 });
+
+// === Report d'une séance ===
+//
+// Le report changeait le statut sans déplacer la séance : elle restait datée
+// dans le passé, hors de la plage affichée, et disparaissait sans avoir été
+// faite. Ces tests tiennent la propriété qui manquait.
+
+const MARDI_22_SEPTEMBRE = new Date(2026, 8, 22, 10, 0);
+
+function seance(date) {
+  return {
+    id: `s_${date}`,
+    date,
+    surah: 2,
+    startAyah: 1,
+    endAyah: 5,
+    unit: { type: 'verses', count: 5 },
+    status: 'todo',
+    createdAt: '',
+  };
+}
+
+test('le report place la séance sur un jour d\'apprentissage à venir', () => {
+  const jours = [1]; // lundi uniquement
+  const nouvelle = reporterSeance(seance('2026-09-22'), jours, MARDI_22_SEPTEMBRE);
+
+  // Mardi 22 septembre 2026 -> lundi suivant, 28 septembre.
+  assert.equal(nouvelle, '2026-09-28');
+
+  const [a, m, j] = nouvelle.split('-').map(Number);
+  assert.ok(jours.includes(new Date(a, m - 1, j).getDay()), 'la nouvelle date n\'est pas un lundi');
+});
+
+test('le report ne renvoie jamais une séance dans le passé', () => {
+  const jours = [0, 1, 2, 3, 4, 5, 6];
+  // Séance en retard de douze jours.
+  const nouvelle = reporterSeance(seance('2026-09-10'), jours, MARDI_22_SEPTEMBRE);
+
+  assert.equal(nouvelle, '2026-09-23', 'une séance en retard doit rejoindre le prochain jour');
+  assert.ok(nouvelle > '2026-09-22', 'la nouvelle date doit être postérieure à aujourd\'hui');
+});
+
+test('le report déplace toujours d\'au moins un jour', () => {
+  const jours = [0, 1, 2, 3, 4, 5, 6];
+  for (const date of ['2026-09-22', '2026-09-23', '2026-10-01']) {
+    const nouvelle = reporterSeance(seance(date), jours, MARDI_22_SEPTEMBRE);
+    assert.ok(nouvelle > date, `${date} -> ${nouvelle} : la séance n'a pas bougé`);
+  }
+});
+
+test('le prochain jour d\'apprentissage est strictement postérieur', () => {
+  const prochain = prochainJourApprentissage(new Date(2026, 8, 22, 0, 0), [0, 1, 2, 3, 4, 5, 6]);
+  assert.equal(prochain.getDate(), 23);
+  assert.equal(prochain.getMonth(), 8);
+});
+
+test('sans jour d\'apprentissage choisi, la planification échoue au lieu de boucler', () => {
+  assert.throws(
+    () => prochainJourApprentissage(new Date(2026, 8, 22, 0, 0), []),
+    /jour/i,
+    'une configuration sans jour doit lever, pas figer l\'application',
+  );
+});
+
 
 // === Modification d'objectif ===
 

@@ -20,7 +20,7 @@ import {
   getAllThumn,
   getTotalAyahs,
 } from '@/data/quranData';
-import { versDateLocale } from './dates';
+import { versDateLocale, analyserDateLocale } from './dates';
 
 // === Types internes ===
 
@@ -389,6 +389,54 @@ export function generateProgram(
 }
 
 // === Helpers ===
+
+/**
+ * Prochain jour d'apprentissage strictement postérieur à `depuis`.
+ *
+ * Lève si aucun jour n'est choisi : sans garde-fou, la boucle ne se terminerait
+ * jamais, et une configuration vide figerait l'application.
+ */
+export function prochainJourApprentissage(depuis: Date, joursApprentissage: number[]): Date {
+  if (joursApprentissage.length === 0) {
+    throw new Error('Aucun jour d\'apprentissage choisi : impossible de planifier une séance.');
+  }
+
+  const date = new Date(depuis);
+  for (let garde = 0; garde < 14; garde++) {
+    date.setDate(date.getDate() + 1);
+    if (joursApprentissage.includes(date.getDay())) return date;
+  }
+
+  throw new Error('Aucun jour d\'apprentissage trouvé dans les deux semaines à venir.');
+}
+
+/**
+ * Nouvelle date d'une séance reportée.
+ *
+ * Le report changeait auparavant le statut sans déplacer la séance : elle restait
+ * datée dans le passé et, l'écran ne chargeant que les séances à venir, elle
+ * disparaissait définitivement. Une séance reportée rejoint donc le prochain jour
+ * d'apprentissage, où elle cohabite avec la séance déjà prévue — l'utilisateur
+ * rattrape son retard au lieu de le perdre.
+ *
+ * La date de départ est le plus tardif entre la date d'origine et aujourd'hui :
+ * reporter une séance déjà en retard ne doit pas la renvoyer dans le passé.
+ */
+export function reporterSeance(
+  seance: LearningSession,
+  joursApprentissage: number[],
+  maintenant: Date = new Date()
+): string {
+  const origine = analyserDateLocale(seance.date);
+  const aujourdHuiMinuit = new Date(
+    maintenant.getFullYear(),
+    maintenant.getMonth(),
+    maintenant.getDate(),
+  );
+  const depart = origine.getTime() > aujourdHuiMinuit.getTime() ? origine : aujourdHuiMinuit;
+
+  return versDateLocale(prochainJourApprentissage(depart, joursApprentissage));
+}
 
 export function estimateCompletionDate(
   config: UserConfig,

@@ -201,6 +201,42 @@ export async function getTodaySessions(): Promise<LearningSession[]> {
   return getSessionsByDateRange(today, today);
 }
 
+/**
+ * Toutes les séances restant à faire, quelle que soit leur date.
+ *
+ * Indispensable : une séance non terminée dont la date est passée n'apparaît
+ * dans aucune plage « à venir », et disparaîtrait de l'écran sans jamais avoir
+ * été faite. C'est le cas d'une séance reportée ou simplement manquée.
+ */
+export async function getSessionsATraiter(): Promise<LearningSession[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    date: string;
+    surah: number;
+    start_ayah: number;
+    end_ayah: number;
+    unit_json: string;
+    status: string;
+    completed_at: string | null;
+    created_at: string;
+  }>(
+    `SELECT * FROM learning_sessions WHERE status = 'todo' ORDER BY date ASC`
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.date,
+    surah: r.surah,
+    startAyah: r.start_ayah,
+    endAyah: r.end_ayah,
+    unit: JSON.parse(r.unit_json),
+    status: r.status as LearningSession['status'],
+    completedAt: r.completed_at ?? undefined,
+    createdAt: r.created_at,
+  }));
+}
+
 export async function getSessionCount(
   status?: LearningSession['status']
 ): Promise<number> {
@@ -228,6 +264,36 @@ export async function updateSessionStatus(
     `UPDATE learning_sessions SET status = ?, completed_at = ? WHERE id = ?`,
     [status, completedAt, sessionId]
   );
+}
+
+/**
+ * Reporte une séance à une nouvelle date.
+ *
+ * Le statut repasse à « todo » : une séance reportée est une séance à faire, à
+ * une autre date. La laisser en « postponed » la rendrait inerte, l'écran
+ * n'affichant les boutons d'action que pour les séances « todo ».
+ */
+export async function reporterSession(sessionId: string, nouvelleDate: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE learning_sessions SET date = ?, status = 'todo', completed_at = NULL WHERE id = ?`,
+    [nouvelleDate, sessionId]
+  );
+}
+
+/**
+ * Supprime les séances à venir encore à faire.
+ *
+ * Sert au recalcul : l'historique (séances passées ou terminées) est conservé,
+ * seul l'avenir non commencé est remplacé.
+ */
+export async function supprimerSeancesFuturesATraiter(aPartirDe: string): Promise<number> {
+  const db = await getDatabase();
+  const resultat = await db.runAsync(
+    `DELETE FROM learning_sessions WHERE date >= ? AND status = 'todo'`,
+    [aPartirDe]
+  );
+  return resultat.changes ?? 0;
 }
 
 // === Items de révision ===

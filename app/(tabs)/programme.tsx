@@ -6,9 +6,10 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
-import { getUserConfig, getSessionsByDateRange, getReviewItemsDue, updateSessionStatus, saveReviewItem, addMemorizedPassage } from '@/lib/database';
+import { getUserConfig, getSessionsByDateRange, getSessionsATraiter, getReviewItemsDue, updateSessionStatus, reporterSession, saveReviewItem, addMemorizedPassage } from '@/lib/database';
 import { formatDate } from '@/lib/progress';
-import { aujourdHui, dansJours } from '@/lib/dates';
+import { aujourdHui, dansJours, ilYAjours } from '@/lib/dates';
+import { reporterSeance } from '@/lib/programGenerator';
 import { reviewCard, getNextReviewDate, createNewCard } from '@/lib/spacedRepetition';
 import type { UserConfig, LearningSession, ReviewItem, ReviewRating } from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,13 +22,23 @@ export default function ProgrammeScreen() {
   const [sessions, setSessions] = useState<LearningSession[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [config, setConfig] = useState<UserConfig | null>(null);
 
   const loadData = useCallback(async () => {
     const today = aujourdHui();
-    const futureStr = dansJours(90);
 
-    const sess = await getSessionsByDateRange(today, futureStr);
-    setSessions(sess);
+    // L'historique récent et l'avenir proche, pour l'affichage…
+    const plage = await getSessionsByDateRange(ilYAjours(30), dansJours(90));
+    // …et toutes les séances restant à faire, même en retard : sans cela une
+    // séance manquée ou reportée sortirait de la plage et disparaîtrait.
+    const aTraiter = await getSessionsATraiter();
+
+    const parId = new Map<string, LearningSession>();
+    for (const s of [...plage, ...aTraiter]) parId.set(s.id, s);
+    const toutes = [...parId.values()].sort((a, b) => a.date.localeCompare(b.date));
+
+    setSessions(toutes);
+    setConfig(await getUserConfig());
 
     const due = await getReviewItemsDue(today);
     setReviews(due);
@@ -69,7 +80,16 @@ export default function ProgrammeScreen() {
   };
 
   const handleSessionPostpone = async (sessionId: string) => {
-    await updateSessionStatus(sessionId, 'postponed');
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    // Le report doit réellement déplacer la séance. Se contenter de changer le
+    // statut la laissait datée dans le passé, hors de la plage affichée : elle
+    // disparaissait sans avoir été faite.
+    const jours = config?.schedule.days ?? [];
+    if (jours.length === 0) return;
+
+    await reporterSession(sessionId, reporterSeance(session, jours));
     await loadData();
   };
 
