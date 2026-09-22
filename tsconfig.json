@@ -7,5 +7,6 @@
       "@data/*": ["./data/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "exclude": ["node_modules", "admin", ".tmp-export", ".tmp-export-ios", ".tmp-export-v2", ".tmp-export-v3"]
 }

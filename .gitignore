@@ -45,6 +45,11 @@ supabase/.branches/
 # Testing
 coverage/
 
+# Python : les scripts de donnees sont lances en place, et l'interpreteur
+# depose ses caches a cote d'eux. Regenerables, et propres a la machine.
+__pycache__/
+*.pyc
+
 # Temporary
 *.log
 

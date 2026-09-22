@@ -77,6 +77,18 @@ jobs:
       - name: Vérifier la pagination du moushaf
         run: npm run verifier:pages
 
+      # La pagination dit quels versets une page porte ; elle ne dit pas où
+      # chaque mot tombe. `moushaf_layout.json` porte les coupures de ligne du
+      # moushaf imprimé — quinze lignes par page, chaque élément désignant un
+      # intervalle de jetons du texte. Une coupure fausse ne se voit pas à
+      # l'œil sur un écran : elle met un mot sur la ligne du voisin. Ce
+      # contrôle-ci vérifie hors ligne les quinze lignes, la contiguïté des
+      # jetons d'un verset, le placement de chaque verset une seule fois, la
+      # règle des ouvertures de sourate et l'ensemble exact des en-têtes
+      # renvoyés en marge.
+      - name: Vérifier la mise en page du moushaf
+        run: npm run verifier:layout
+
       # Le pavage dit que les divisions s'emboîtent ; il ne dit rien de leur
       # origine. 151 des 480 toumoun ont une borne déduite par report depuis les
       # données Qaloun, donc estimée à un verset près — et l'application les
@@ -104,6 +116,20 @@ jobs:
       # ferait croire vérifié ce qui ne l'est pas.
       - name: Falsifier les contrôles de pagination
         run: npm run falsifier:pages
+
+      # Et pour la mise en page : huit mutations de la donnée, dont une ligne en
+      # trop, un intervalle de jetons troué et une basmala rétrécie. Chacune doit
+      # tomber, et tomber sur le contrôle qui la vise.
+      - name: Falsifier les contrôles de mise en page
+        run: npm run falsifier:layout
+
+      # Et pour l'accès au texte : trois mutations du code de `quranData.ts`,
+      # dont le rang du verset qui cesse d'être vérifié. Ce défaut-là a vécu
+      # sans être vu — `getAyahText(29, 70)` rendait 30:1, basmala comprise,
+      # parce que le cache est un tableau plat indexé par l'identifiant global.
+      # Un verset faux ne se signale pas : il s'affiche.
+      - name: Falsifier les contrôles d'accès au texte
+        run: npm run falsifier:acces-texte
 
       # Et pour « À renforcer » : six mutations, dont un passage marqué et dû qui
       # perdrait son item de révision, et une révision en retard qui

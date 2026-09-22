@@ -2,23 +2,23 @@
 //
 //   - « Versets » : un verset par bloc, avec son numéro. Confortable pour
 //     apprendre un passage précis, et pour le masquer verset par verset.
-//   - « Page » : la page du moushaf, texte continu justifié, médaillons de fin
-//     de verset, bandeau de sourate, en-tête et numéro de page. C'est la
-//     disposition du Coran imprimé, et donc celle que beaucoup connaissent.
+//   - « Page » : la page du moushaf, quinze lignes, les mots aux places que
+//     l'imprimeur leur a données. C'est la disposition du Coran imprimé, et
+//     donc celle que beaucoup connaissent.
 //
-// Ce qui est exact dans l'affichage « page » : les **bornes** de page, c'est-à-
-// dire la liste des versets que porte chaque page. Elles viennent de la donnée,
-// sont vérifiées par `data/quran/verifier_pages.py` et coïncident avec celles de
-// l'API quran.com sur les 6 236 versets.
+// L'affichage « page » ne se réorganise pas selon la largeur de l'écran, et il
+// n'a pas de réglage de taille : une page du moushaf ne se réagence pas. La
+// taille du texte est calculée une fois, pour que chacune des quinze lignes
+// tienne d'un seul tenant — un mot qui passerait à la ligne suivante ne serait
+// plus à la place que le moushaf lui donne.
 //
-// Ce qui ne l'est pas : les **coupures de ligne**. Une page imprimée coupe le
-// texte à des endroits fixés par sa fonte et sa justification ; l'écran, lui,
-// coupe selon sa largeur. Les versets de la page sont donc bien les bons, dans
-// le bon ordre, mais le retour à la ligne ne tombe pas au même endroit que sur
-// la page de papier. Le dire est plus honnête que de laisser croire à une
-// reproduction à l'identique.
+// D'où viennent les coupures de ligne : de la mise en page engendrée par
+// `data/quran/generer_layout_moushaf.py`, recoupée sur cinq pages du moushaf
+// imprimé (1, 2, 77, 128, 401). Le texte, lui, reste celui de Tanzil : la mise
+// en page ne dit que des intervalles de jetons, jamais des lettres.
 
 import { useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import {
   View,
   Text,
@@ -41,7 +41,12 @@ import {
   getJuzOfAyah,
   getPagesOfRange,
   getPageCount,
+  getLignesDuMoushaf,
+  getEnteteEnMarge,
+  getLignesParPageMoushaf,
+  getTexteJetons,
 } from '@/data/quranData';
+import type { ElementMoushaf } from '@/data/quranData';
 import {
   updateSessionStatus,
   renforcerPassage,
@@ -221,20 +226,29 @@ export default function LecteurScreen() {
           <Text style={styles.surahNameFr}>{surah.nameFr}</Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable
-            onPress={() => setFontSize(Math.max(16, fontSize - 4))}
-            style={styles.zoomButton}
-            accessibilityLabel="Réduire le texte"
-          >
-            <Ionicons name="remove" size={20} color={colors.primary} />
-          </Pressable>
-          <Pressable
-            onPress={() => setFontSize(Math.min(60, fontSize + 4))}
-            style={styles.zoomButton}
-            accessibilityLabel="Agrandir le texte"
-          >
-            <Ionicons name="add" size={20} color={colors.primary} />
-          </Pressable>
+          {/* Le réglage de taille n'existe qu'en affichage « versets ». Une page
+              du moushaf ne se réagence pas : laisser un bouton qui agrandit le
+              texte laisserait croire le contraire, et la première ligne trop
+              longue ferait passer des mots à la ligne suivante — donc à une
+              place que l'imprimeur ne leur a pas donnée. */}
+          {mode === 'versets' && (
+            <>
+              <Pressable
+                onPress={() => setFontSize(Math.max(16, fontSize - 4))}
+                style={styles.zoomButton}
+                accessibilityLabel="Réduire le texte"
+              >
+                <Ionicons name="remove" size={20} color={colors.primary} />
+              </Pressable>
+              <Pressable
+                onPress={() => setFontSize(Math.min(60, fontSize + 4))}
+                style={styles.zoomButton}
+                accessibilityLabel="Agrandir le texte"
+              >
+                <Ionicons name="add" size={20} color={colors.primary} />
+              </Pressable>
+            </>
+          )}
           <Pressable
             onPress={basculerModeMasque}
             style={[styles.zoomButton, hideMode && styles.zoomButtonActive]}
@@ -316,7 +330,6 @@ export default function LecteurScreen() {
       ) : (
         <PageDuMoushaf
           page={page}
-          fontSize={fontSize}
           hideMode={hideMode}
           hiddenVerses={hiddenVerses}
           onBasculerVerset={basculerVersetCache}
@@ -381,10 +394,31 @@ export default function LecteurScreen() {
 }
 
 // === L'affichage « page du moushaf » =======================================
+//
+// La page est rendue comme un seul bloc de texte, dont les quinze lignes sont
+// séparées par des retours à la ligne. Le choix n'est pas cosmétique : dans un
+// bloc de texte, `textAlign: 'justify'` étire **toutes** les lignes sauf la
+// dernière. Quinze blocs séparés ne s'étireraient pas du tout — chacun serait
+// la dernière ligne de son propre bloc — et la page aurait des bords en dents
+// de scie au lieu des deux bords pleins du moushaf.
+//
+// La hauteur de ligne vaut le quinzième de la hauteur disponible, si bien que
+// les quinze lignes remplissent exactement la page. La taille du texte, elle,
+// est la plus grande qui laisse chaque ligne d'un seul tenant : on la cherche
+// en réduisant tant qu'une ligne se coupe, ce que `onTextLayout` signale en
+// rendant plus de quinze lignes.
+
+/** Taille de départ de la recherche. Réduite tant qu'une ligne se coupe. */
+const TAILLE_PAGE_DEPART = 26;
+
+/** Plancher : en dessous, la page ne serait plus lisible. */
+const TAILLE_PAGE_MIN = 11;
+
+/** Part de la hauteur de ligne que la taille du texte ne doit pas dépasser. */
+const PART_HAUTEUR_TEXTE = 0.82;
 
 function PageDuMoushaf({
   page,
-  fontSize,
   hideMode,
   hiddenVerses,
   onBasculerVerset,
@@ -392,7 +426,6 @@ function PageDuMoushaf({
   onChangerPage,
 }: {
   page: number;
-  fontSize: number;
   hideMode: boolean;
   hiddenVerses: Set<string>;
   onBasculerVerset: (cle: string) => void;
@@ -406,91 +439,94 @@ function PageDuMoushaf({
   const surahDeLaPage = premier ? getSurah(premier.surah) : undefined;
   const juz = premier ? getJuzOfAyah(premier.surah, premier.ayah) : null;
 
-  // Une page peut traverser une frontière de sourate — la dernière page du
-  // moushaf en porte même trois. Le texte est donc découpé en groupes, un par
-  // sourate, chacun précédé de son bandeau.
-  const groupes: { surah: number; commence: boolean; versets: typeof versets }[] = [];
-  for (const verset of versets) {
-    const dernier = groupes.at(-1);
-    if (dernier === undefined || dernier.surah !== verset.surah) {
-      groupes.push({ surah: verset.surah, commence: verset.ayah === 1, versets: [verset] });
-    } else {
-      dernier.versets.push(verset);
-    }
-  }
+  const lignes = getLignesDuMoushaf(page);
+  const surahEnMarge = getEnteteEnMarge(page);
+  const nombreDeLignes = getLignesParPageMoushaf();
+
+  const [hauteur, setHauteur] = useState(0);
+  const [taille, setTaille] = useState(TAILLE_PAGE_DEPART);
+  const [coupee, setCoupee] = useState(false);
+
+  // Une autre page : on repart de la taille haute, et on remesure.
+  useEffect(() => {
+    setTaille(TAILLE_PAGE_DEPART);
+    setCoupee(false);
+  }, [page]);
+
+  // Tant qu'une ligne se coupe, on réduit. Le plancher arrête la boucle : au
+  // plancher, la taille ne change plus, donc plus rien ne se remesure.
+  useEffect(() => {
+    if (!coupee) return;
+    setCoupee(false);
+    setTaille((precedente) => {
+      if (precedente <= TAILLE_PAGE_MIN) return precedente;
+      return Math.max(TAILLE_PAGE_MIN, Math.round(precedente * 0.94 * 10) / 10);
+    });
+  }, [coupee]);
+
+  const hauteurDeLigne = hauteur > 0 ? hauteur / nombreDeLignes : 0;
+  const tailleUtile = Math.min(taille, hauteurDeLigne * PART_HAUTEUR_TEXTE);
 
   const dansLePassage = pagesDuPassage.includes(page);
-  const interLigne = fontSize * RATIO_INTERLIGNE_CORAN;
 
   return (
     <View style={styles.pageWrapper}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContentPage}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.feuille}>
-          {/* En-tête courant, comme sur la page imprimée */}
-          <View style={styles.enTetePage}>
-            <Text style={styles.enTeteJuz}>{juz !== null ? `Juz' ${juz}` : ''}</Text>
-            <Text style={styles.enTeteSourate}>
-              {surahDeLaPage ? `${surahDeLaPage.nameFr} ${surahDeLaPage.name}` : ''}
-            </Text>
-          </View>
-
-          {groupes.map((groupe) => {
-            const surahDuGroupe = getSurah(groupe.surah);
-            return (
-              <View key={`${groupe.surah}-${groupe.versets[0].ayah}`}>
-                {groupe.commence && surahDuGroupe && (
-                  <View style={styles.bandeauSourate}>
-                    <Text style={styles.bandeauSourateTexte}>
-                      {surahDuGroupe.nameFr} · {surahDuGroupe.name}
-                    </Text>
-                  </View>
-                )}
-
-                {groupe.commence && groupe.surah !== 1 && groupe.surah !== 9 && (
-                  <Text style={[styles.basmalaPage, { fontSize: fontSize * 0.85, lineHeight: interLigne * 0.85 }]}>
-                    بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
-                  </Text>
-                )}
-
-                <Text
-                  style={[styles.pageTexte, { fontSize, lineHeight: interLigne }]}
-                  selectable
-                >
-                  {groupe.versets.map((verset) => {
-                    const cle = CLE(verset.surah, verset.ayah);
-                    const cache = hideMode && hiddenVerses.has(cle);
-                    return (
-                      <Text
-                        key={cle}
-                        onPress={hideMode ? () => onBasculerVerset(cle) : undefined}
-                      >
-                        {!cache && `${verset.text} `}
-                        <Text style={[styles.medaillon, { fontSize: fontSize * 0.55 }]}>
-                          {` ﴿${toArabicNumber(verset.ayah)}﴾ `}
-                        </Text>
-                      </Text>
-                    );
-                  })}
-                </Text>
-              </View>
-            );
-          })}
-
-          <Text style={styles.numeroPage}>{toArabicNumber(page)}</Text>
+      <View style={styles.feuille}>
+        {/* Bande de marge, comme sur la page imprimée : le juz' et la sourate
+            du premier verset, ou la sourate renvoyée en marge quand la page
+            ouvre une sourate — c'est alors là, et non dans la page, que le
+            moushaf écrit son nom. */}
+        <View style={styles.enTetePage}>
+          <Text style={styles.enTeteJuz}>{juz !== null ? `Juz' ${juz}` : ''}</Text>
+          <Text style={styles.enTeteSourate}>
+            {(() => {
+              const nommee = surahEnMarge !== null ? getSurah(surahEnMarge) : surahDeLaPage;
+              return nommee ? `${nommee.nameFr} ${nommee.name}` : '';
+            })()}
+          </Text>
         </View>
 
-        <Text style={styles.notePage}>
-          {dansLePassage
-            ? 'Cette page porte une partie de ta séance du jour.'
-            : 'Page hors de ta séance du jour.'}{' '}
-          Les versets de la page sont ceux du moushaf ; les coupures de ligne, elles,
-          suivent la largeur de ton écran et non celles de la page imprimée.
-        </Text>
-      </ScrollView>
+        <View
+          style={styles.corpsPage}
+          onLayout={(evenement) => setHauteur(evenement.nativeEvent.layout.height)}
+        >
+          {lignes === null ? (
+            <Text style={styles.pageIndisponible}>
+              La mise en page de cette page n’est pas disponible. Les versets
+              restent lisibles dans l’affichage « Verset par verset ».
+            </Text>
+          ) : (
+            hauteur > 0 && (
+              <Text
+                style={[
+                  styles.texteMoushaf,
+                  { fontSize: tailleUtile, lineHeight: hauteurDeLigne },
+                ]}
+                selectable
+                onTextLayout={(evenement) => {
+                  if (evenement.nativeEvent.lines.length > nombreDeLignes) setCoupee(true);
+                }}
+              >
+                {lignes.map((ligne, indiceLigne) => (
+                  <Text key={`ligne-${indiceLigne}`}>
+                    {indiceLigne > 0 ? '\n' : ''}
+                    {contenuDeLigne(ligne, indiceLigne, hideMode, hiddenVerses, onBasculerVerset)}
+                  </Text>
+                ))}
+              </Text>
+            )
+          )}
+        </View>
+
+        <Text style={styles.numeroPage}>{toArabicNumber(page)}</Text>
+      </View>
+
+      <Text style={styles.notePage}>
+        {dansLePassage
+          ? 'Cette page porte une partie de ta séance du jour.'
+          : 'Page hors de ta séance du jour.'}{' '}
+        Les mots sont aux places que leur donne le moushaf imprimé.
+      </Text>
 
       {/* Navigation de page */}
       <View style={styles.navPages}>
@@ -526,6 +562,78 @@ function PageDuMoushaf({
       )}
     </View>
   );
+}
+
+/**
+ * Le contenu d'une ligne : ses mots, ses médaillons, son en-tête, sa basmala.
+ *
+ * Les mots sont pris au texte de Tanzil par leurs indices, jamais recopiés : la
+ * mise en page ne porte que des intervalles, et une plage qui sortirait du
+ * verset rend `null` plutôt qu'un mot déplacé.
+ */
+function contenuDeLigne(
+  ligne: ElementMoushaf[],
+  indiceLigne: number,
+  hideMode: boolean,
+  hiddenVerses: Set<string>,
+  onBasculerVerset: (cle: string) => void
+): ReactNode[] {
+  const noeuds: ReactNode[] = [];
+
+  ligne.forEach((element, indiceElement) => {
+    const cle = `l${indiceLigne}-e${indiceElement}`;
+    if (indiceElement > 0) noeuds.push(' ');
+
+    switch (element.type) {
+      case 'entete': {
+        const surah = getSurah(element.surah);
+        noeuds.push(
+          <Text key={cle} style={styles.enteteMoushaf}>
+            {surah ? `سُورَةُ ${surah.name}` : ''}
+          </Text>
+        );
+        break;
+      }
+
+      case 'basmala': {
+        // La basmala est celle du verset 1 de la sourate, dans le texte de
+        // Tanzil : elle y est écrite, on ne la fabrique pas.
+        const texte = getTexteJetons(element.surah, 1, 0, 3);
+        noeuds.push(
+          <Text key={cle} style={styles.basmalaMoushaf}>
+            {texte ?? ''}
+          </Text>
+        );
+        break;
+      }
+
+      case 'verset': {
+        const texte = getTexteJetons(element.surah, element.ayah, element.premier, element.dernier);
+        const cleVerset = CLE(element.surah, element.ayah);
+        const cache = hideMode && hiddenVerses.has(cleVerset);
+        noeuds.push(
+          <Text
+            key={cle}
+            style={cache ? styles.motCache : undefined}
+            onPress={hideMode ? () => onBasculerVerset(cleVerset) : undefined}
+          >
+            {texte ?? ''}
+          </Text>
+        );
+        break;
+      }
+
+      case 'medaillon':
+        noeuds.push(
+          <Text key={cle} style={styles.medaillonMoushaf}>
+            {`﴿${toArabicNumber(element.ayah)}﴾`}
+          </Text>
+        );
+        break;
+    }
+  });
+
+  return noeuds;
 }
 
 // Convertir un nombre en chiffres arabes
@@ -640,27 +748,33 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     paddingBottom: spacing.xxxl * 2,
   },
-  scrollContentPage: {
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
-  },
   pageWrapper: {
     flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
   },
   // La feuille : fond légèrement crème et bord discret, comme une page.
+  //
+  // Elle occupe toute la hauteur disponible et ne défile pas : une page du
+  // moushaf tient sur un écran, et ses quinze lignes se partagent la place. Un
+  // défilement laisserait croire qu'on peut la faire glisser, alors que c'est
+  // justement ce que le moushaf ne fait pas.
   feuille: {
+    flex: 1,
     backgroundColor: '#FFFDF7',
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.beige,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   enTetePage: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: spacing.sm,
-    marginBottom: spacing.md,
+    paddingBottom: spacing.xs,
+    marginBottom: spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: colors.beige,
   },
@@ -674,40 +788,44 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontFamily: fonts.araby,
   },
-  bandeauSourate: {
-    backgroundColor: colors.primarySurface,
-    borderWidth: 1,
-    borderColor: colors.gold,
-    borderRadius: radii.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    alignItems: 'center',
+  // Le corps : c'est lui qui donne sa hauteur à la page, et donc la hauteur
+  // d'une ligne — le quinzième. Il doit rester borné, sans quoi la mesure
+  // n'aurait pas de sens.
+  corpsPage: {
+    flex: 1,
   },
-  bandeauSourateTexte: {
-    fontSize: fontSizes.sm,
-    color: colors.primary,
-    fontFamily: fonts.araby,
-  },
-  basmalaPage: {
-    textAlign: 'center',
-    fontFamily: fonts.quran,
-    color: colors.primary,
-    marginBottom: spacing.md,
-  },
-  pageTexte: {
+  texteMoushaf: {
     fontFamily: fonts.quran,
     color: colors.textPrimary,
     textAlign: 'justify',
     writingDirection: 'rtl',
   },
-  medaillon: {
+  enteteMoushaf: {
+    color: colors.primary,
+    fontFamily: fonts.araby,
+  },
+  basmalaMoushaf: {
+    color: colors.primary,
+    fontFamily: fonts.quran,
+  },
+  medaillonMoushaf: {
     fontFamily: fonts.araby,
     color: colors.gold,
   },
+  // Un verset masqué garde sa place : seuls ses mots disparaissent. Les retirer
+  // redistribuerait la ligne, et la page ne serait plus celle du moushaf.
+  motCache: {
+    opacity: 0,
+  },
+  pageIndisponible: {
+    fontFamily: fonts.regular,
+    fontSize: fontSizes.sm,
+    color: colors.textTertiary,
+    lineHeight: 20,
+  },
   numeroPage: {
     textAlign: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.xs,
     fontSize: fontSizes.sm,
     color: colors.textTertiary,
     fontFamily: fonts.araby,
@@ -716,7 +834,7 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.xs,
     color: colors.textTertiary,
     lineHeight: 18,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   navPages: {
     flexDirection: 'row',
