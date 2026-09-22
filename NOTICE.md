@@ -70,6 +70,11 @@ Les entrées `estimated_offset` ne doivent pas être présentées comme
 authentifiées. L'architecture les isole dans un fichier unique, de sorte qu'une
 correction n'exige aucune modification du reste de l'application.
 
+La liste précise de ces 151 bornes — sourate par sourate, avec la référence
+Qaloun dont chacune est issue — est dans **`docs/divisions-estimees.md`**. Ce
+document est engendré par `data/quran/rapport_divisions_estimees.py`, et le
+contrôle `npm run verifier:rapport` refuse qu'il dérive des données.
+
 ---
 
 ## 3. Polices de caractères
