@@ -11,9 +11,14 @@ import { getUserConfig, saveUserConfig, getMemorizedPassages, getReviewItemCount
 import { formatDate, getDayName } from '@/lib/progress';
 import type { UserConfig, MemorizedPassage } from '@/types';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 
 export default function ProfilScreen() {
   const router = useRouter();
+  // La version se lit dans `app.json`, par `expo-constants`. La recopier ici en
+  // dur l'a fait mentir dès la première montée de version : l'écran annonçait
+  // 1.0.0 alors que le paquet était estampillé 1.0.2.
+  const version = Constants.expoConfig?.version ?? 'inconnue';
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [memorized, setMemorized] = useState<MemorizedPassage[]>([]);
   const [reviewCount, setReviewCount] = useState(0);
@@ -151,7 +156,7 @@ export default function ProfilScreen() {
             Récitation: Hafs an Asim{'\n'}
             Texte: Tanzil (Uthmani){'\n'}
             Métadonnées: quran-meta (MIT){'\n'}
-            Version: 1.0.0
+            Version: {version}
           </Text>
         </Card>
 

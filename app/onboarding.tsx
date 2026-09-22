@@ -1,6 +1,6 @@
 // Écran d'onboarding - Questionnaire initial en 4 étapes
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getAllSurahs, getAllJuz, getAllHizb } from '@/data/quranData';
-import { saveUserConfig, addMemorizedPassage, getAllSessions, getMemorizedPassages, appliquerRecalcul } from '@/lib/database';
+import { saveUserConfig, addMemorizedPassage, getAllSessions, getMemorizedPassages, appliquerRecalcul, getUserConfig } from '@/lib/database';
 import { planifierRecalcul } from '@/lib/programGenerator';
 import { ScrollView as RNScrollView } from 'react-native';
 import type {
@@ -40,6 +40,32 @@ export default function OnboardingScreen() {
   const [objective, setObjective] = useState<Objective>({ type: 'juz_amma' });
   const [unit, setUnit] = useState<LearningUnit>({ type: 'verses', count: 5 });
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+
+  // Reprendre la configuration existante au lieu de repartir des valeurs par
+  // défaut.
+  //
+  // Sans cela, refaire le questionnaire pour corriger un seul réglage remettait
+  // l'objectif à « Juz' 'Amma », le rythme à 5 versets et les jours à
+  // lundi-vendredi : un changement de rythme devenait un changement d'objectif,
+  // en silence, et l'utilisateur n'avait aucun moyen de le voir avant de valider.
+  //
+  // Cela ne duplique rien : `addMemorizedPassage` met à jour la ligne existante
+  // au lieu d'en ajouter une seconde, et `planifierRecalcul` conserve
+  // l'historique des séances passées ou terminées.
+  useEffect(() => {
+    let actif = true;
+    (async () => {
+      const existante = await getUserConfig();
+      if (!actif || existante === null) return;
+      setMemorized(existante.memorizedPassages ?? []);
+      setObjective(existante.objective);
+      setUnit(existante.schedule.unit);
+      setSelectedDays(existante.schedule.days);
+    })();
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   const handleComplete = useCallback(async () => {
     const config: UserConfig = {
