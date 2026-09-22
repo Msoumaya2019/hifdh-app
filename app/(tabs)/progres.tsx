@@ -7,17 +7,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
-import { getUserConfig, getMemorizedPassages, getSessionsByDateRange, getReviewItemCount, getReviewItemsDue } from '@/lib/database';
-import { computeProgressStats, formatDate } from '@/lib/progress';
-import { aujourdHui, ilYAjours, versDateLocale } from '@/lib/dates';
-import type { UserConfig, LearningSession, MemorizedPassage, ProgressStats } from '@/types';
+import { getUserConfig, getMemorizedPassages, getSessionsByDateRange, getReviewItemCount } from '@/lib/database';
+import { computeProgressStats, computeActiviteHebdomadaire, formatDate } from '@/lib/progress';
+import { aujourdHui, ilYAjours, analyserDateLocale } from '@/lib/dates';
+import type {
+  UserConfig,
+  LearningSession,
+  MemorizedPassage,
+  ProgressStats,
+  SemaineActivite,
+} from '@/types';
 
 type Period = 'jour' | 'semaine' | 'mois';
+
+// Huit semaines : assez pour voir une régularité, assez peu pour que chaque
+// barre reste lisible sur un téléphone.
+const NOMBRE_SEMAINES = 8;
+
+// Hauteur des barres en points. Une hauteur en pourcentage dans une colonne
+// flexible se calcule par rapport à la colonne entière, étiquettes comprises :
+// les barres finissaient par déborder du cadre.
+const HAUTEUR_BARRE = 90;
 
 export default function ProgresScreen() {
   const [period, setPeriod] = useState<Period>('semaine');
   const [stats, setStats] = useState<ProgressStats | null>(null);
-  const [weekSessions, setWeekSessions] = useState<LearningSession[]>([]);
+  const [semaines, setSemaines] = useState<SemaineActivite[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -33,7 +48,13 @@ export default function ProgresScreen() {
 
     const computed = computeProgressStats(config, sessions, memorized, reviewCount);
     setStats(computed);
-    setWeekSessions(sessions);
+
+    // La fenêtre du graphique est plus large que celle des statistiques. La
+    // partager aurait changé en silence le sens de « jours d'apprentissage »,
+    // qui se compte sur trente jours.
+    const debutFenetre = ilYAjours(NOMBRE_SEMAINES * 7);
+    const pourLeGraphe = await getSessionsByDateRange(debutFenetre, today);
+    setSemaines(computeActiviteHebdomadaire(pourLeGraphe, NOMBRE_SEMAINES));
   }, []);
 
   useEffect(() => {
@@ -46,7 +67,11 @@ export default function ProgresScreen() {
     setRefreshing(false);
   }, [loadData]);
 
-  const periodValue = period === 'jour' ? stats?.todayVerses ?? 0
+  const periodValue = period === 'jour' ? stats?.todayPages ?? 0
+    : period === 'semaine' ? stats?.weekPages ?? 0
+    : stats?.monthPages ?? 0;
+
+  const periodVerses = period === 'jour' ? stats?.todayVerses ?? 0
     : period === 'semaine' ? stats?.weekVerses ?? 0
     : stats?.monthVerses ?? 0;
 
@@ -92,33 +117,45 @@ export default function ProgresScreen() {
           ))}
         </View>
 
-        {/* Versets mémorisés pour la période */}
+        {/* Pages mémorisées pour la période */}
         <Card>
           <View style={styles.statRow}>
             <View style={styles.statIcon}>
               <Ionicons name="book" size={28} color={colors.primary} />
             </View>
-            <View>
+            <View style={styles.statTextes}>
               <Text style={styles.statValue}>{periodValue}</Text>
               <Text style={styles.statLabel}>
-                Versets mémorisés ce {period}
+                Pages mémorisées ce {period} — {periodVerses} verset{periodVerses > 1 ? 's' : ''}
               </Text>
             </View>
           </View>
+          <Text style={styles.noteMesure}>
+            Une page compte pour la part de ses versets que tu connais : une page
+            à moitié sue compte 0,5. C’est une quantité de texte, pas un nombre de
+            pages achevées.
+          </Text>
         </Card>
 
         {/* Grille de statistiques */}
         <View style={styles.statsGrid}>
           <StatCard label="Hizb terminés" value={stats?.hizbCompleted ?? 0} icon="trophy" />
           <StatCard label="Jours d'apprentissage" value={stats?.totalLearningDays ?? 0} icon="calendar" />
-          <StatCard label="Révisions effectuées" value={stats?.totalReviews ?? 0} icon="repeat" />
-          <StatCard label="Versets (mois)" value={stats?.monthVerses ?? 0} icon="trending-up" />
+          {/* Ce nombre est celui des passages suivis par la révision espacée,
+              et non celui des révisions effectuées : le libellé précédent
+              annonçait un compte que la donnée ne portait pas. */}
+          <StatCard label="Passages en révision" value={stats?.totalReviews ?? 0} icon="repeat" />
+          <StatCard label="Pages (mois)" value={stats?.monthPages ?? 0} icon="trending-up" />
         </View>
 
-        {/* Graphique simple de la semaine */}
+        {/* Activité, semaine par semaine */}
         <Card>
-          <Text style={styles.cardTitle}>Activité de la semaine</Text>
-          <WeekChart sessions={weekSessions} />
+          <Text style={styles.cardTitle}>Activité, semaine par semaine</Text>
+          <Text style={styles.noteMesure}>
+            Huit dernières semaines, en pages. La dernière barre est la semaine en
+            cours, qui n’est pas terminée.
+          </Text>
+          <WeeksChart semaines={semaines} />
         </Card>
 
         {/* Estimation */}
@@ -148,39 +185,44 @@ function StatCard({ label, value, icon }: { label: string; value: number; icon: 
   );
 }
 
-function WeekChart({ sessions }: { sessions: LearningSession[] }) {
-  const dayLabels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-  const dayOffsets = [1, 2, 3, 4, 5, 6, 0]; // Lundi=1, ..., Dimanche=0
+function WeeksChart({ semaines }: { semaines: SemaineActivite[] }) {
+  if (semaines.length === 0) {
+    return <Text style={styles.panelVide}>Pas encore d’activité à afficher.</Text>;
+  }
 
-  // Calculer les versets mémorisés pour chaque jour de la semaine en cours
-  const today = new Date();
-  const startOfWeek = new Date(today);
-  const dayOfWeek = today.getDay(); // 0=Dim, 1=Lun, ...
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  startOfWeek.setDate(today.getDate() + mondayOffset);
-
-  const data = dayOffsets.map((_, i) => {
-    const dayDate = new Date(startOfWeek);
-    dayDate.setDate(startOfWeek.getDate() + i);
-    const dateStr = versDateLocale(dayDate);
-    return sessions
-      .filter((s) => s.date === dateStr && s.status === 'completed')
-      .reduce((sum, s) => sum + (s.endAyah - s.startAyah + 1), 0);
-  });
-
-  const max = Math.max(...data, 1);
+  const maximum = Math.max(...semaines.map((s) => s.pages), 1);
 
   return (
     <View style={styles.chartContainer}>
-      {data.map((value, i) => (
-        <View key={i} style={styles.chartBar}>
-          <View style={[styles.bar, { height: `${Math.max((value / max) * 100, value > 0 ? 8 : 0)}%` }]} />
-          <Text style={styles.chartLabel}>{dayLabels[i]}</Text>
-          {value > 0 && <Text style={styles.chartValue}>{value}</Text>}
-        </View>
-      ))}
+      {semaines.map((semaine) => {
+        const hauteur = semaine.pages > 0
+          ? Math.max((semaine.pages / maximum) * HAUTEUR_BARRE, 6)
+          : 2;
+
+        return (
+          <View key={semaine.debut} style={styles.chartBar}>
+            <Text style={styles.chartValue}>
+              {semaine.pages > 0 ? semaine.pages : ''}
+            </Text>
+            <View
+              style={[
+                styles.bar,
+                { height: hauteur },
+                semaine.enCours && styles.barEnCours,
+              ]}
+            />
+            <Text style={styles.chartLabel}>{etiquetteSemaine(semaine.debut)}</Text>
+          </View>
+        );
+      })}
     </View>
   );
+}
+
+/** « 21/9 » : le jour et le mois du lundi, seuls lisibles sous une barre. */
+function etiquetteSemaine(debut: string): string {
+  const date = analyserDateLocale(debut);
+  return `${date.getDate()}/${date.getMonth() + 1}`;
 }
 
 const styles = StyleSheet.create({
@@ -290,21 +332,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-around',
-    height: 120,
     marginTop: spacing.md,
+    gap: spacing.xs,
   },
   chartBar: {
-    alignItems: 'center',
     flex: 1,
-    height: '100%' as any,
+    alignItems: 'center',
     justifyContent: 'flex-end',
     gap: spacing.xs,
   },
   bar: {
-    width: 24,
+    width: '70%' as any,
+    maxWidth: 28,
     backgroundColor: colors.primary,
     borderRadius: radii.sm,
-    minHeight: 4,
+    minHeight: 2,
+  },
+  barEnCours: {
+    backgroundColor: colors.gold,
+  },
+  statTextes: {
+    flex: 1,
+  },
+  noteMesure: {
+    fontSize: fontSizes.xs,
+    color: colors.textTertiary,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+  },
+  panelVide: {
+    fontSize: fontSizes.sm,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: spacing.md,
   },
   chartLabel: {
     fontSize: fontSizes.xs,

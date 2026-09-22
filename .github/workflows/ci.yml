@@ -64,6 +64,19 @@ jobs:
       - name: Vérifier le pavage des divisions coraniques
         run: python3 data/quran/verifier_divisions.py
 
+      # La pagination du moushaf porte désormais l'affichage « page par page » et
+      # la mesure d'activité en pages. Une page fausse ne se voit pas sur un
+      # écran ; elle se voit sur les invariants. Ce contrôle vérifie aussi que
+      # les juz' et rub' du fichier de texte coïncident avec `divisions.json`,
+      # qui vient d'une autre source : deux tables de divisions indépendantes
+      # doivent tomber d'accord au verset près.
+      #
+      # Le recoupement avec l'API quran.com n'est pas ici : il dépend du réseau,
+      # et une vérification qu'on veut rejouable hors ligne ne doit pas échouer
+      # pour cette raison. Il se lance à la demande : `npm run recouper:pages`.
+      - name: Vérifier la pagination du moushaf
+        run: npm run verifier:pages
+
       # Le pavage dit que les divisions s'emboîtent ; il ne dit rien de leur
       # origine. 151 des 480 toumoun ont une borne déduite par report depuis les
       # données Qaloun, donc estimée à un verset près — et l'application les
@@ -84,3 +97,17 @@ jobs:
       # refuser une dérive ne prouve pas qu'il la détecte.
       - name: Falsifier le rapport des bornes estimées
         run: npm run falsifier:rapport
+
+      # Et pour la pagination : cinq mutations de la donnée, dont une frontière
+      # déplacée d'un seul verset. Chacune doit tomber, et tomber sur le
+      # contrôle qui la vise — un contrôle sans rapport qui échoue par ricochet
+      # ferait croire vérifié ce qui ne l'est pas.
+      - name: Falsifier les contrôles de pagination
+        run: npm run falsifier:pages
+
+      # Et pour « À renforcer » : six mutations, dont un passage marqué et dû qui
+      # perdrait son item de révision, et une révision en retard qui
+      # disparaîtrait parce que la comparaison de dates serait une égalité au
+      # lieu d'un ordre. Aucune des deux ne se verrait sur un téléphone.
+      - name: Falsifier les contrôles de renforcement
+        run: npm run falsifier:renforcement

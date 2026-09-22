@@ -1,28 +1,61 @@
-// Écran Programme - Séances d'apprentissage et révisions
+// Écran Programme - Séances d'apprentissage et passages à renforcer
+//
+// L'onglet « Révisions » a été remplacé par « À renforcer ». L'apprenant ne
+// reliait pas « révision » à son travail : ce qu'il connaît de son propre état,
+// c'est ce qu'il a marqué « à retravailler » dans le lecteur. La liste réunit
+// donc les deux signaux qui, ensemble, disent qu'un passage n'est pas solide :
+//
+//   - le marquage explicite de l'apprenant ;
+//   - l'échéance de la révision espacée.
+//
+// Les deux mènent aux mêmes deux gestes — « Renforcé » et « Pas encore » — qui
+// écrivent au même endroit : `renforcerPassage`, dans `lib/database.ts`.
 
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, SectionList } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
-import { getUserConfig, getSessionsByDateRange, getSessionsATraiter, getReviewItemsDue, updateSessionStatus, reporterSession, saveReviewItem, addMemorizedPassage } from '@/lib/database';
+import {
+  getUserConfig,
+  getSessionsByDateRange,
+  getSessionsATraiter,
+  getMemorizedPassages,
+  getReviewItemsDue,
+  updateSessionStatus,
+  reporterSession,
+  renforcerPassage,
+} from '@/lib/database';
 import { formatDate } from '@/lib/progress';
 import { aujourdHui, dansJours, ilYAjours } from '@/lib/dates';
 import { reporterSeance } from '@/lib/programGenerator';
-import { reviewCard, getNextReviewDate, createNewCard } from '@/lib/spacedRepetition';
-import type { UserConfig, LearningSession, ReviewItem, ReviewRating } from '@/types';
+import { passagesARenforcer, type PassageARenforcer } from '@/lib/renforcement';
+import { getSurah } from '@/data/quranData';
+import type { UserConfig, LearningSession } from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type Tab = 'apprentissage' | 'revisions';
+type Tab = 'apprentissage' | 'renforcer';
 
 export default function ProgrammeScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>('apprentissage');
+  const params = useLocalSearchParams<{ onglet?: string; t?: string }>();
+  const [activeTab, setActiveTab] = useState<Tab>(
+    params.onglet === 'renforcer' ? 'renforcer' : 'apprentissage'
+  );
   const [sessions, setSessions] = useState<LearningSession[]>([]);
-  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [aRenforcer, setARenforcer] = useState<PassageARenforcer[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [config, setConfig] = useState<UserConfig | null>(null);
+
+  // Un écran d'onglet reste monté : sa première initialisation ne se rejoue
+  // pas, et le paramètre reçu de l'accueil serait donc ignoré — le bouton
+  // « Renforcer mes passages » ne ferait rien, la seconde fois et toutes les
+  // suivantes. L'accueil joint un horodatage pour que la valeur change à
+  // chaque appui, sans quoi l'effet ne se déclencherait pas non plus.
+  useEffect(() => {
+    if (params.onglet === 'renforcer') setActiveTab('renforcer');
+  }, [params.onglet, params.t]);
 
   const loadData = useCallback(async () => {
     const today = aujourdHui();
@@ -40,8 +73,10 @@ export default function ProgrammeScreen() {
     setSessions(toutes);
     setConfig(await getUserConfig());
 
-    const due = await getReviewItemsDue(today);
-    setReviews(due);
+    // Les deux sources de « à renforcer », réunies par une fonction pure.
+    const memorises = await getMemorizedPassages();
+    const dues = await getReviewItemsDue(today);
+    setARenforcer(passagesARenforcer(memorises, dues, today));
   }, []);
 
   useEffect(() => {
@@ -55,26 +90,15 @@ export default function ProgrammeScreen() {
   }, [loadData]);
 
   const handleSessionComplete = async (sessionId: string) => {
-    await updateSessionStatus(sessionId, 'completed');
-    // Ajouter le passage aux mémorisés et créer un item de révision
     const session = sessions.find((s) => s.id === sessionId);
+    await updateSessionStatus(sessionId, 'completed');
+    // Le passage est acquis : niveau de connaissance et révision espacée
+    // avancent ensemble, par le même chemin que « Renforcé ».
     if (session) {
-      await addMemorizedPassage(session.surah, session.startAyah, session.endAyah, 'perfect');
-      
-      const card = createNewCard();
-      const reviewedCard = reviewCard(card, 'perfect');
-      const reviewItem: ReviewItem = {
-        id: `review_${sessionId}`,
-        surah: session.surah,
-        startAyah: session.startAyah,
-        endAyah: session.endAyah,
-        level: reviewedCard.level,
-        nextReviewDate: getNextReviewDate(reviewedCard.intervalDays),
-        reviewCount: 0,
-        intervalDays: reviewedCard.intervalDays,
-        createdAt: new Date().toISOString(),
-      };
-      await saveReviewItem(reviewItem);
+      await renforcerPassage(
+        { surah: session.surah, startAyah: session.startAyah, endAyah: session.endAyah },
+        true
+      );
     }
     await loadData();
   };
@@ -84,8 +108,8 @@ export default function ProgrammeScreen() {
     if (!session) return;
 
     // Le report doit réellement déplacer la séance. Se contenter de changer le
-    // statut la laissait datée dans le passé, hors de la plage affichée : elle
-    // disparaissait sans avoir été faite.
+    // statut laissait la séance datée dans le passé, hors de la plage
+    // affichée : elle disparaissait sans avoir été faite.
     const jours = config?.schedule.days ?? [];
     if (jours.length === 0) return;
 
@@ -93,22 +117,11 @@ export default function ProgrammeScreen() {
     await loadData();
   };
 
-  const handleReview = async (reviewId: string, rating: ReviewRating) => {
-    const review = reviews.find((r) => r.id === reviewId);
-    if (!review) return;
-
-    const card = { level: review.level, reviewCount: review.reviewCount, intervalDays: review.intervalDays, easinessFactor: 2.5 };
-    const updated = reviewCard(card, rating);
-    
-    const updatedReview: ReviewItem = {
-      ...review,
-      level: updated.level,
-      reviewCount: updated.reviewCount,
-      intervalDays: updated.intervalDays,
-      nextReviewDate: getNextReviewDate(updated.intervalDays),
-      lastReviewedAt: new Date().toISOString(),
-    };
-    await saveReviewItem(updatedReview);
+  const handleRenforcement = async (passage: PassageARenforcer, renforce: boolean) => {
+    await renforcerPassage(
+      { surah: passage.surah, startAyah: passage.startAyah, endAyah: passage.endAyah },
+      renforce
+    );
     await loadData();
   };
 
@@ -135,17 +148,21 @@ export default function ProgrammeScreen() {
         <Pressable
           style={[styles.tab, activeTab === 'apprentissage' && styles.tabActive]}
           onPress={() => setActiveTab('apprentissage')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'apprentissage' }}
         >
           <Text style={[styles.tabText, activeTab === 'apprentissage' && styles.tabTextActive]}>
             Apprentissage
           </Text>
         </Pressable>
         <Pressable
-          style={[styles.tab, activeTab === 'revisions' && styles.tabActive]}
-          onPress={() => setActiveTab('revisions')}
+          style={[styles.tab, activeTab === 'renforcer' && styles.tabActive]}
+          onPress={() => setActiveTab('renforcer')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'renforcer' }}
         >
-          <Text style={[styles.tabText, activeTab === 'revisions' && styles.tabTextActive]}>
-            Révisions {reviews.length > 0 && `(${reviews.length})`}
+          <Text style={[styles.tabText, activeTab === 'renforcer' && styles.tabTextActive]}>
+            À renforcer{aRenforcer.length > 0 ? ` (${aRenforcer.length})` : ''}
           </Text>
         </Pressable>
       </View>
@@ -181,19 +198,21 @@ export default function ProgrammeScreen() {
         />
       ) : (
         <FlatList
-          data={reviews}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item: review }) => (
-            <ReviewCard
-              review={review}
-              onRate={(rating) => handleReview(review.id, rating)}
+          data={aRenforcer}
+          keyExtractor={(item) => `${item.surah}:${item.startAyah}-${item.endAyah}`}
+          renderItem={({ item: passage }) => (
+            <RenforcementCard
+              passage={passage}
+              onRenforce={() => handleRenforcement(passage, true)}
+              onPasEncore={() => handleRenforcement(passage, false)}
               onPress={() =>
                 router.push({
                   pathname: '/lecteur',
                   params: {
-                    surah: review.surah,
-                    startAyah: review.startAyah,
-                    endAyah: review.endAyah,
+                    surah: passage.surah,
+                    startAyah: passage.startAyah,
+                    endAyah: passage.endAyah,
+                    renforcer: '1',
                   },
                 })
               }
@@ -202,10 +221,22 @@ export default function ProgrammeScreen() {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ItemSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
+          ListHeaderComponent={
+            aRenforcer.length > 0 ? (
+              <Text style={styles.intro}>
+                Ces passages ne sont pas encore solides. Lis-les, puis dis où tu en es.
+              </Text>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="checkmark-done-circle" size={48} color={colors.success} />
-              <Text style={styles.emptyText}>Aucune révision en attente</Text>
+              <Text style={styles.emptyText}>Rien à renforcer</Text>
+              <Text style={styles.emptyHint}>
+                Les passages que tu marques « À retravailler » dans le lecteur
+                apparaîtront ici, ainsi que ceux dont la révision est arrivée à
+                échéance.
+              </Text>
             </View>
           }
         />
@@ -252,35 +283,51 @@ function SessionCard({ session, onComplete, onPostpone, onPress }: {
   );
 }
 
-function ReviewCard({ review, onRate, onPress }: {
-  review: ReviewItem;
-  onRate: (rating: ReviewRating) => void;
+/**
+ * Une ligne de « À renforcer ».
+ *
+ * L'origine est écrite noir sur blanc : l'apprenant doit pouvoir distinguer ce
+ * qu'il a lui-même signalé de ce que l'application lui propose de revoir. Sans
+ * cela, il ne saurait pas pourquoi un passage qu'il croyait acquis se retrouve
+ * dans la liste.
+ */
+function RenforcementCard({ passage, onRenforce, onPasEncore, onPress }: {
+  passage: PassageARenforcer;
+  onRenforce: () => void;
+  onPasEncore: () => void;
   onPress: () => void;
 }) {
+  const surah = getSurah(passage.surah);
+  const marque = passage.origine === 'marque';
+
   return (
     <Card padding="md">
       <Pressable onPress={onPress} style={styles.sessionRow}>
-        <Ionicons name="repeat" size={24} color={colors.gold} />
+        <Ionicons
+          name={marque ? 'flag' : 'repeat'}
+          size={24}
+          color={marque ? colors.warning : colors.gold}
+        />
         <View style={styles.sessionDetails}>
-          <Text style={styles.sessionSurah}>Sourate {review.surah}</Text>
-          <Text style={styles.sessionVerses}>
-            Versets {review.startAyah} à {review.endAyah}
+          <Text style={styles.sessionSurah}>
+            {surah ? surah.nameFr : `Sourate ${passage.surah}`}
           </Text>
-          <Text style={styles.reviewLevel}>Niveau de maîtrise: {review.level}/8</Text>
+          <Text style={styles.sessionVerses}>
+            Versets {passage.startAyah} à {passage.endAyah}
+          </Text>
+          <Text style={styles.reviewLevel}>
+            {marque ? 'Marqué à retravailler' : 'Révision prévue'}
+          </Text>
         </View>
       </Pressable>
-      <View style={styles.reviewActions}>
-        <Pressable style={[styles.rateBtn, { backgroundColor: colors.masteryPerfect }]} onPress={() => onRate('perfect')}>
-          <Text style={styles.rateBtnText}>Parfait</Text>
+      <View style={styles.sessionActions}>
+        <Pressable style={[styles.actionBtn, styles.completeBtn]} onPress={onRenforce}>
+          <Ionicons name="checkmark" size={18} color={colors.textOnPrimary} />
+          <Text style={styles.actionBtnText}>Renforcé</Text>
         </Pressable>
-        <Pressable style={[styles.rateBtn, { backgroundColor: colors.masteryHesitant }]} onPress={() => onRate('hesitant')}>
-          <Text style={styles.rateBtnText}>Hésitations</Text>
-        </Pressable>
-        <Pressable style={[styles.rateBtn, { backgroundColor: colors.masteryPoor }]} onPress={() => onRate('errors')}>
-          <Text style={styles.rateBtnText}>Erreurs</Text>
-        </Pressable>
-        <Pressable style={[styles.rateBtn, { backgroundColor: colors.masteryRelearn }]} onPress={() => onRate('relearn')}>
-          <Text style={styles.rateBtnText}>Réapprendre</Text>
+        <Pressable style={[styles.actionBtn, styles.postponeBtn]} onPress={onPasEncore}>
+          <Ionicons name="time" size={18} color={colors.warning} />
+          <Text style={[styles.actionBtnText, { color: colors.warning }]}>Pas encore</Text>
         </Pressable>
       </View>
     </Card>
@@ -328,6 +375,12 @@ const styles = StyleSheet.create({
   list: {
     padding: spacing.lg,
     paddingTop: 0,
+  },
+  intro: {
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+    lineHeight: fontSizes.sm * 1.5,
   },
   sectionHeader: {
     fontSize: fontSizes.sm,
@@ -384,24 +437,6 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     fontWeight: fontWeights.semibold,
   },
-  reviewActions: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-    flexWrap: 'wrap' as const,
-  },
-  rateBtn: {
-    flex: 1,
-    minWidth: 70,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.sm,
-    alignItems: 'center',
-  },
-  rateBtnText: {
-    color: colors.textOnPrimary,
-    fontSize: fontSizes.xs,
-    fontWeight: fontWeights.semibold,
-  },
   empty: {
     alignItems: 'center',
     paddingVertical: spacing.xxxl * 2,
@@ -410,5 +445,12 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: fontSizes.md,
     color: colors.textTertiary,
+  },
+  emptyHint: {
+    fontSize: fontSizes.sm,
+    color: colors.textTertiary,
+    textAlign: 'center' as const,
+    lineHeight: fontSizes.sm * 1.5,
+    paddingHorizontal: spacing.lg,
   },
 });

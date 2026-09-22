@@ -54,11 +54,11 @@ gh workflow run android-apk.yml      # APK Android
 gh workflow run ios-unsigned.yml     # IPA non signé
 
 # ou en publiant une version
-git tag -a v1.0.3 -m "Hifdh 1.0.3"
-git push origin v1.0.3               # déclenche LES DEUX flux
+git tag -a v1.1.0 -m "Hifdh 1.1.0"
+git push origin v1.1.0               # déclenche LES DEUX flux
 ```
 
-Le nom du fichier produit vient de `app.json` (`hifdh-1.0.3.apk`) ; le nom de la version publiée
+Le nom du fichier produit vient de `app.json` (`hifdh-1.1.0.apk`) ; le nom de la version publiée
 vient de l'étiquette. **Gardez les deux alignés** — sans quoi le fichier et sa version portent deux
 numéros différents, et l'on ne sait plus quel binaire correspond à quelle étiquette.
 

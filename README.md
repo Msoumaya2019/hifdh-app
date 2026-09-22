@@ -27,8 +27,13 @@ hifdh-app/
 │   │   └── sync/           # Sauvegarde en ligne : instantané, validation, dépôts
 │   └── components/         # Composants réutilisables
 ├── data/quran/             # Données coraniques (texte, divisions, thumn)
+│   ├── quran_text_uthmani.json       # Texte + juz, page, hizbQuarter
+│   ├── verifier_pages.py             # Contrôle des 604 pages du moushaf
+│   └── rapport_divisions_estimees.py # Engendre docs/divisions-estimees.md
 ├── assets/                 # Polices (Amiri), images
 ├── supabase/               # Schéma SQL Supabase
+│   ├── schema.sql                    # Tables, politiques RLS (rejouable)
+│   └── administration.sql            # Rôles, vérification des toumoun (rejouable)
 ├── scripts/                # Vérifications exécutables (schéma, flux, données)
 ├── tests/                  # Tests (node:test)
 ├── .github/workflows/      # CI/CD GitHub Actions
@@ -52,6 +57,15 @@ hifdh-app/
     **engendré** par `data/quran/rapport_divisions_estimees.py` ; le contrôle
     `npm run verifier:rapport` refuse qu'il dérive des données sans que personne
     ne le voie.
+- **Pagination du moushaf** : les 604 pages du moushaf de Médine. Le champ `page`
+  est porté par chaque verset ; il était présent depuis l'import mais n'était lu
+  par aucun code. `npm run verifier:pages` en établit la cohérence (6 236 versets
+  répartis sur 604 pages, dans l'ordre, sans saut ni recul) et le recoupement avec
+  `divisions.json` — les 30 transitions de juz' et les 240 de rub' tombent
+  exactement au même endroit, deux sources indépendantes. `npm run recouper:pages`
+  compare en outre les 6 236 versets à l'API de quran.com : **aucun écart**.
+  Les **bornes** de page sont donc exactes ; la coupure des **lignes**, elle,
+  suit l'écran et non la page imprimée.
 - **Licences et provenance** : voir `NOTICE.md`
 
 Le texte coranique n'est jamais modifié ni généré : il est recopié de la source
@@ -97,9 +111,21 @@ npx expo start
 npm run typecheck          # TypeScript, sans émission
 npm test                   # node:test, sans transpileur
 npm run verifier:donnees   # cohérence des divisions coraniques
+npm run verifier:pages     # cohérence de la pagination du moushaf (604 pages)
+npm run recouper:pages     # recoupement des 6 236 pages avec l'API quran.com
+npm run verifier:rapport   # le rapport des bornes estimées suit les données
 npm run verifier:flux      # analyse statique des flux GitHub Actions
 npm run verifier:supabase  # schéma Supabase sous Postgres réel (PGlite)
+npm run falsifier:pages    # éprouve les contrôles de pagination
+npm run falsifier:renforcement  # éprouve les contrôles de « À renforcer »
 ```
+
+`falsifier:*` mute réellement le fichier pour vérifier que le contrôle **détecte**
+la faute qu'il prétend couvrir, puis restaure les octets d'origine (empreinte
+SHA-256 à l'appui). Un contrôle vert que rien ne ferait rougir ne prouve rien.
+
+`recouper:pages` interroge le réseau : il n'est donc **pas** dans la CI, où un
+site tiers indisponible ferait passer une pagination correcte pour fautive.
 
 ## Compilation
 
@@ -113,10 +139,10 @@ gh workflow run android-apk.yml
 gh workflow run ios-unsigned.yml
 
 # … ou publier une version : les deux flux se déclenchent sur une étiquette
-git tag -a v1.0.3 -m "Description" && git push origin v1.0.3
+git tag -a v1.1.0 -m "Description" && git push origin v1.1.0
 ```
 
-Le nom du fichier produit vient de `app.json` (`hifdh-1.0.3.apk`), celui de la version publiée de
+Le nom du fichier produit vient de `app.json` (`hifdh-1.1.0.apk`), celui de la version publiée de
 l'étiquette : **gardez les deux alignés**, sinon le binaire et sa version portent deux numéros
 différents.
 

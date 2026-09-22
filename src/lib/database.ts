@@ -9,6 +9,8 @@ import type {
   MemorizedPassage,
 } from '@/types';
 import { aujourdHui } from './dates';
+import { createNewCard, getNextReviewDate, reviewCard } from './spacedRepetition';
+import { effetRenforcement } from './renforcement';
 
 const DB_NAME = 'hifdh.db';
 
@@ -156,6 +158,81 @@ export async function removeMemorizedPassage(
     `DELETE FROM memorized_passages WHERE surah = ? AND start_ayah = ? AND end_ayah = ?`,
     [surah, startAyah, endAyah]
   );
+}
+
+/** Clé d'un passage : son étendue, qui est ce qui l'identifie en base. */
+function clePassage(passage: { surah: number; startAyah: number; endAyah: number }): string {
+  return `${passage.surah}:${passage.startAyah}-${passage.endAyah}`;
+}
+
+/**
+ * Aligne les passages déclarés sur une nouvelle liste.
+ *
+ * `addMemorizedPassage` ajoute ou met à jour, mais ne retire jamais. Décocher
+ * une sourate dans le questionnaire la laissait donc en base, où le recalcul la
+ * comptait comme connue : la désélection était sans effet, et invisible, puisque
+ * l'écran la montrait décochée et que la réouverture la recochait.
+ *
+ * Deux garde-fous, parce que la table mêle deux origines :
+ *
+ *   - seuls les passages **déclarés** sont retirés, c'est-à-dire ceux que le
+ *     questionnaire avait posés ;
+ *   - un passage de même étendue qu'une séance terminée est conservé. La
+ *     progression acquise par le travail ne doit pas disparaître parce qu'un
+ *     questionnaire a changé d'avis — et rien ne permet ensuite de la retrouver.
+ *
+ * Le tout dans une seule transaction : une interruption au milieu laisserait un
+ * état où la moitié des déclarations est à jour et l'autre non.
+ */
+export async function synchroniserPassagesDeclares(
+  anciens: MemorizedPassage[],
+  nouveaux: MemorizedPassage[]
+): Promise<{ poses: number; retires: number; conserves: number }> {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+
+  const voulues = new Map(nouveaux.map((p) => [clePassage(p), p]));
+  const aRetirer = anciens.filter((p) => !voulues.has(clePassage(p)));
+
+  let retires = 0;
+  let conserves = 0;
+
+  await db.withTransactionAsync(async () => {
+    for (const passage of nouveaux) {
+      const miseAJour = await db.runAsync(
+        `UPDATE memorized_passages SET level = ?, updated_at = ?
+         WHERE surah = ? AND start_ayah = ? AND end_ayah = ?`,
+        [passage.level, now, passage.surah, passage.startAyah, passage.endAyah]
+      );
+      if ((miseAJour.changes ?? 0) > 0) continue;
+
+      await db.runAsync(
+        `INSERT INTO memorized_passages (surah, start_ayah, end_ayah, level, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [passage.surah, passage.startAyah, passage.endAyah, passage.level, now, now]
+      );
+    }
+
+    for (const passage of aRetirer) {
+      const seance = await db.getFirstAsync<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM learning_sessions
+          WHERE surah = ? AND start_ayah = ? AND end_ayah = ? AND status = 'completed'`,
+        [passage.surah, passage.startAyah, passage.endAyah]
+      );
+      if ((seance?.n ?? 0) > 0) {
+        conserves += 1;
+        continue;
+      }
+
+      const resultat = await db.runAsync(
+        `DELETE FROM memorized_passages WHERE surah = ? AND start_ayah = ? AND end_ayah = ?`,
+        [passage.surah, passage.startAyah, passage.endAyah]
+      );
+      retires += resultat.changes ?? 0;
+    }
+  });
+
+  return { poses: nouveaux.length, retires, conserves };
 }
 
 // === Séances d'apprentissage ===
@@ -464,6 +541,122 @@ export async function getAllReviewItems(): Promise<ReviewItem[]> {
     intervalDays: r.interval_days,
     createdAt: r.created_at,
   }));
+}
+
+/**
+ * L'item de révision espacée d'un passage précis, s'il existe.
+ *
+ * La correspondance se fait sur l'étendue exacte : c'est ainsi que les items
+ * sont créés — à partir de l'étendue d'une séance — et c'est donc la seule clé
+ * qui les retrouve. Une correspondance approximative rapprocherait deux
+ * passages voisins que l'apprenant distingue.
+ */
+export async function getReviewItemParPassage(
+  surah: number,
+  startAyah: number,
+  endAyah: number
+): Promise<ReviewItem | null> {
+  const db = await getDatabase();
+  const r = await db.getFirstAsync<{
+    id: string;
+    surah: number;
+    start_ayah: number;
+    end_ayah: number;
+    level: number;
+    next_review_date: string;
+    last_reviewed_at: string | null;
+    review_count: number;
+    interval_days: number;
+    created_at: string;
+  }>(
+    `SELECT * FROM review_items
+      WHERE surah = ? AND start_ayah = ? AND end_ayah = ?
+      ORDER BY created_at DESC LIMIT 1`,
+    [surah, startAyah, endAyah]
+  );
+
+  if (!r) return null;
+
+  return {
+    id: r.id,
+    surah: r.surah,
+    startAyah: r.start_ayah,
+    endAyah: r.end_ayah,
+    level: r.level,
+    nextReviewDate: r.next_review_date,
+    lastReviewedAt: r.last_reviewed_at ?? undefined,
+    reviewCount: r.review_count,
+    intervalDays: r.interval_days,
+    createdAt: r.created_at,
+  };
+}
+
+/**
+ * Enregistrer le verdict de l'apprenant sur un passage : renforcé, ou pas
+ * encore.
+ *
+ * Deux écritures, indissociables :
+ *
+ *   - le **niveau de connaissance**, qui décide de la présence du passage dans
+ *     « À renforcer ». « Pas encore » l'y laisse, « Renforcé » l'en retire ;
+ *   - la **révision espacée**, qui décide de la date à laquelle il reviendra.
+ *     Un passage renforcé repart à un jour puis s'espace ; un passage qu'on
+ *     n'a pas su renforcer retombe au niveau 0 et revient demain.
+ *
+ * Les deux vivaient dans des écrans séparés, et ne se parlaient pas : un
+ * passage pouvait être déclaré parfait et rester indéfiniment dans la liste des
+ * révisions dues, faute de quoi que ce soit pour les rapprocher.
+ *
+ * Le tout dans une seule transaction : une interruption entre les deux
+ * laisserait un passage marqué renforcé dont la révision n'aurait pas avancé —
+ * il reviendrait demain sans raison apparente.
+ */
+export async function renforcerPassage(
+  passage: { surah: number; startAyah: number; endAyah: number },
+  renforce: boolean
+): Promise<void> {
+  const db = await getDatabase();
+  const { niveau, note } = effetRenforcement(renforce);
+
+  const existant = await getReviewItemParPassage(
+    passage.surah,
+    passage.startAyah,
+    passage.endAyah
+  );
+
+  const base = existant
+    ? {
+        level: existant.level,
+        reviewCount: existant.reviewCount,
+        intervalDays: existant.intervalDays,
+        easinessFactor: 2.5,
+      }
+    : createNewCard();
+
+  const suite = reviewCard(base, note);
+
+  const item: ReviewItem = {
+    id: existant?.id ?? `review_${passage.surah}_${passage.startAyah}_${passage.endAyah}`,
+    surah: passage.surah,
+    startAyah: passage.startAyah,
+    endAyah: passage.endAyah,
+    level: suite.level,
+    nextReviewDate: getNextReviewDate(suite.intervalDays),
+    lastReviewedAt: new Date().toISOString(),
+    reviewCount: suite.reviewCount,
+    intervalDays: suite.intervalDays,
+    createdAt: existant?.createdAt ?? new Date().toISOString(),
+  };
+
+  await db.withTransactionAsync(async () => {
+    // `addMemorizedPassage` et non un `UPDATE` : le passage peut n'avoir encore
+    // aucune ligne — un apprenant qui ouvre un passage depuis l'onglet Coran et
+    // le marque « à retravailler » n'en a pas. Un `UPDATE` seul n'aurait rien
+    // écrit, sans le dire, et le passage n'aurait jamais rejoint la liste.
+    await addMemorizedPassage(passage.surah, passage.startAyah, passage.endAyah, niveau);
+
+    await db.runAsync(INSERT_REVIEW, parametresReview(item));
+  });
 }
 
 // === Sauvegarde et restauration ===

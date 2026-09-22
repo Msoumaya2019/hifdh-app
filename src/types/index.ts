@@ -112,11 +112,24 @@ export interface LearningSchedule {
   days: number[]; // 0=Dim, 1=Lun, ..., 6=Sam
 }
 
+/**
+ * Comment le texte coranique s'affiche.
+ *
+ *   - `versets` : un verset par bloc, avec son numéro ;
+ *   - `page`    : la page du moushaf, texte continu et médaillons.
+ *
+ * Le choix est conservé dans la configuration, et voyage donc avec la
+ * sauvegarde : le retrouver à chaque ouverture serait un réglage qu'on refait
+ * sans cesse.
+ */
+export type ModeAffichage = 'versets' | 'page';
+
 export interface UserConfig {
   memorizedPassages: MemorizedPassage[];
   objective: Objective;
   schedule: LearningSchedule;
   onboardingCompleted: boolean;
+  affichage?: { mode: ModeAffichage };
 }
 
 // === Programme d'apprentissage ===
@@ -160,8 +173,28 @@ export interface ProgressStats {
   todayVerses: number;
   weekVerses: number;
   monthVerses: number;
+  /** Pages équivalentes : voir `pagesEquivalentes` dans `progress.ts`. */
+  todayPages: number;
+  weekPages: number;
+  monthPages: number;
   hizbCompleted: number;
   totalLearningDays: number;
   totalReviews: number;
   estimatedCompletionDate?: string;
+}
+
+/** Une semaine d'activité, du lundi au dimanche. */
+export interface SemaineActivite {
+  /** Lundi, « AAAA-MM-JJ ». */
+  debut: string;
+  /** Dimanche, « AAAA-MM-JJ ». */
+  fin: string;
+  /** Pages équivalentes mémorisées pendant la semaine. */
+  pages: number;
+  /** Versets distincts mémorisés pendant la semaine. */
+  versets: number;
+  /** Séances terminées pendant la semaine. */
+  seances: number;
+  /** Vrai pour la semaine en cours, qui n'est pas terminée. */
+  enCours: boolean;
 }

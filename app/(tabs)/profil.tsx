@@ -121,7 +121,7 @@ export default function ProfilScreen() {
           <View style={styles.knowledgeRow}>
             <Ionicons name="time" size={20} color={colors.warning} />
             <Text style={styles.knowledgeText}>
-              {memorized.filter((m) => m.level === 'needs_review').length} passages à réviser
+              {memorized.filter((m) => m.level === 'needs_review').length} passages à renforcer
             </Text>
           </View>
           <View style={styles.knowledgeRow}>

@@ -1,6 +1,6 @@
 {
   "name": "hifdh-app",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -10,12 +10,16 @@
     "test": "node --import ./scripts/register-alias.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "verifier:donnees": "python data/quran/verifier_divisions.py",
+    "verifier:pages": "python data/quran/verifier_pages.py",
+    "recouper:pages": "python data/quran/verifier_pages.py --recouper-api",
     "verifier:rapport": "python data/quran/rapport_divisions_estimees.py --verifier",
     "engendrer:rapport": "python data/quran/rapport_divisions_estimees.py",
     "verifier:supabase": "node scripts/banc_supabase.mjs",
     "verifier:flux": "node scripts/analyser-flux.mjs",
     "falsifier:tests": "python scripts/falsifier_tests_sync.py",
     "falsifier:rapport": "python scripts/falsifier_rapport.py",
+    "falsifier:pages": "python scripts/falsifier_pages.py",
+    "falsifier:renforcement": "python scripts/falsifier_renforcement.py",
     "build:apk": "gh workflow run android-apk.yml",
     "build:ipa": "gh workflow run ios-unsigned.yml"
   },

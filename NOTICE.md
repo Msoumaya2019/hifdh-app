@@ -77,6 +77,42 @@ contrôle `npm run verifier:rapport` refuse qu'il dérive des données.
 
 ---
 
+## 2 bis. Pagination du moushaf (604 pages)
+
+- **Ce que c'est** : le découpage en 604 pages du moushaf de Médine, porté par le
+  champ `page` de chaque verset de `data/quran/quran_text_uthmani.json`.
+- **Origine** : le jeu de données initialement intégré, dont les champs `juz`,
+  `page` et `hizbQuarter` ont été conservés tels quels lors du basculement du
+  texte vers Tanzil (voir la note de provenance ci-dessus). Le texte, lui, vient
+  de Tanzil ; la pagination ne dépend pas de la source du texte, puisque les deux
+  numérotent les mêmes 6 236 versets de la même façon.
+
+Cette pagination n'a pas été reprise sur parole. Elle est corroborée par trois
+chemins indépendants :
+
+1. **Invariants** — 604 pages numérotées de 1 à 604, sans trou ni recul, page 1 =
+   1:1-7, page 2 = 2:1-5, page 604 = 112:1-114:6, et 6 236 versets répartis
+   exactement une fois. Contrôle : `data/quran/verifier_pages.py`, lancé par
+   `npm run verifier:pages`.
+2. **Accord avec une seconde source de divisions** — les champs `juz` et
+   `hizbQuarter` du fichier de texte et `divisions.json` (dérivé de quran-meta,
+   source KFGQPC) décrivent les mêmes frontières, au verset près : 30 juz' et
+   240 rub' al-hizb, zéro écart.
+3. **Accord avec l'API quran.com** — le champ `page_number` de l'API coïncide
+   avec la pagination du dépôt sur les 6 236 versets. Contrôle :
+   `npm run recouper:pages`. Ce recoupement dépend du réseau et n'est donc pas
+   dans l'intégration continue ; il se lance à la demande.
+
+Une page imprimée du moushaf (page 401, Juz' 20, sourate 29) a également servi
+de témoin : elle porte 29:39 à 29:45, ce que la donnée du dépôt reproduit.
+
+**Ce que l'application affiche exactement** : les bornes de page, c'est-à-dire la
+liste des versets que porte chaque page. **Ce qu'elle n'affiche pas exactement** :
+les coupures de ligne à l'intérieur d'une page, qui dépendent de la fonte et de
+la justification de l'édition imprimée. L'écran le dit à l'utilisateur.
+
+---
+
 ## 3. Polices de caractères
 
 - **Œuvre** : Amiri — Amiri Regular, Amiri Bold, Amiri Quran

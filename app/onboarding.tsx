@@ -1,6 +1,6 @@
 // Écran d'onboarding - Questionnaire initial en 4 étapes
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   ScrollView,
   Pressable,
   Switch,
-  FlatList,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,15 +16,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getAllSurahs, getAllJuz, getAllHizb } from '@/data/quranData';
-import { saveUserConfig, addMemorizedPassage, getAllSessions, getMemorizedPassages, appliquerRecalcul, getUserConfig } from '@/lib/database';
+import { saveUserConfig, synchroniserPassagesDeclares, getAllSessions, getMemorizedPassages, appliquerRecalcul, getUserConfig } from '@/lib/database';
 import { planifierRecalcul } from '@/lib/programGenerator';
-import { ScrollView as RNScrollView } from 'react-native';
 import type {
   UserConfig,
   MemorizedPassage,
   Objective,
   LearningUnit,
   KnowledgeLevel,
+  Surah,
 } from '@/types';
 
 const TOTAL_STEPS = 4;
@@ -40,6 +39,11 @@ export default function OnboardingScreen() {
   const [objective, setObjective] = useState<Objective>({ type: 'juz_amma' });
   const [unit, setUnit] = useState<LearningUnit>({ type: 'verses', count: 5 });
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+
+  // La liste déclarée au chargement, conservée pour savoir ce qui a été
+  // décoché. Sans elle, impossible de distinguer « jamais déclaré » de
+  // « déclaré puis retiré » — et donc impossible de retirer quoi que ce soit.
+  const declareesAuChargement = useRef<MemorizedPassage[]>([]);
 
   // Reprendre la configuration existante au lieu de repartir des valeurs par
   // défaut.
@@ -57,6 +61,7 @@ export default function OnboardingScreen() {
     (async () => {
       const existante = await getUserConfig();
       if (!actif || existante === null) return;
+      declareesAuChargement.current = existante.memorizedPassages ?? [];
       setMemorized(existante.memorizedPassages ?? []);
       setObjective(existante.objective);
       setUnit(existante.schedule.unit);
@@ -77,10 +82,14 @@ export default function OnboardingScreen() {
 
     await saveUserConfig(config);
 
-    // Sauvegarder les passages mémorisés en base
-    for (const passage of memorized) {
-      await addMemorizedPassage(passage.surah, passage.startAyah, passage.endAyah, passage.level);
-    }
+    // Aligner la base sur la liste déclarée.
+    //
+    // La boucle précédente se contentait d'ajouter : décocher une sourate la
+    // laissait en base, le recalcul la comptait comme connue, et la
+    // réouverture la recochait. La désélection était donc sans effet, tout en
+    // paraissant l'avoir été.
+    await synchroniserPassagesDeclares(declareesAuChargement.current, memorized);
+    declareesAuChargement.current = memorized;
 
     // Recalculer le programme en tenant compte de l'existant.
     //
@@ -163,6 +172,33 @@ export default function OnboardingScreen() {
 
 // === Étape 1: Que connais-tu déjà ? ===
 
+// Les trois niveaux de la spécification. « unknown » n'est pas l'absence de
+// déclaration : c'est un passage que l'on sait ne pas connaître. Il compte donc
+// dans le programme à venir, mais pas dans la progression — ce que
+// `subtractMemorized` et `computeProgressStats` traduisent déjà.
+const NIVEAUX: {
+  niveau: KnowledgeLevel;
+  libelle: string;
+  court: string;
+  icone: string;
+  couleur: string;
+}[] = [
+  { niveau: 'perfect', libelle: 'Parfaitement mémorisé', court: 'Parfait', icone: 'checkmark', couleur: colors.success },
+  { niveau: 'needs_review', libelle: 'À réviser', court: 'À réviser', icone: 'time', couleur: colors.warning },
+  { niveau: 'unknown', libelle: 'Pas encore connu', court: 'Inconnu', icone: 'help', couleur: colors.textTertiary },
+];
+
+function libelleNiveau(niveau: KnowledgeLevel): string {
+  return NIVEAUX.find((n) => n.niveau === niveau)?.libelle ?? niveau;
+}
+
+function memePassage(
+  a: { surah: number; startAyah: number; endAyah: number },
+  b: { surah: number; startAyah: number; endAyah: number }
+): boolean {
+  return a.surah === b.surah && a.startAyah === b.startAyah && a.endAyah === b.endAyah;
+}
+
 function StepKnowledge({
   memorized,
   setMemorized,
@@ -171,93 +207,253 @@ function StepKnowledge({
   setMemorized: (m: MemorizedPassage[]) => void;
 }) {
   const surahs = getAllSurahs();
+  const [ouverte, setOuverte] = useState<number | null>(null);
+  const [debut, setDebut] = useState('1');
+  const [fin, setFin] = useState('1');
+  const [niveauPassage, setNiveauPassage] = useState<KnowledgeLevel>('perfect');
+  const [message, setMessage] = useState<string | null>(null);
 
-  const toggleSurah = (surahNum: number, level: KnowledgeLevel) => {
-    const existing = memorized.find((m) => m.surah === surahNum);
-    if (existing && existing.level === level) {
-      // Retirer
-      setMemorized(memorized.filter((m) => m.surah !== surahNum));
-    } else {
-      // Ajouter ou mettre à jour
-      const surah = surahs.find((s) => s.number === surahNum);
-      if (!surah) return;
-      const newMem = memorized.filter((m) => m.surah !== surahNum);
-      newMem.push({
-        surah: surahNum,
-        startAyah: 1,
-        endAyah: surah.ayahCount,
-        level,
-      });
-      setMemorized(newMem);
-    }
-  };
+  const passagesDe = (surahNum: number) => memorized.filter((m) => m.surah === surahNum);
 
-  const getLevel = (surahNum: number): KnowledgeLevel | undefined => {
-    return memorized.find((m) => m.surah === surahNum)?.level;
-  };
-
-  const renderSurah = ({ item: surah }: { item: typeof surahs[0] }) => {
-    const level = getLevel(surah.number);
-    return (
-      <View style={styles.surahItem}>
-        <View style={styles.surahInfo}>
-          <Text style={styles.surahName}>{surah.nameFr}</Text>
-          <Text style={styles.surahDetails}>
-            {surah.ayahCount} versets · {surah.isMeccan ? 'Mecquoise' : 'Médinoise'}
-          </Text>
-        </View>
-        <View style={styles.levelButtons}>
-          <Pressable
-            style={[styles.levelBtn, level === 'perfect' && styles.levelBtnPerfect]}
-            onPress={() => toggleSurah(surah.number, 'perfect')}
-          >
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color={level === 'perfect' ? colors.textOnPrimary : colors.textTertiary}
-            />
-          </Pressable>
-          <Pressable
-            style={[styles.levelBtn, level === 'needs_review' && styles.levelBtnReview]}
-            onPress={() => toggleSurah(surah.number, 'needs_review')}
-          >
-            <Ionicons
-              name="time"
-              size={14}
-              color={level === 'needs_review' ? colors.textOnPrimary : colors.textTertiary}
-            />
-          </Pressable>
-        </View>
-      </View>
+  const declarationEntiere = (surah: Surah) =>
+    memorized.find(
+      (m) => m.surah === surah.number && m.startAyah === 1 && m.endAyah === surah.ayahCount
     );
+
+  /**
+   * Pose, change ou retire le niveau d'une sourate entière.
+   *
+   * Toucher le niveau déjà actif **décoche** : c'est le seul geste qui retire
+   * une déclaration, et il doit être possible sans détour. Les passages précis
+   * de la même sourate ne sont pas touchés — un chevauchement est sans effet,
+   * la progression comptant des versets distincts.
+   */
+  const basculerSourate = (surah: Surah, niveauChoisi: KnowledgeLevel) => {
+    const entiere = declarationEntiere(surah);
+    const sansEntiere = memorized.filter((m) => !memePassage(m, {
+      surah: surah.number,
+      startAyah: 1,
+      endAyah: surah.ayahCount,
+    }));
+
+    if (entiere?.level === niveauChoisi) {
+      setMemorized(sansEntiere);
+      return;
+    }
+
+    setMemorized([
+      ...sansEntiere,
+      { surah: surah.number, startAyah: 1, endAyah: surah.ayahCount, level: niveauChoisi },
+    ]);
+  };
+
+  const ajouterPassage = (surah: Surah) => {
+    const d = parseInt(debut, 10);
+    const f = parseInt(fin, 10);
+
+    if (!Number.isFinite(d) || !Number.isFinite(f)) {
+      setMessage('Indique un début et une fin, en chiffres.');
+      return;
+    }
+    if (d < 1 || f > surah.ayahCount || d > f) {
+      setMessage(
+        `La sourate ${surah.nameFr} compte ${surah.ayahCount} versets : choisis un intervalle entre 1 et ${surah.ayahCount}.`
+      );
+      return;
+    }
+
+    const voulu = { surah: surah.number, startAyah: d, endAyah: f, level: niveauPassage };
+    setMemorized([...memorized.filter((m) => !memePassage(m, voulu)), voulu]);
+    setMessage(null);
+  };
+
+  const retirerPassage = (passage: MemorizedPassage) => {
+    setMemorized(memorized.filter((m) => !memePassage(m, passage)));
+  };
+
+  const entieres = memorized.filter((m) =>
+    surahs.some((s) => s.number === m.surah && m.startAyah === 1 && m.endAyah === s.ayahCount)
+  ).length;
+  const precis = memorized.length - entieres;
+
+  const ouvrir = (surah: Surah) => {
+    const dejaOuverte = ouverte === surah.number;
+    setOuverte(dejaOuverte ? null : surah.number);
+    setDebut('1');
+    setFin(String(surah.ayahCount));
+    setNiveauPassage('perfect');
+    setMessage(null);
   };
 
   return (
     <View>
       <Text style={styles.stepTitle}>Que connais-tu déjà du Coran ?</Text>
       <Text style={styles.stepSubtitle}>
-        Sélectionne les sourates que tu connais. Tu pourras modifier cela plus tard.
+        Sélectionne les sourates que tu connais, avec leur niveau. Touche à nouveau
+        un niveau pour décocher. Tu pourras modifier cela plus tard.
       </Text>
 
       <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
-          <Text style={styles.legendText}>Parfaitement mémorisé</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: colors.warning }]} />
-          <Text style={styles.legendText}>À réviser</Text>
-        </View>
+        {NIVEAUX.map((n) => (
+          <View key={n.niveau} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: n.couleur }]} />
+            <Text style={styles.legendText}>{n.libelle}</Text>
+          </View>
+        ))}
       </View>
 
-      <FlatList
-        data={surahs}
-        keyExtractor={(item) => String(item.number)}
-        renderItem={renderSurah}
-        scrollEnabled={false}
-        ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: colors.border }} />}
-        style={styles.surahList}
-      />
+      <Text style={styles.knowledgeSummary}>
+        {memorized.length === 0
+          ? 'Aucune connaissance déclarée pour le moment.'
+          : `${entieres} sourate${entieres > 1 ? 's' : ''} entière${entieres > 1 ? 's' : ''}` +
+            (precis > 0 ? ` et ${precis} passage${precis > 1 ? 's' : ''} précis` : '') +
+            ' déclarés.'}
+      </Text>
+
+      <View style={styles.surahList}>
+        {surahs.map((surah, index) => {
+          const entiere = declarationEntiere(surah);
+          const passages = passagesDe(surah.number);
+          const estOuverte = ouverte === surah.number;
+
+          return (
+            <View key={surah.number}>
+              {index > 0 && <View style={styles.separateur} />}
+
+              <View style={styles.surahItem}>
+                <Pressable style={styles.surahInfo} onPress={() => ouvrir(surah)}>
+                  <Text style={styles.surahName}>{surah.nameFr}</Text>
+                  <Text style={styles.surahDetails}>
+                    {surah.ayahCount} versets · {surah.isMeccan ? 'Mecquoise' : 'Médinoise'}
+                    {passages.length > 0
+                      ? ` · ${passages.length} déclaration${passages.length > 1 ? 's' : ''}`
+                      : ''}
+                  </Text>
+                </Pressable>
+
+                <View style={styles.levelButtons}>
+                  {NIVEAUX.map((n) => {
+                    const actif = entiere?.level === n.niveau;
+                    return (
+                      <Pressable
+                        key={n.niveau}
+                        accessibilityLabel={`${n.libelle} — sourate ${surah.nameFr}`}
+                        accessibilityState={{ selected: actif }}
+                        onPress={() => basculerSourate(surah, n.niveau)}
+                        style={[
+                          styles.levelBtn,
+                          actif && { backgroundColor: n.couleur, borderColor: n.couleur },
+                        ]}
+                      >
+                        <Ionicons
+                          name={n.icone as any}
+                          size={14}
+                          color={actif ? colors.textOnPrimary : colors.textTertiary}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                  <Pressable
+                    accessibilityLabel={`Passages précis — sourate ${surah.nameFr}`}
+                    onPress={() => ouvrir(surah)}
+                    style={[styles.levelBtn, estOuverte && styles.levelBtnOuvert]}
+                  >
+                    <Ionicons
+                      name={estOuverte ? 'chevron-up' : 'ellipsis-horizontal'}
+                      size={14}
+                      color={estOuverte ? colors.textOnPrimary : colors.primary}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+
+              {estOuverte && (
+                <View style={styles.passagePanel}>
+                  <Text style={styles.panelTitle}>Passages précis</Text>
+                  <Text style={styles.panelHint}>
+                    Pour une partie de sourate seulement. Touche une déclaration
+                    ci-dessous pour la retirer.
+                  </Text>
+
+                  <View style={styles.passageForm}>
+                    <TextInput
+                      style={styles.champNombre}
+                      keyboardType="number-pad"
+                      value={debut}
+                      onChangeText={setDebut}
+                      placeholder="du"
+                      accessibilityLabel="Premier verset"
+                    />
+                    <Text style={styles.passageFormSep}>à</Text>
+                    <TextInput
+                      style={styles.champNombre}
+                      keyboardType="number-pad"
+                      value={fin}
+                      onChangeText={setFin}
+                      placeholder="au"
+                      accessibilityLabel="Dernier verset"
+                    />
+                    <Pressable style={styles.boutonAjouter} onPress={() => ajouterPassage(surah)}>
+                      <Ionicons name="add" size={18} color={colors.textOnPrimary} />
+                      <Text style={styles.boutonAjouterTexte}>Ajouter</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.niveauxLigne}>
+                    {NIVEAUX.map((n) => (
+                      <Pressable
+                        key={n.niveau}
+                        onPress={() => setNiveauPassage(n.niveau)}
+                        style={[
+                          styles.niveauPuce,
+                          niveauPassage === n.niveau && {
+                            backgroundColor: n.couleur,
+                            borderColor: n.couleur,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.niveauPuceTexte,
+                            niveauPassage === n.niveau && styles.niveauPuceTexteActif,
+                          ]}
+                        >
+                          {n.court}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {message !== null && <Text style={styles.messageErreur}>{message}</Text>}
+
+                  {passages.length === 0 ? (
+                    <Text style={styles.panelVide}>Aucune déclaration pour cette sourate.</Text>
+                  ) : (
+                    passages
+                      .slice()
+                      .sort((a, b) => a.startAyah - b.startAyah)
+                      .map((p) => (
+                        <Pressable
+                          key={`${p.startAyah}-${p.endAyah}`}
+                          style={styles.declaration}
+                          onPress={() => retirerPassage(p)}
+                          accessibilityLabel={`Retirer les versets ${p.startAyah} à ${p.endAyah}`}
+                        >
+                          <Ionicons name="close-circle" size={18} color={colors.error} />
+                          <Text style={styles.declarationTexte}>
+                            {p.startAyah === 1 && p.endAyah === surah.ayahCount
+                              ? `Sourate entière · ${libelleNiveau(p.level)}`
+                              : `Versets ${p.startAyah} à ${p.endAyah} · ${libelleNiveau(p.level)}`}
+                          </Text>
+                        </Pressable>
+                      ))
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -560,9 +756,13 @@ const styles = StyleSheet.create({
     width: 24,
   },
   content: {
-    flex: 1,
+    // `flex: 1` figeait la hauteur du contenu à celle de la fenêtre : les 114
+    // sourates de la première étape débordaient alors sous le bas de l'écran
+    // sans que le défilement les atteigne — impossible d'aller jusqu'au bout de
+    // la liste. `flexGrow` laisse le contenu grandir autant qu'il faut.
+    flexGrow: 1,
     padding: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    paddingBottom: spacing.xxxl * 2,
   },
   stepTitle: {
     fontSize: fontSizes.xxxl,
@@ -640,13 +840,119 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  levelBtnPerfect: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
+  levelBtnOuvert: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  levelBtnReview: {
-    backgroundColor: colors.warning,
-    borderColor: colors.warning,
+  separateur: {
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  knowledgeSummary: {
+    fontSize: fontSizes.sm,
+    color: colors.primary,
+    fontWeight: fontWeights.medium,
+    marginBottom: spacing.md,
+  },
+  passagePanel: {
+    backgroundColor: colors.surfaceVariant,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  panelTitle: {
+    fontSize: fontSizes.md,
+    fontWeight: fontWeights.semibold,
+    color: colors.textPrimary,
+    paddingTop: spacing.md,
+  },
+  panelHint: {
+    fontSize: fontSizes.xs,
+    color: colors.textTertiary,
+    lineHeight: 18,
+  },
+  passageForm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  champNombre: {
+    width: 56,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    color: colors.textPrimary,
+    fontSize: fontSizes.md,
+    textAlign: 'center',
+  },
+  passageFormSep: {
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+  },
+  boutonAjouter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+  },
+  boutonAjouterTexte: {
+    color: colors.textOnPrimary,
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.semibold,
+  },
+  niveauxLigne: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  niveauPuce: {
+    flex: 1,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+  },
+  niveauPuceTexte: {
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    fontWeight: fontWeights.medium,
+  },
+  niveauPuceTexteActif: {
+    color: colors.textOnPrimary,
+  },
+  messageErreur: {
+    fontSize: fontSizes.xs,
+    color: colors.error,
+    lineHeight: 18,
+  },
+  panelVide: {
+    fontSize: fontSizes.xs,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+  },
+  declaration: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  declarationTexte: {
+    flex: 1,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
   },
   objectiveCard: {
     flexDirection: 'row',

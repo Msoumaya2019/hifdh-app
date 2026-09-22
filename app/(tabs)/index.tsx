@@ -9,6 +9,7 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, getTodaySessions, getMemorizedPassages, getReviewItemsDue, getReviewItemCount, getSessionsByDateRange } from '@/lib/database';
 import { computeProgressStats, formatDate } from '@/lib/progress';
+import { passagesARenforcer } from '@/lib/renforcement';
 import { aujourdHui, ilYAjours } from '@/lib/dates';
 import type { UserConfig, LearningSession, MemorizedPassage } from '@/types';
 
@@ -17,7 +18,13 @@ export default function AccueilScreen() {
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [todaySessions, setTodaySessions] = useState<LearningSession[]>([]);
   const [memorized, setMemorized] = useState<MemorizedPassage[]>([]);
-  const [reviewCount, setReviewCount] = useState(0);
+  // Le nombre de passages à renforcer, et non le seul nombre de révisions dues :
+  // un passage marqué « à retravailler » n'a pas forcément d'item de révision,
+  // et il comptait donc pour rien dans la pastille de l'accueil.
+  const [aRenforcer, setARenforcer] = useState(0);
+  // Le nombre de passages suivis par la révision espacée — ce que la table
+  // contient, et non ce qui est dû aujourd'hui.
+  const [revisionsSuivies, setRevisionsSuivies] = useState(0);
   const [allSessions, setAllSessions] = useState<LearningSession[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -43,7 +50,8 @@ export default function AccueilScreen() {
     setMemorized(mem);
 
     const dueReviews = await getReviewItemsDue(today);
-    setReviewCount(dueReviews.length);
+    setARenforcer(passagesARenforcer(mem, dueReviews, today).length);
+    setRevisionsSuivies(await getReviewItemCount());
   }, [router]);
 
   useEffect(() => {
@@ -64,7 +72,7 @@ export default function AccueilScreen() {
     );
   }
 
-  const stats = computeProgressStats(config, allSessions, memorized, reviewCount);
+  const stats = computeProgressStats(config, allSessions, memorized, revisionsSuivies);
   const todaySession = todaySessions.find((s) => s.status === 'todo');
 
   const objectiveLabel = getObjectiveLabel(config);
@@ -145,17 +153,17 @@ export default function AccueilScreen() {
         )}
       </Card>
 
-      {/* Révisions */}
-      {reviewCount > 0 && (
+      {/* À renforcer */}
+      {aRenforcer > 0 && (
         <Card>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>À réviser</Text>
+            <Text style={styles.cardTitle}>À renforcer</Text>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{reviewCount}</Text>
+              <Text style={styles.badgeText}>{aRenforcer}</Text>
             </View>
           </View>
           <Text style={styles.reviewText}>
-            {reviewCount} passage{reviewCount > 1 ? 's' : ''} à réviser aujourd'hui
+            {aRenforcer} passage{aRenforcer > 1 ? 's' : ''} à renforcer
           </Text>
         </Card>
       )}
@@ -208,11 +216,19 @@ export default function AccueilScreen() {
 
         <Pressable
           style={[styles.actionButton, styles.reviewButton]}
-          onPress={() => router.push('/(tabs)/programme')}
+          onPress={() =>
+            // L'horodatage n'est pas décoratif : l'écran Programme reste monté
+            // entre deux visites, et sans une valeur qui change, son effet ne
+            // se rejouerait pas — le bouton ne ferait rien au second appui.
+            router.push({
+              pathname: '/(tabs)/programme',
+              params: { onglet: 'renforcer', t: String(Date.now()) },
+            })
+          }
         >
           <Ionicons name="repeat" size={24} color={colors.primary} />
           <Text style={[styles.actionButtonText, { color: colors.primary }]}>
-            Commencer mes révisions
+            Renforcer mes passages
           </Text>
         </Pressable>
       </View>
