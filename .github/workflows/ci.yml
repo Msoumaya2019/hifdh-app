@@ -13,13 +13,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Node 22 est requis : les tests s'exécutent sur des fichiers TypeScript
       # sans transpileur, ce que le retrait de types intégré permet à partir de
       # Node 22.18.
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
