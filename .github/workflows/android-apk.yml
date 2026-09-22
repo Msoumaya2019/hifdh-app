@@ -143,14 +143,17 @@ jobs:
           FICHIER="${{ steps.paquet.outputs.fichier }}"
           VERSION="${{ steps.paquet.outputs.version }}"
 
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$FICHIER" --clobber
-          else
+          # Les deux flux (iOS et Android) attachent à la même version, et
+          # peuvent la créer en même temps. Un `create` qui échoue parce que
+          # l'autre vient de la créer ne doit pas faire échouer un build de
+          # quinze minutes : on retombe alors sur un envoi.
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && \
+            gh release upload "$GITHUB_REF_NAME" "$FICHIER" --clobber || \
             gh release create "$GITHUB_REF_NAME" "$FICHIER" \
               --title "Hifdh $VERSION" \
               --notes "APK Android signé avec la clé de débogage, à installer directement." \
-              --generate-notes
-          fi
+              --generate-notes || \
+            gh release upload "$GITHUB_REF_NAME" "$FICHIER" --clobber
 
       - name: Expliquer la suite
         run: |
