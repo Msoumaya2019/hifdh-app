@@ -215,3 +215,40 @@ d'application — expose le texte, les traductions, l'audio et la recherche, mai
 « pages ». Les URL d'images du site ne sont pas non plus adressables (essayées :
 404 ou 403). Quran.com n'est donc pas exploitable pour les images, et c'est la
 solution de repli qui a été mise en place.
+
+## 4. Données partagées entre comptes (suivi entre amis)
+
+Depuis la version 1.6.3, deux personnes peuvent se relier par un **code
+d'invitation** et voir mutuellement leur progression. Ce n'est pas une donnée
+tierce : elle est produite par les utilisateurs eux-mêmes, et ce paragraphe
+existe pour dire **exactement** ce qui circule, puisque rien d'autre dans ce
+document ne le couvre.
+
+- **Recto-verso, et non unilatéral.** La relation est une seule ligne, à ordre
+  canonique, entre deux identifiants. Il n'existe donc pas d'état où l'un suit
+  l'autre sans être suivi — la réciprocité est dans la forme de la table, pas
+  dans une règle applicative.
+- **Ce qu'un ami voit** : le nombre de versets et de pages équivalentes
+  mémorisés depuis lundi, la date de la dernière séance, la dernière sourate
+  travaillée et le nombre de jours d'étude sur sept jours.
+- **Ce qu'un ami ne voit pas**, et c'est un choix, pas un oubli : **quelles
+  parties restent à renforcer**. C'est le seul indicateur qui dit « je suis en
+  retard », et le rendre visible transformerait un outil d'entraide en
+  classement entre pairs. Aucune phrase affichée ne compare un apprenant à un
+  autre ; un test le vérifie (`tests/amis.test.mjs`, « la synthèse ne dit jamais
+  “en retard” »).
+- **Le code d'invitation est un secret.** Dix signes, sans les lettres ni les
+  chiffres ambigus (I, L, O, 0), sur un alphabet de 32 signes exactement. Il
+  n'est rendu qu'à son propriétaire ; la fonction qui l'échange contre un
+  identifiant ne rend **aucune** donnée du profil trouvé — seulement
+  l'identifiant, qui sert à créer la relation.
+- **Où l'autorisation vit** : dans les politiques RLS
+  (`supabase/amis.sql`), jamais dans le corps des fonctions ni dans le client.
+  Une seule fonction est `SECURITY DEFINER`, parce que lire un profil par son
+  code est impossible autrement, et elle ne rend rien du profil.
+- **Rupture** : supprimer un ami ferme la relation dans les deux sens ; vérifié
+  par le banc, dans les deux sens.
+- **Code** : `supabase/amis.sql` (schéma), `src/lib/amis.ts` (décisions, testées
+  sans réseau), `src/lib/sync/amis.ts` (appels), `app/amis.tsx` et
+  `src/components/AmisSection.tsx` (écrans). Éprouvé par
+  `npm run verifier:supabase` (80 épreuves) et `npm run falsifier:amis`.

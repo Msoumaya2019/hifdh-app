@@ -89,9 +89,25 @@ export interface MemorizedPassage {
   level: KnowledgeLevel;
 }
 
+/**
+ * Ce que l'apprenant veut mémoriser, du plus court au plus long.
+ *
+ * L'ordre de cette liste n'est pas décoratif : c'est celui que présente l'écran
+ * d'objectif, et il va du plus facile au plus difficile. Il est donc tenu par un
+ * test, pour qu'un ajout ne se glisse pas au hasard.
+ *
+ * `short_surahs` et `up_to_yassin` sont des objectifs **en nombre de versets**,
+ * au même titre que « la moitié du Coran ». Ils ont été ajoutés comme tels
+ * plutôt que comme des cas particuliers : leurs bornes viennent de
+ * `surahs.json`, elles ne sont pas écrites en dur, et l'affichage du nombre de
+ * versets est donc le même pour tous.
+ */
 export type ObjectiveType =
-  | 'full_quran'
+  | 'short_surahs'
   | 'juz_amma'
+  | 'up_to_yassin'
+  | 'half_quran'
+  | 'full_quran'
   | 'hizb_sabbih'
   | 'specific_juz'
   | 'specific_hizb'

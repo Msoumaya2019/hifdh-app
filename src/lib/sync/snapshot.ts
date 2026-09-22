@@ -115,8 +115,11 @@ const MAX_PASSAGES = 5_000;
 const MAX_REVISIONS = 20_000;
 
 const OBJECTIFS: ObjectiveType[] = [
-  'full_quran',
+  'short_surahs',
   'juz_amma',
+  'up_to_yassin',
+  'half_quran',
+  'full_quran',
   'hizb_sabbih',
   'specific_juz',
   'specific_hizb',

@@ -15,6 +15,7 @@ import {
   getHizb,
   getRub,
   getThumn,
+  getSurah,
   getAllSurahs,
   getAllRub,
   getAllThumn,
@@ -66,6 +67,57 @@ export function computeObjectiveRanges(objective: Objective): VerseRange[] {
     case 'full_quran': {
       // Tout le Coran : une plage par sourate
       return rangesDepuisIds(1, getTotalAyahs());
+    }
+
+    case 'half_quran': {
+      // La moitié du Coran : les 3 118 premiers versets, soit la moitié exacte
+      // des 6 236 du moushaf. La borne se calcule, elle ne s'écrit pas.
+      //
+      // Un verset sur deux ne serait pas « la moitié du Coran » : ce serait la
+      // première moitié dans l'ordre de lecture, qui est ce que veut dire
+      // mémoriser la moitié — et où Yassin tombe déjà à 60 %.
+      return rangesDepuisIds(1, Math.floor(getTotalAyahs() / 2));
+    }
+
+    case 'up_to_yassin': {
+      // Jusqu'à la sourate Yassin comprise : des premières sourates à la fin de
+      // la 36e. La fin se lit dans `surahs.json`, comme tout le reste : écrire
+      // « 3788 » en dur ferait mentir la borne le jour où une source change.
+      const yassin = getSurah(36);
+      if (!yassin) return [];
+      const dernier = yassin.startAyahId + yassin.ayahCount - 1;
+      return rangesDepuisIds(1, dernier);
+    }
+
+    case 'short_surahs': {
+      // Les dix sourates les plus courtes du moushaf : 43 versets, 3 pages.
+      //
+      // Elles se **déduisent des données** — tri par nombre de versets, on
+      // garde dix — et ne sont pas écrites ici. Le choix a été fait sur cette
+      // règle précise : c'est l'objectif le plus court possible, celui par
+      // lequel on commence.
+      //
+      // Ces dix sourates ne se suivent PAS : relevé, leurs numéros sont
+      // 97, 103, 105, 106, 108, 109, 110, 111, 112, 113. Une plage unique les
+      // engloberait toutes, depuis al-Qadr jusqu'à al-Falaq, et ferait porter
+      // l'objectif sur 3 400 versets au lieu de 43. On rend donc **plusieurs
+      // plages**, une par sourate retenue.
+      //
+      // L'égalité de nombre de versets est tranchée par le numéro de sourate,
+      // pour que le résultat ne dépende pas de l'ordre du fichier.
+      const surahs = getAllSurahs();
+      if (surahs.length === 0) return [];
+
+      const plusCourtes = [...surahs]
+        .sort((a, b) => a.ayahCount - b.ayahCount || a.number - b.number)
+        .slice(0, 10)
+        .sort((a, b) => a.number - b.number);
+
+      return plusCourtes.map((s) => ({
+        surah: s.number,
+        startAyah: 1,
+        endAyah: s.ayahCount,
+      }));
     }
 
     case 'juz_amma': {

@@ -197,6 +197,31 @@ jobs:
       - name: Falsifier les contrôles de l'accueil
         run: npm run falsifier:accueil
 
+      # Et pour le feuilletage de la page du moushaf : douze mutations. Ce
+      # contrôle-ci en a corrigé trois qui ne détectaient rien — et les trois
+      # manques étaient dans les tests, pas dans les mutations. Une assertion
+      # « le conteneur de gestes est monté » se satisfaisait du mot trouvé dans
+      # un commentaire et dans la ligne d'importation : retirer l'élément du JSX
+      # passait. Rien n'exigeait non plus que la page se tourne au relâchement
+      # (`.onEnd`) plutôt qu'au toucher, ni que les seuils de compatibilité avec
+      # le défilement soient posés — sans eux, un geste vertical pour faire
+      # défiler la page la tournerait. Sur un téléphone, aucune de ces trois
+      # régressions ne se voit autrement que comme « ça saute des pages ».
+      - name: Falsifier les contrôles du geste de page
+        run: npm run falsifier:geste-page
+
+      # Et pour le suivi entre amis : quatorze mutations de la couche de lecture.
+      # Ce falsificateur-ci a servi dès sa première exécution — deux de ses
+      # mutations ne détectaient rien, et l'une des deux n'était pas une
+      # faiblesse du test : elle réduisait `Math.max(0, Math.round(n))` à
+      # `Math.round(Math.max(0, n))`, qui rend la même valeur pour toute entrée.
+      # Un moteur de mutation qui compte ces réductions pour des défauts fait
+      # accuser le code à tort. La seconde, elle, était un vrai trou : rien
+      # n'exigeait que `Infinity` fût refusé, et `Math.round(Infinity)` sort
+      # « Infinity » — une phrase que personne n'aurait lue comme un nombre.
+      - name: Falsifier les contrôles du suivi entre amis
+        run: npm run falsifier:amis
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

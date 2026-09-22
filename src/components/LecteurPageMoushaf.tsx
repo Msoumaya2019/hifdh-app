@@ -24,7 +24,7 @@
 // rapport de la page est réservé avant l'arrivée de l'image, donc rien ne saute
 // quand elle arrive, et les boutons ne se déplacent pas sous le doigt.
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -34,10 +34,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fonts, radii, spacing } from '@/theme';
 import { getRatioPage } from '@/lib/pagesMoushaf';
+import { gesteDePage } from '@/lib/gestePageMoushaf';
 import { raisonCacheIndisponible, usePageMoushaf } from '@/lib/cachePagesMoushaf';
 
 export interface LecteurPageMoushafProps {
@@ -55,6 +58,10 @@ export interface LecteurPageMoushafProps {
   onSuivante: () => void;
   /** Aller à une page donnée. */
   onAllerA: (page: number) => void;
+  /** Vrai lorsque la page occupe tout l'écran. */
+  pleinEcran?: boolean;
+  /** Bascule le plein écran. */
+  onBasculerPleinEcran?: () => void;
 }
 
 export function LecteurPageMoushaf({
@@ -65,6 +72,8 @@ export function LecteurPageMoushaf({
   onPrecedente,
   onSuivante,
   onAllerA,
+  pleinEcran = false,
+  onBasculerPleinEcran,
 }: LecteurPageMoushafProps) {
   // `tentative` relance le chargement quand l'utilisateur appuie sur
   // « Réessayer » : sans elle, l'effet ne se rejouerait pas sur la même page.
@@ -86,20 +95,48 @@ export function LecteurPageMoushaf({
   const premiere = page <= 1;
   const derniere = page >= total;
 
+  // Le geste de changement de page.
+  //
+  // `runOnJS` est nécessaire : la décision est prise sur le fil d'animation, et
+  // `onSuivante`/`onPrecedente` écrivent dans l'état React, qui vit sur le fil
+  // principal. Les appeler directement depuis le geste ne ferait rien.
+  //
+  // `activeOffsetX` et `failOffsetY` laissent le geste vertical au conteneur :
+  // sans eux, un doigt qui descend verrouillerait le geste horizontal et le
+  // défilement ne fonctionnerait plus. Les deux seuils sont exprimés ici en
+  // points, et la décision de fond — seuil, axe dominant, sens — vit dans
+  // `gestePageMoushaf.ts`, où elle est éprouvée.
+  const gererGeste = useCallback(
+    (dx: number, dy: number) => {
+      const decide = gesteDePage(dx, dy);
+      if (decide === 'suivante' && !derniere) onSuivante();
+      else if (decide === 'precedente' && !premiere) onPrecedente();
+    },
+    [derniere, premiere, onPrecedente, onSuivante]
+  );
+
+  const geste = Gesture.Pan()
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-20, 20])
+    .onEnd((evenement) => {
+      runOnJS(gererGeste)(evenement.translationX, evenement.translationY);
+    });
+
   return (
     <View style={styles.racine}>
       {/* La page, seule. `flex: 1` lui donne la place disponible ; le rapport
           est appliqué par la largeur calculée, pas par une hauteur fixe, pour
           que l'image ne soit jamais étirée. */}
-      <View
-        style={styles.zonePage}
-        onLayout={(evenement) =>
-          setMesure({
-            largeur: evenement.nativeEvent.layout.width,
-            hauteur: evenement.nativeEvent.layout.height,
-          })
-        }
-      >
+      <GestureDetector gesture={geste}>
+        <View
+          style={styles.zonePage}
+          onLayout={(evenement) =>
+            setMesure({
+              largeur: evenement.nativeEvent.layout.width,
+              hauteur: evenement.nativeEvent.layout.height,
+            })
+          }
+        >
         <View
           style={[
             styles.feuille,
@@ -154,22 +191,68 @@ export function LecteurPageMoushaf({
               </Pressable>
             </View>
           )}
+          </View>
         </View>
-      </View>
+      </GestureDetector>
 
-      {/* La note de séance : dit si la page fait partie du programme du jour. */}
-      <Text style={styles.noteSeance}>
-        {dansLePassage
-          ? 'Cette page porte une partie de ta séance du jour.'
-          : 'Page hors de ta séance du jour.'}
-      </Text>
-
-      {plageDeVersets !== null && (
-        <Text style={styles.plageVersets}>{plageDeVersets}</Text>
+      {/* Le plein écran, en haut à gauche de la zone de page.
+          Il reste discret : c'est un confort, pas une commande de lecture. La
+          sortie, elle, est portée par l'écran — voir `lecteur.tsx`. */}
+      {onBasculerPleinEcran !== undefined && !pleinEcran && (
+        <Pressable
+          style={styles.boutonPleinEcran}
+          onPress={onBasculerPleinEcran}
+          accessibilityLabel="Passer en plein écran"
+          accessibilityRole="button"
+          hitSlop={8}
+        >
+          <Ionicons name="expand-outline" size={20} color={colors.primary} />
+        </Pressable>
       )}
 
-      {/* La navigation. Trois commandes, assez grandes pour le pouce. */}
-      <View style={styles.navigation}>
+      {/* La note de séance : dit si la page fait partie du programme du jour.
+          Elle disparaît en plein écran — c'est justement ce qu'on cherche en
+          l'activant : ne garder que la page. */}
+      {!pleinEcran && (
+        <>
+          <Text style={styles.noteSeance}>
+            {dansLePassage
+              ? 'Cette page porte une partie de ta séance du jour.'
+              : 'Page hors de ta séance du jour.'}
+          </Text>
+
+          {plageDeVersets !== null && (
+            <Text style={styles.plageVersets}>{plageDeVersets}</Text>
+          )}
+        </>
+      )}
+
+      {/* Le repère du geste : un geste ne se découvre pas tout seul.
+          Affiché seulement au début, sans occuper de place une fois lu — la
+          phrase est courte et se place au-dessus de la navigation. */}
+      {pleinEcran ? (
+        <Pressable
+          style={styles.barrePleinEcran}
+          onPress={onBasculerPleinEcran}
+          accessibilityLabel="Quitter le plein écran"
+          accessibilityRole="button"
+        >
+          <Text style={styles.compteurPleinEcran}>
+            {page} / {total}
+          </Text>
+          <Ionicons name="contract-outline" size={16} color={colors.textSecondary} />
+        </Pressable>
+      ) : (
+        <Text style={styles.repereGeste}>
+          Glisse la page vers la droite ou la gauche pour tourner.
+        </Text>
+      )}
+
+      {/* La navigation. Trois commandes, assez grandes pour le pouce.
+          Masquée en plein écran : le geste les remplace, et les laisser ferait
+          de « plein écran » un mot pour rien. */}
+      {!pleinEcran && (
+        <View style={styles.navigation}>
         <Pressable
           style={[styles.bouton, premiere && styles.boutonInactif]}
           disabled={premiere}
@@ -231,7 +314,8 @@ export function LecteurPageMoushaf({
             color={derniere ? colors.textTertiary : colors.primary}
           />
         </Pressable>
-      </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -294,6 +378,49 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Le bouton de plein écran : posé sur la zone de page, sans occuper de place
+  // dans la mise en page — la page doit rester centrée, pas décalée.
+  boutonPleinEcran: {
+    position: 'absolute',
+    top: spacing.xs,
+    right: spacing.xs,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySurface,
+    zIndex: 2,
+  },
+  boutonPleinEcranActif: {
+    backgroundColor: colors.primary,
+  },
+  // Le repère du geste : discret, et seulement hors plein écran.
+  repereGeste: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.gold,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  // La barre du plein écran : de quoi savoir où l'on est, et de quoi sortir.
+  // Les deux ensemble, parce qu'un plein écran d'où l'on ne sait pas sortir
+  // est un piège.
+  barrePleinEcran: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surfaceVariant,
+  },
+  compteurPleinEcran: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.textSecondary,
   },
   // La feuille : fond sobre, coins arrondis, ombre légère. C'est le seul
   // habillage — la page n'est pas décorée, elle est posée.

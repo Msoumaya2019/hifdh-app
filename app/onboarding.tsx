@@ -16,12 +16,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getAllSurahs, getAllJuz, getAllHizb, getCompteLimitesEstimees } from '@/data/quranData';
+import { getObjectiveVerseCount, getTotalQuranVerses } from '@/lib/progress';
 import { saveUserConfig, synchroniserPassagesDeclares, getAllSessions, getMemorizedPassages, appliquerRecalcul, getUserConfig } from '@/lib/database';
 import { planifierRecalcul } from '@/lib/programGenerator';
+import { LIBELLES_QUESTIONNAIRE, ORDRE_OBJECTIFS } from '@/lib/libelles';
 import type {
   UserConfig,
   MemorizedPassage,
   Objective,
+  ObjectiveType,
   LearningUnit,
   KnowledgeLevel,
   Surah,
@@ -464,6 +467,28 @@ function StepKnowledge({
 
 // === Étape 2: Quel est ton objectif ? ===
 
+/**
+ * Les objectifs, **du plus facile au plus difficile**.
+ *
+ * L'ordre vient de `ORDRE_OBJECTIFS`, où il est tenu par un test — et non de
+ * cette liste, qui ne fait que porter les icônes. Une liste recopiée ici aurait
+ * pu diverger de celle qu'énumère le test sans que rien ne le dise.
+ *
+ * Le nombre de versets, lui, se calcule : l'écran affiche « 564 versets ·
+ * 1/11e du Coran » à partir des seules données, jamais d'un chiffre écrit ici.
+ */
+const ICONES_OBJECTIFS: Record<ObjectiveType, string> = {
+  short_surahs: 'sparkles',
+  juz_amma: 'book',
+  up_to_yassin: 'bookmark',
+  half_quran: 'pie-chart',
+  full_quran: 'library',
+  hizb_sabbih: 'bookmark',
+  specific_juz: 'document',
+  specific_hizb: 'bookmarks',
+  custom: 'create',
+};
+
 function StepObjective({
   objective,
   setObjective,
@@ -471,46 +496,69 @@ function StepObjective({
   objective: Objective;
   setObjective: (o: Objective) => void;
 }) {
-  const objectives: { type: Objective['type']; label: string; icon: string }[] = [
-    { type: 'full_quran', label: 'Mémoriser tout le Coran', icon: 'library' },
-    { type: 'juz_amma', label: "Mémoriser Juz' 'Amma", icon: 'book' },
-    { type: 'hizb_sabbih', label: 'Mémoriser Hizb Sabbih', icon: 'bookmark' },
-    { type: 'specific_juz', label: "Mémoriser un juz' précis", icon: 'document' },
-    { type: 'specific_hizb', label: 'Mémoriser un ou plusieurs hizb', icon: 'bookmarks' },
-    { type: 'custom', label: 'Créer un objectif personnalisé', icon: 'create' },
-  ];
+  // Le nombre de versets de chaque objectif se mesure, il ne s'écrit pas. Un
+  // objectif dont les données ne rendraient aucune plage affiche « à définir »
+  // plutôt qu'un « 0 verset » qui ferait croire à un objectif vide.
+  const versetsDe = (type: ObjectiveType): number =>
+    type === 'specific_juz' || type === 'specific_hizb' || type === 'custom'
+      ? -1
+      : getObjectiveVerseCount({ type } as Objective);
+
+  const total = getTotalQuranVerses();
+
+  /** « 564 versets · 1/11e du Coran » — la part arrondie, jamais fausse. */
+  const description = (type: ObjectiveType): string | null => {
+    const n = versetsDe(type);
+    if (n <= 0) return null;
+    const part = total / n;
+    const partTexte =
+      part >= 2 ? `1/${Math.round(part)}e du Coran` : `${Math.round((n / total) * 100)} % du Coran`;
+    return `${n} versets · ${partTexte}`;
+  };
 
   return (
     <View>
       <Text style={styles.stepTitle}>Quel est ton objectif ?</Text>
       <Text style={styles.stepSubtitle}>
-        Choisis ce que tu souhaites mémoriser.
+        Du plus court au plus long. Choisis ce que tu souhaites mémoriser.
       </Text>
 
-      {objectives.map((obj) => (
+      {ORDRE_OBJECTIFS.map((type) => (
         <Pressable
-          key={obj.type}
-          onPress={() => setObjective({ type: obj.type } as Objective)}
+          key={type}
+          onPress={() => setObjective({ type } as Objective)}
           style={({ pressed }) => [
             styles.objectiveCard,
-            objective.type === obj.type && styles.objectiveCardActive,
+            objective.type === type && styles.objectiveCardActive,
             pressed && { opacity: 0.8 },
           ]}
         >
           <Ionicons
-            name={obj.icon as any}
+            name={ICONES_OBJECTIFS[type] as any}
             size={24}
-            color={objective.type === obj.type ? colors.textOnPrimary : colors.primary}
+            color={objective.type === type ? colors.textOnPrimary : colors.primary}
           />
-          <Text
-            style={[
-              styles.objectiveText,
-              objective.type === obj.type && styles.objectiveTextActive,
-            ]}
-          >
-            {obj.label}
-          </Text>
-          {objective.type === obj.type && (
+          <View style={styles.objectiveTextBloc}>
+            <Text
+              style={[
+                styles.objectiveText,
+                objective.type === type && styles.objectiveTextActive,
+              ]}
+            >
+              {LIBELLES_QUESTIONNAIRE[type]}
+            </Text>
+            {description(type) !== null && (
+              <Text
+                style={[
+                  styles.objectiveDetail,
+                  objective.type === type && styles.objectiveDetailActif,
+                ]}
+              >
+                {description(type)}
+              </Text>
+            )}
+          </View>
+          {objective.type === type && (
             <Ionicons name="checkmark-circle" size={24} color={colors.textOnPrimary} />
           )}
         </Pressable>
@@ -604,6 +652,27 @@ function StepObjective({
 
 // === Étape 3: Quel rythme souhaites-tu ? ===
 
+/**
+ * Les six rythmes proposés, du plus léger au plus lourd.
+ *
+ * La liste s'arrête volontairement au rub' : au-delà, la séance quotidienne
+ * devient une séance de révision plus qu'une mémorisation, et l'apprenant qui
+ * veut davantage dispose du nisf et du hizb comme objectifs. Les unités
+ * `nisf` et `hizb` restent dans le modèle et restent lisibles — c'est le
+ * **choix** qui n'est plus offert au questionnaire, pas la donnée.
+ *
+ * « Une demi-page » ne porte pas de `count` : c'est le type `half_page`, dont la
+ * quantité est définie par la page, pas par un multiplicateur.
+ */
+const RYTHMES: { unit: LearningUnit; label: string; icon: string }[] = [
+  { unit: { type: 'verses', count: 1 }, label: '1 verset par jour', icon: 'ellipse-outline' },
+  { unit: { type: 'verses', count: 3 }, label: '3 versets par jour', icon: 'text' },
+  { unit: { type: 'half_page' }, label: 'Une demi-page par jour', icon: 'document-outline' },
+  { unit: { type: 'page', count: 1 }, label: '1 page par jour', icon: 'document' },
+  { unit: { type: 'thumn', count: 1 }, label: '1 toumoun par jour', icon: 'square-outline' },
+  { unit: { type: 'rub', count: 1 }, label: "1 rub' par jour", icon: 'square' },
+];
+
 function StepRhythm({
   unit,
   setUnit,
@@ -611,17 +680,6 @@ function StepRhythm({
   unit: LearningUnit;
   setUnit: (u: LearningUnit) => void;
 }) {
-  const rhythms: { unit: LearningUnit; label: string; icon: string }[] = [
-    { unit: { type: 'verses', count: 3 }, label: '3 versets par jour', icon: 'text' },
-    { unit: { type: 'verses', count: 5 }, label: '5 versets par jour', icon: 'text' },
-    { unit: { type: 'half_page' }, label: '1/2 page par jour', icon: 'document' },
-    { unit: { type: 'page', count: 1 }, label: '1 page par jour', icon: 'document' },
-    { unit: { type: 'thumn', count: 1 }, label: '1 toumoun par jour', icon: 'square' },
-    { unit: { type: 'rub', count: 1 }, label: "1 rub' par jour", icon: 'square' },
-    { unit: { type: 'nisf', count: 1 }, label: '1 nisf par jour', icon: 'square' },
-    { unit: { type: 'hizb', count: 1 }, label: '1 hizb par jour', icon: 'square' },
-  ];
-
   const isSameUnit = (a: LearningUnit, b: LearningUnit) => {
     if (a.type !== b.type) return false;
     if ('count' in a && 'count' in b) return a.count === b.count;
@@ -632,10 +690,10 @@ function StepRhythm({
     <View>
       <Text style={styles.stepTitle}>Quel rythme souhaites-tu ?</Text>
       <Text style={styles.stepSubtitle}>
-        Choisis la quantité à apprendre par séance.
+        Choisis la quantité à apprendre par séance, du plus léger au plus lourd.
       </Text>
 
-      {rhythms.map((r, i) => (
+      {RYTHMES.map((r, i) => (
         <Pressable
           key={i}
           onPress={() => setUnit(r.unit)}
@@ -979,14 +1037,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  objectiveText: {
+  objectiveTextBloc: {
     flex: 1,
+  },
+  objectiveText: {
     fontSize: fontSizes.md,
     color: colors.textPrimary,
     fontWeight: fontWeights.medium,
   },
   objectiveTextActive: {
     color: colors.textOnPrimary,
+  },
+  objectiveDetail: {
+    fontSize: fontSizes.xs,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  objectiveDetailActif: {
+    color: colors.primarySurface,
   },
   daysGrid: {
     gap: spacing.sm,

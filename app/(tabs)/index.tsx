@@ -11,6 +11,7 @@ import { getUserConfig, getTodaySessions, getMemorizedPassages, getReviewItemsDu
 import { computeProgressStats, formatDate } from '@/lib/progress';
 import { passagesARenforcer } from '@/lib/renforcement';
 import { aujourdHui, ilYAjours } from '@/lib/dates';
+import { libelleObjectif } from '@/lib/libelles';
 import type { UserConfig, LearningSession, MemorizedPassage } from '@/types';
 
 export default function AccueilScreen() {
@@ -258,15 +259,7 @@ export default function AccueilScreen() {
 }
 
 function getObjectiveLabel(config: UserConfig): string {
-  switch (config.objective.type) {
-    case 'full_quran': return 'Mémoriser tout le Coran';
-    case 'juz_amma': return "Mémoriser Juz' 'Amma";
-    case 'hizb_sabbih': return "Mémoriser Hizb Sabbih";
-    case 'specific_juz': return `Mémoriser Juz' ${config.objective.juzNumber}`;
-    case 'specific_hizb': return `Mémoriser Hizb ${config.objective.hizbNumbers?.join(', ')}`;
-    case 'custom': return 'Objectif personnalisé';
-    default: return 'Objectif';
-  }
+  return libelleObjectif(config.objective);
 }
 
 const styles = StyleSheet.create({

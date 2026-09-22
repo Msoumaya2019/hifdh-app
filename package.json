@@ -1,6 +1,6 @@
 {
   "name": "hifdh-app",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -32,6 +32,9 @@
     "falsifier:pages": "python scripts/falsifier_pages.py",
     "falsifier:renforcement": "python scripts/falsifier_renforcement.py",
     "falsifier:accueil": "python scripts/falsifier_accueil.py",
+    "falsifier:objectifs": "python scripts/falsifier_objectifs.py",
+    "falsifier:geste-page": "python scripts/falsifier_geste_page.py",
+    "falsifier:amis": "python scripts/falsifier_amis.py",
     "build:apk": "gh workflow run android-apk.yml",
     "build:ipa": "gh workflow run ios-unsigned.yml"
   },

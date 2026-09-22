@@ -6,6 +6,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Font from 'expo-font';
 import { SplashScreen } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { colors } from '@/theme';
 
 // Empêcher l'écran de démarrage de se cacher avant le chargement des polices
@@ -37,7 +38,15 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    // `GestureHandlerRootView` est obligatoire pour que
+    // `react-native-gesture-handler` reçoive quoi que ce soit. Le paquet était
+    // dans les dépendances sans que rien ne le monte : un geste écrit dans un
+    // composant aurait alors été ignoré en silence, sans erreur ni message —
+    // exactement le genre de panne qu'on cherche longuement ailleurs.
+    //
+    // `flex: 1` est indispensable : sans lui, le conteneur mesure zéro et
+    // l'application s'affiche… vide.
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="dark" backgroundColor={colors.background} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
@@ -49,7 +58,11 @@ export default function RootLayout() {
           name="lecteur"
           options={{ presentation: 'card', headerShown: false }}
         />
+        <Stack.Screen
+          name="amis"
+          options={{ presentation: 'card', headerShown: false }}
+        />
       </Stack>
-    </>
+    </GestureHandlerRootView>
   );
 }

@@ -107,6 +107,14 @@ export default function LecteurScreen() {
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [page, setPage] = useState(1);
 
+  // Le plein écran du mode page.
+  //
+  // Il ne s'applique qu'à l'affichage « page » : en mode « verset par verset »,
+  // les commandes de taille et de masquage sont l'outil de travail, les retirer
+  // retirerait la fonction. Le remettre à faux en quittant le mode page évite
+  // qu'un écran rouvert en mode « versets » hérite d'un en-tête masqué.
+  const [pleinEcran, setPleinEcran] = useState(false);
+
   useEffect(() => {
     setSurah(getSurah(surahNum));
   }, [surahNum]);
@@ -143,6 +151,9 @@ export default function LecteurScreen() {
     async (nouveau: ModeAffichage) => {
       setMode(nouveau);
       setHiddenVerses(new Set());
+      // Changer de mode quitte le plein écran : il n'a de sens qu'en mode page,
+      // et le garder en mode « versets » masquerait l'en-tête sans raison.
+      setPleinEcran(false);
       if (config === null) return;
       const miseAJour: UserConfig = { ...config, affichage: { mode: nouveau } };
       setConfig(miseAJour);
@@ -233,8 +244,28 @@ export default function LecteurScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* En-tête */}
-      <View style={styles.header}>
+      {/* La sortie de plein écran, portée par l'écran lui-même.
+          Elle est ici, et non seulement dans le composant de page, pour une
+          raison précise : un mode plein écran dont la sortie dépend d'un
+          composant enfant disparaît avec lui. Si la page échoue à charger, si
+          l'image ne s'affiche pas, le bouton doit rester — sans quoi l'écran
+          devient un cul-de-sac. */}
+      {pleinEcran && (
+        <Pressable
+          style={styles.sortiePleinEcran}
+          onPress={() => setPleinEcran(false)}
+          accessibilityLabel="Quitter le plein écran"
+          accessibilityRole="button"
+          hitSlop={12}
+        >
+          <Ionicons name="contract-outline" size={22} color={colors.textOnPrimary} />
+        </Pressable>
+      )}
+
+      {/* En-tête. Masqué en plein écran : c'est le sens même du plein écran,
+          et le bouton de sortie vit dans la zone de la page. */}
+      {!pleinEcran && (
+        <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </Pressable>
@@ -279,26 +310,29 @@ export default function LecteurScreen() {
           </Pressable>
         </View>
       </View>
+      )}
 
-      {/* Choix de l'affichage */}
-      <View style={styles.modeBar}>
-        {(['versets', 'page'] as ModeAffichage[]).map((m) => (
-          <Pressable
-            key={m}
-            onPress={() => changerMode(m)}
-            style={[styles.modeOnglet, mode === m && styles.modeOngletActif]}
-          >
-            <Ionicons
-              name={m === 'versets' ? 'list' : 'book'}
-              size={16}
-              color={mode === m ? colors.textOnPrimary : colors.primary}
-            />
-            <Text style={[styles.modeOngletTexte, mode === m && styles.modeOngletTexteActif]}>
-              {m === 'versets' ? 'Verset par verset' : 'Page du moushaf'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {/* Choix de l'affichage. Masqué en plein écran, pour la même raison. */}
+      {!pleinEcran && (
+        <View style={styles.modeBar}>
+          {(['versets', 'page'] as ModeAffichage[]).map((m) => (
+            <Pressable
+              key={m}
+              onPress={() => changerMode(m)}
+              style={[styles.modeOnglet, mode === m && styles.modeOngletActif]}
+            >
+              <Ionicons
+                name={m === 'versets' ? 'list' : 'book'}
+                size={16}
+                color={mode === m ? colors.textOnPrimary : colors.primary}
+              />
+              <Text style={[styles.modeOngletTexte, mode === m && styles.modeOngletTexteActif]}>
+                {m === 'versets' ? 'Verset par verset' : 'Page du moushaf'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       {mode === 'versets' ? (
         <ScrollView
@@ -362,6 +396,8 @@ export default function LecteurScreen() {
           onPrecedente={() => setPage((p) => Math.max(1, p - 1))}
           onSuivante={() => setPage((p) => Math.min(getPageCount(), p + 1))}
           onAllerA={setPage}
+          pleinEcran={pleinEcran}
+          onBasculerPleinEcran={() => setPleinEcran((v) => !v)}
         />
       )}
 
@@ -369,8 +405,11 @@ export default function LecteurScreen() {
           Elle a deux formes selon d'où l'on vient : une séance du programme se
           juge (« mémorisé / à retravailler / reporter »), un passage ouvert
           depuis « À renforcer » se solde (« renforcé / pas encore »). Les deux
-          écrivent la même chose au même endroit. */}
-      {(sessionId || depuisRenforcement) && (
+          écrivent la même chose au même endroit.
+
+          Elle disparaît en plein écran : c'est un mode de lecture, et juger sa
+          séance ne se fait pas sur une page qu'on feuillette. */}
+      {(sessionId || depuisRenforcement) && !pleinEcran && (
         <View style={styles.validationBar}>
           {sessionId ? (
             <>
@@ -450,6 +489,20 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  // La sortie de plein écran : flottante, au-dessus de la page, dans le coin.
+  // Elle reste visible même si la page ne charge pas.
+  sortiePleinEcran: {
+    position: 'absolute',
+    top: spacing.xs,
+    right: spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    zIndex: 10,
   },
   backButton: {
     padding: spacing.sm,

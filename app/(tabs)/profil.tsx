@@ -6,10 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { SauvegardeSection } from '@/components/SauvegardeSection';
+import { AmisSection } from '@/components/AmisSection';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, saveUserConfig, getMemorizedPassages, getReviewItemCount } from '@/lib/database';
 import { getCompteLimitesEstimees } from '@/data/quranData';
 import { formatDate, getDayName } from '@/lib/progress';
+import { libelleObjectif, libelleRythme } from '@/lib/libelles';
 import type { UserConfig, MemorizedPassage } from '@/types';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -155,6 +157,9 @@ export default function ProfilScreen() {
         {/* Sauvegarde en ligne */}
         <SauvegardeSection onDonneesChangees={loadData} />
 
+        {/* Suivi entre amis */}
+        <AmisSection />
+
         {/* À propos */}
         <Text style={styles.sectionTitle}>À propos</Text>
         <Card>
@@ -187,29 +192,11 @@ function ConfigRow({ icon, label, value }: { icon: string; label: string; value:
 }
 
 function getObjectiveLabel(config: UserConfig): string {
-  switch (config.objective.type) {
-    case 'full_quran': return 'Tout le Coran';
-    case 'juz_amma': return "Juz' 'Amma";
-    case 'hizb_sabbih': return 'Hizb Sabbih';
-    case 'specific_juz': return `Juz' ${config.objective.juzNumber}`;
-    case 'specific_hizb': return `Hizb ${config.objective.hizbNumbers?.join(', ')}`;
-    case 'custom': return 'Personnalisé';
-    default: return 'Non défini';
-  }
+  return libelleObjectif(config.objective);
 }
 
 function getScheduleLabel(config: UserConfig): string {
-  const u = config.schedule.unit;
-  switch (u.type) {
-    case 'verses': return `${u.count} versets/jour`;
-    case 'half_page': return '1/2 page/jour';
-    case 'page': return `${u.count} page(s)/jour`;
-    case 'thumn': return `${u.count} toumoun/jour`;
-    case 'rub': return `${u.count} rub'/jour`;
-    case 'nisf': return `${u.count} nisf/jour`;
-    case 'hizb': return `${u.count} hizb/jour`;
-    default: return 'Non défini';
-  }
+  return libelleRythme(config.schedule.unit);
 }
 
 const styles = StyleSheet.create({

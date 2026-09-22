@@ -818,6 +818,466 @@ function jour(valeur) {
   noter('la synthèse ne rend rien sans revendication', r === 0, `${r} ligne(s)`);
 }
 
+// === Le suivi entre amis ===================================================
+
+const CHEMIN_AMIS = fileURLToPath(new URL('supabase/amis.sql', RACINE));
+const amis = readFileSync(CHEMIN_AMIS, 'utf8');
+
+let premiereAmis = null;
+try {
+  await db.exec(amis);
+} catch (erreur) {
+  premiereAmis = `${erreur.code ?? '?'} — ${erreur.message ?? erreur}`;
+}
+noter('le suivi entre amis s’applique après le schéma', premiereAmis === null, premiereAmis ?? '');
+
+let secondeAmis = null;
+try {
+  await db.exec(amis);
+} catch (erreur) {
+  secondeAmis = `${erreur.code ?? '?'} — ${erreur.message ?? erreur}`;
+}
+noter('le suivi entre amis se rejoue sans erreur', secondeAmis === null, secondeAmis ?? '');
+
+// Deux comptes témoins, sans lien au départ, plus un troisième qui restera
+// étranger à la relation : c'est lui qui doit ne rien voir.
+const USER_C = '33333333-3333-3333-3333-333333333333';
+
+// Le code est effacé d'abord : le fichier se rejoue, et les codes tirés au
+// sort lors de l'exécution précédente ne doivent pas décider du résultat. Un
+// banc qui dépend d'un état laissé par un autre passage ne prouve rien.
+//
+// RLS est désactivée le temps de cette remise à zéro, et ce n'est pas une
+// entorse : la préparation d'un banc s'exécute avec les droits du propriétaire
+// de la base, pas ceux d'un utilisateur. La première version de ce bloc l'avait
+// oublié, et le résultat était trompeur — un `update` refusé par la politique
+// « Profiles updatable by owner » (auth.uid() y vaut NULL hors requête
+// authentifiée) ne lève rien, il ne touche simplement aucune ligne. Les codes
+// de l'exécution précédente survivaient alors, et l'épreuve d'idempotence
+// accusait la fonction, qui était juste.
+await db.exec(`
+  insert into auth.users (id, email) values
+    ('${USER_C}', 'c@exemple.fr')
+  on conflict (id) do nothing;
+
+  alter table public.profiles disable row level security;
+  update public.profiles set friend_code = null
+    where id in ('${USER_A}', '${USER_B}', '${USER_C}');
+  update public.profiles set display_name = 'Apprenant A' where id = '${USER_A}';
+  update public.profiles set display_name = 'Apprenant B' where id = '${USER_B}';
+  delete from public.amis;
+  alter table public.profiles enable row level security;
+`);
+
+{
+  // La remise à zéro doit avoir eu lieu : sans cette vérification, un échec
+  // silencieux du bloc ci-dessus (comme celui qui a eu lieu) se confondrait
+  // avec une fonction fautive.
+  const r = await db.query(
+    `select count(*)::int as n from public.profiles
+     where id in ('${USER_A}', '${USER_B}', '${USER_C}') and friend_code is not null`
+  );
+  noter('la remise a zero du banc a bien efface les codes', r.rows[0].n === 0, `${r.rows[0].n} code(s) subsistant(s)`);
+}
+
+// --- Le code d'invitation --------------------------------------------------
+
+{
+  // Le générateur, éprouvé sur un grand nombre de tirages.
+  //
+  // C'est l'épreuve qui manquait, et son absence a coûté cher : la première
+  // version de l'alphabet faisait 31 signes alors que le modulo en produit 32,
+  // donc `substr` sortait de la chaîne une fois sur 32 et le code tombait à 9
+  // caractères. Un seul tirage sur trente-deux passait — les épreuves
+  // précédentes, qui n'en faisaient qu'un, ne pouvaient pas le voir.
+  //
+  // Un tirage ne prouve rien d'un générateur. On en fait donc 300, et l'on
+  // exige que TOUS soient conformes.
+  const tirages = await db.query(
+    `select count(*) filter (where c ~ '^[A-HJ-KM-NP-Z1-9]{10}$')::int as conformes,
+            count(*)::int as total,
+            count(*) filter (where length(c) <> 10)::int as mauvaise_longueur
+     from (select public.generer_code_ami() as c from generate_series(1, 300)) t`
+  );
+  const t = tirages.rows[0];
+  noter(
+    'sur 300 tirages, tous les codes sont conformes a la contrainte',
+    t.conformes === t.total,
+    `${t.conformes}/${t.total} conformes, ${t.mauvaise_longueur} de mauvaise longueur`
+  );
+
+  // L'accord entre l'alphabet et le modulo, dit explicitement. C'est la cause
+  // du défaut ci-dessus, et une contrainte de la table le rattraperait — mais
+  // seulement à l'écriture, alors qu'ici on voit la cause.
+  const accord = await db.query(
+    `select (length(public.alphabet_code_ami()) = 32) as accord,
+            length(public.alphabet_code_ami()) as taille`
+  );
+  noter(
+    'l’alphabet des codes fait exactement 32 signes, comme le modulo',
+    accord.rows[0].accord === true,
+    `${accord.rows[0].taille} signe(s)`
+  );
+}
+
+{
+  // L'idempotence s'éprouve DANS une seule transaction, et ce n'est pas un
+  // détail de méthode : `enTantQue` annule toujours son travail (c'est ainsi
+  // qu'il isole une épreuve), donc deux appels séparés repartent chacun d'une
+  // base vierge et ne peuvent rien montrer l'un de l'autre. La première
+  // version de cette épreuve comparait deux transactions : elle accusait la
+  // fonction de ne pas être idempotente alors que le harnais effaçait son
+  // propre travail entre les deux.
+  const [code, encore] = await enTantQue(USER_A, async (tx) => {
+    const a = await tx.query('select public.obtenir_code_ami($1::uuid) as c', [USER_A]);
+    const b = await tx.query('select public.obtenir_code_ami($1::uuid) as c', [USER_A]);
+    return [a.rows[0].c, b.rows[0].c];
+  });
+
+  noter(
+    'un code d’invitation se crée à la demande',
+    typeof code === 'string' && /^[A-HJ-KM-NP-Z1-9]{10}$/.test(code),
+    `code : ${code}`
+  );
+
+  // Le rappeler ne le change pas : c'est le même code, sinon un utilisateur
+  // qui rouvre l'écran perdrait celui qu'il vient de partager.
+  noter(
+    'rappeler le code ne le regenere pas',
+    code === encore,
+    `${code} puis ${encore}`
+  );
+}
+
+{
+  // Sans droit sur le profil d'un autre, on ne peut pas lui fabriquer un code.
+  //
+  // La politique « Profiles updatable by owner » ne s'applique qu'à la ligne
+  // de l'appelant : B qui demande le code de A ne voit aucune ligne à mettre à
+  // jour. Et parce que `obtenir_code_ami` ne LÈVE pas — un UPDATE sur zéro
+  // ligne n'est pas une erreur — c'est l'EFFET qu'il faut mesurer, pas le
+  // refus. La fonction a d'ailleurs rendu NULL, ce qui est la bonne réponse :
+  // elle n'a rien trouvé et n'a rien pu écrire.
+  const avant = await db.query('select friend_code from public.profiles where id = $1', [USER_A]);
+
+  const rendu = await enTantQue(USER_B, (tx) =>
+    tx.query('select public.obtenir_code_ami($1::uuid) as c', [USER_A]).then((r) => r.rows[0].c)
+  );
+
+  const apres = await db.query('select friend_code from public.profiles where id = $1', [USER_A]);
+  noter(
+    'on ne fabrique pas le code d’autrui',
+    rendu === null && apres.rows[0].friend_code === avant.rows[0].friend_code,
+    `rendu ${rendu ?? 'null'}, code de A ${avant.rows[0].friend_code === apres.rows[0].friend_code ? 'inchange' : 'MODIFIE'}`
+  );
+}
+
+// --- La relation -----------------------------------------------------------
+
+let codeB = null;
+let codeA = null;
+{
+  // Les codes sont produits par le générateur sous l'identité de leur porteur
+  // — c'est ainsi qu'ils se créent en vrai — mais hors de `enTantQue`, qui
+  // annule tout. Un code lu dans une transaction annulée n'existe pas, et
+  // `ajouter_ami_par_code` répondrait alors « aucun compte ne porte ce code ».
+  //
+  // La remise à zéro du banc les a mis à `null` ; on les repose donc ici, avec
+  // l'identité de chacun, puis on les relit en tant que propriétaire pour être
+  // sûr qu'ils sont bien en base.
+  for (const id of [USER_A, USER_B]) {
+    await db.transaction(async (tx) => {
+      await tx.exec('set local role authenticated');
+      await tx.exec(`set local request.jwt.claims = '{"sub":"${id}"}'`);
+      await tx.query('select public.obtenir_code_ami($1::uuid)', [id]);
+    });
+  }
+
+  const codes = await db.query(
+    'select id, friend_code from public.profiles where id in ($1, $2)',
+    [USER_A, USER_B]
+  );
+  codeA = codes.rows.find((r) => r.id === USER_A)?.friend_code ?? null;
+  codeB = codes.rows.find((r) => r.id === USER_B)?.friend_code ?? null;
+
+  noter('le code de A existe', /^[A-HJ-KM-NP-Z1-9]{10}$/.test(codeA ?? ''), `code A : ${codeA}`);
+  noter('le code de B existe', /^[A-HJ-KM-NP-Z1-9]{10}$/.test(codeB ?? ''), `code B : ${codeB}`);
+  noter(
+    'deux comptes ont deux codes differents',
+    codeA !== null && codeB !== null && codeA !== codeB,
+    `${codeA} / ${codeB}`
+  );
+}
+
+{
+  // Avant toute relation, personne ne voit personne.
+  const n = await enTantQue(USER_C, async (tx) => {
+    const r = await tx.query('select count(*)::int as n from public.learning_sessions where user_id = $1', [
+      USER_A,
+    ]);
+    return r.rows[0].n;
+  });
+  noter('un etranger ne voit rien des seances d’autrui', n === 0, `${n} ligne(s)`);
+}
+
+{
+  // A saisit le code de B : la relation se crée, dans l'ordre canonique.
+  //
+  // Cette épreuve COMMITE, et c'est nécessaire : les suivantes ont besoin que
+  // la relation existe réellement, et `enTantQue` l'annulerait. Le geste est
+  // reproduit tel quel — identité de A, transaction qui aboutit — donc rien
+  // n'est court-circuité.
+  await db.transaction(async (tx) => {
+    await tx.exec('set local role authenticated');
+    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_A}"}'`);
+    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_A, codeB]);
+  });
+
+  const r = await db.query('select user_a, user_b from public.amis');
+  noter(
+    'saisir le code d’un ami cree la relation',
+    r.rows.length === 1 && r.rows[0].user_b === USER_B,
+    `${r.rows.length} ligne(s), cible ${r.rows[0]?.user_b ?? 'aucune'}`
+  );
+}
+
+{
+  // La réciprocité est structurelle : une seule ligne, et elle suffit aux deux.
+  const n = await enTantQue(USER_B, async (tx) => {
+    const r = await tx.query('select count(*)::int as n from public.amis');
+    return r.rows[0].n;
+  });
+  noter('B voit la relation sans l’avoir demandee', n === 1, `${n} ligne(s)`);
+}
+
+{
+  // Et dans l'autre sens : B voit les séances de A.
+  //
+  // Le nombre attendu est LU, pas écrit : les sections précédentes du banc
+  // ajoutent des séances à A, et une constante ici deviendrait fausse au
+  // premier ajout — l'épreuve accuserait alors la politique, qui est juste.
+  // Ce qui compte est que B voie EXACTEMENT ce que le propriétaire voit.
+  const total = await db.query('select count(*)::int as n from public.learning_sessions where user_id = $1', [
+    USER_A,
+  ]);
+  const vueParB = await enTantQue(USER_B, async (tx) => {
+    const r = await tx.query('select count(*)::int as n from public.learning_sessions where user_id = $1', [
+      USER_A,
+    ]);
+    return r.rows[0].n;
+  });
+  noter(
+    'un ami voit exactement les seances de son ami',
+    vueParB === total.rows[0].n && total.rows[0].n > 0,
+    `${vueParB} vue(s) par B, ${total.rows[0].n} en base`
+  );
+}
+
+{
+  // Le point de la table : A suit B, donc B suit A. Il n'existe pas d'état à
+  // sens unique — c'est la clé primaire ordonnée qui le garantit.
+  const r = await db.query('select user_a, user_b from public.amis');
+  const ligne = r.rows[0];
+  noter(
+    'la relation est rangee dans un ordre canonique',
+    ligne !== undefined && ligne.user_a < ligne.user_b,
+    ligne ? `${ligne.user_a} < ${ligne.user_b}` : 'aucune ligne'
+  );
+}
+
+{
+  // Un code qui ne désigne personne. On ne le fabrique pas en abîmant un vrai
+  // code — un tirage malchanceux aurait pu tomber sur un code valide et
+  // l'épreuve aurait alors accusé la fonction. On prend un code bien formé
+  // mais qui n'a jamais été distribué, ce qui est exactement le cas réel.
+  const r = await tentative(USER_B, async (tx) => {
+    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_B, 'ZZZZZZZZZZ']);
+  });
+  noter(
+    'un code inconnu est refuse',
+    r.refus === true && r.code === 'P0002',
+    `${r.code ?? 'aucun code'} — ${r.message ?? ''}`
+  );
+
+  // Un code vide est un autre refus, avec son propre code d'erreur : l'écran
+  // doit pouvoir distinguer « champ vide » de « code inexistant ».
+  const vide = await tentative(USER_B, async (tx) => {
+    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_B, '   ']);
+  });
+  noter(
+    'un code vide est refuse autrement qu’un code inconnu',
+    vide.refus === true && vide.code === '22023',
+    `${vide.code ?? 'aucun code'} — ${vide.message ?? ''}`
+  );
+
+  const n = await db.query('select count(*)::int as n from public.amis');
+  noter('aucun des deux refus n’a rien cree', n.rows[0].n === 1, `${n.rows[0].n} ligne(s)`);
+}
+
+{
+  // On ne s'ajoute pas soi-même. Le code de A est celui qui est réellement en
+  // base — on le relit, on ne le redemande pas dans une transaction annulée.
+  const r = await tentative(USER_A, async (tx) => {
+    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_A, codeA]);
+  });
+  noter(
+    'on ne s’ajoute pas soi-meme',
+    r.refus === true && r.code === '22023',
+    `${r.code ?? 'aucun refus'} — ${r.message ?? ''}`
+  );
+
+  // Et la casse ne compte pas : un code recopié en minuscules doit marcher.
+  // C'est ce qu'on fait en le dictant au téléphone.
+  const enMinuscules = await enTantQue(USER_C, async (tx) => {
+    const r = await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text) as c', [
+      USER_C,
+      codeA.toLowerCase(),
+    ]);
+    return r.rows[0].c;
+  });
+  noter(
+    'un code recopie en minuscules est accepte',
+    enMinuscules === USER_A,
+    `rendu : ${enMinuscules ?? 'null'}`,
+  );
+}
+
+{
+  // Un étranger à la relation ne peut pas la rompre : la politique de
+  // suppression n'ouvre que les lignes où l'on figure. Et parce qu'un DELETE
+  // refusé ne lève pas — il ne touche aucune ligne — c'est l'effet qu'on
+  // mesure. On COMMITE pour que la mesure porte sur le disque et non sur une
+  // transaction qu'on s'apprête à annuler.
+  await db.transaction(async (tx) => {
+    await tx.exec('set local role authenticated');
+    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_C}"}'`);
+    await tx.query('delete from public.amis');
+  });
+  const apres = await db.query('select count(*)::int as n from public.amis');
+  noter(
+    'un etranger ne peut pas rompre la relation d’un autre',
+    apres.rows[0].n === 1,
+    `${apres.rows[0].n} ligne(s) restante(s)`
+  );
+}
+
+{
+  // Le mensonge, et ce qu'il permet vraiment.
+  //
+  // `ajouter_ami_par_code` est SECURITY DEFINER et reçoit l'identifiant en
+  // paramètre : l'appelant peut donc mentir sur SON identité. C'est la
+  // POLITIQUE d'insertion qui arrête le mensonge — mais pas celui qu'on
+  // croirait. Écrire `p_user_id = A` quand on est C produit la paire (A, C) ;
+  // la politique exige « auth.uid() = user_a OR auth.uid() = user_b », et
+  // auth.uid() vaut C, qui EST user_b. Elle l'accepte donc.
+  //
+  // Autrement dit : on peut se lier soi-même à n'importe qui, ce qui est
+  // exactement le comportement retenu (suivi immédiat, sans acceptation), mais
+  // on ne peut pas fabriquer une relation où l'on ne figure pas. C'est ce
+  // second cas qu'il faut refuser, et c'est celui-ci qu'on éprouve.
+  const codeA2 = await db.query('select friend_code from public.profiles where id = $1', [USER_A]);
+  const cibleA = codeA2.rows[0].friend_code;
+
+  // C ment : il dit être A, et saisit le code de A. La paire serait (A, A).
+  const soi = await tentative(USER_C, async (tx) => {
+    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_A, cibleA]);
+  });
+  noter(
+    'mentir sur son identifiant ne permet pas de se lier a soi-meme',
+    soi.refus === true && soi.code === '22023',
+    `${soi.code ?? 'aucun refus'} — ${soi.message ?? ''}`
+  );
+
+  // Et C ne peut pas non plus créer une relation entre A et B, où il ne figure
+  // pas : il n'a pas le code de B sous la main, il a le sien, et se lier à B
+  // est légitime. On vérifie donc plutôt qu'aucune paire parasite n'existe.
+  const paires = await db.query('select user_a, user_b from public.amis');
+  noter(
+    'aucune paire parasite n’a ete creee',
+    paires.rows.length === 1,
+    paires.rows.map((r) => `(${r.user_a.slice(0, 4)},${r.user_b.slice(0, 4)})`).join(' ') || 'aucune'
+  );
+}
+
+// --- La synthèse -----------------------------------------------------------
+
+{
+  const r = await enTantQue(USER_A, (tx) =>
+    tx.query('select * from public.mes_amis($1::uuid, $2::date)', [USER_A, AUJOURDHUI])
+  );
+  noter('mes_amis rend exactement un ami', r.rows.length === 1, `${r.rows.length} ligne(s)`);
+  if (r.rows.length === 1) {
+    const ami = r.rows[0];
+    noter('la synthese porte l’identifiant de l’ami', ami.user_id === USER_B, ami.user_id);
+    noter('la synthese porte le nom de l’ami', ami.nom === 'Apprenant B', ami.nom ?? 'aucun nom');
+    noter(
+      'la synthese expose les versets de la semaine',
+      ami.versets_cette_semaine !== undefined && ami.versets_cette_semaine !== null,
+      `${ami.versets_cette_semaine}`
+    );
+  }
+}
+
+{
+  // Le mensonge symétrique : C tente de lire le point de A, dont il n'est pas
+  // l'ami. La politique doit rendre zéro ligne — et non une erreur, qui
+  // apprendrait à C que le compte existe.
+  const r = await enTantQue(USER_C, (tx) =>
+    tx.query('select * from public.point_d_un_ami($1::uuid, $2::date)', [USER_A, AUJOURDHUI])
+  );
+  noter(
+    'un etranger n’obtient rien du point d’un ami (et non une erreur)',
+    r.rows.length === 0,
+    `${r.rows.length} ligne(s)`
+  );
+}
+
+{
+  // Rompre la relation ferme les DEUX sens, puisqu'il n'y a qu'une ligne.
+  //
+  // Cette épreuve s'exécute hors de `enTantQue` et COMMITE, et c'est
+  // nécessaire : rompre est une suppression, et l'observer depuis une
+  // transaction qui l'annule ne montrerait que le travail du harnais. Elle est
+  // la dernière du fichier, donc elle ne perturbe rien.
+  const vueAvant = await enTantQue(USER_B, async (tx) => {
+    const r = await tx.query(
+      'select count(*)::int as n from public.learning_sessions where user_id = $1',
+      [USER_A]
+    );
+    return r.rows[0].n;
+  });
+  noter('avant rupture, B voit les seances de A', vueAvant > 0, `${vueAvant} ligne(s)`);
+
+  // B rompt la relation — c'est le geste réel, sous son identité, et il commit.
+  await db.transaction(async (tx) => {
+    await tx.exec('set local role authenticated');
+    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_B}"}'`);
+    await tx.query('delete from public.amis');
+  });
+
+  const restant = await db.query('select count(*)::int as n from public.amis');
+  noter('rompre supprime bien la ligne', restant.rows[0].n === 0, `${restant.rows[0].n} ligne(s)`);
+
+  const vueApres = await enTantQue(USER_B, async (tx) => {
+    const r = await tx.query(
+      'select count(*)::int as n from public.learning_sessions where user_id = $1',
+      [USER_A]
+    );
+    return r.rows[0].n;
+  });
+  noter(
+    'apres rupture, B ne voit plus rien de A — l’autre sens est ferme aussi',
+    vueApres === 0,
+    `${vueApres} ligne(s)`
+  );
+
+  // Et le point d'un ami ne rend plus rien non plus.
+  const point = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.point_d_un_ami($1::uuid, $2::date)', [USER_A, AUJOURDHUI])
+  );
+  noter('apres rupture, le point de l’ami ne rend plus rien', point.rows.length === 0, `${point.rows.length} ligne(s)`);
+}
+
 // === Verdict ===============================================================
 
 const echecs = resultats.filter((r) => !r.ok);
