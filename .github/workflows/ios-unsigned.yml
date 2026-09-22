@@ -1,0 +1,275 @@
+name: IPA non signé (iOS)
+
+# Produit un IPA **non signé**, à re-signer sur la machine de l'utilisateur.
+#
+# Pourquoi non signé : signer en intégration continue exigerait un certificat,
+# un profil de provisionnement et leur mot de passe — exactement ce qui n'a pas
+# sa place dans un dépôt public. Et un IPA non signé ne s'installe pas tel quel :
+# iOS vérifie la signature. L'artefact est un produit intermédiaire, re-signé
+# ensuite avec Sideloadly ou AltStore.
+#
+# Pourquoi pas EAS Build : EAS refuse une compilation iOS pour appareil sans
+# identifiants Apple. `xcodebuild` avec la signature désactivée, lui, produit
+# l'archive.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  ipa:
+    name: Compiler un IPA non signé
+    # Xcode 16 est le défaut de cette image, et suffit : Expo SDK 52 n'embarque
+    # pas `expo-modules-jsi`, qui est le seul à exiger Swift 6.2 (donc Xcode 26).
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    # Les variables sont au niveau du JOB, et non de l'étape : Metro les
+    # remplace pendant la phase de *bundling*, qui se déroule À L'INTÉRIEUR de
+    # xcodebuild. Les déclarer sur l'étape `prebuild` ne servirait à rien — le
+    # paquet se compilerait parfaitement et n'aurait aucune configuration.
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v5
+
+      - name: Installer Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Vérifier la version de Xcode
+        # Une étape instantanée plutôt qu'un échec obscur après deux minutes de
+        # compilation : l'image peut changer sa version par défaut sans
+        # prévenir, et l'erreur produite ne nomme alors pas l'exigence.
+        run: |
+          VERSION=$(xcodebuild -version | head -n 1 | sed 's/^Xcode //')
+          MAJEUR=${VERSION%%.*}
+
+          if [ "$MAJEUR" -lt 16 ]; then
+            echo "::error::Xcode $VERSION est trop ancien pour ce projet."
+            echo "Expo SDK 52 demande Xcode 16 ou plus récent."
+            exit 1
+          fi
+
+          echo "Xcode $VERSION"
+
+      - name: Signaler la configuration manquante
+        # Un avertissement, et non un échec : l'application est conçue pour
+        # fonctionner entièrement hors ligne, et n'exige un compte que pour la
+        # sauvegarde. Une variable absente n'est donc pas une erreur — mais
+        # elle doit être visible, sinon l'écran « Sauvegarde » dira simplement
+        # que tout est « non configuré » sans qu'on sache pourquoi.
+        run: |
+          manquantes=""
+
+          for nom in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY; do
+            if [ -z "${!nom}" ]; then
+              manquantes="$manquantes $nom"
+            fi
+          done
+
+          if [ -n "$manquantes" ]; then
+            echo "::warning::Variables de dépôt absentes :$manquantes"
+            echo "L'application fonctionnera hors ligne ; la sauvegarde en ligne restera inactive."
+            echo "À poser dans Settings > Secrets and variables > Actions > Variables."
+          else
+            echo "Configuration Supabase présente."
+          fi
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier les types et les tests
+        # Un binaire qui compile n'est pas un binaire juste.
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Générer le projet iOS
+        # `--clean` : sans lui, une modification de `app.json` — un identifiant,
+        # une permission — peut ne pas être reprise, et le binaire ne
+        # correspondrait plus au code.
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Repérer le projet et le schéma
+        id: cible
+        run: |
+          PROJET_APP=$(find ios -maxdepth 1 -name '*.xcodeproj' | head -n 1)
+
+          if [ -z "$PROJET_APP" ]; then
+            echo "::error::Aucun projet Xcode n'a été généré par expo prebuild."
+            exit 1
+          fi
+
+          SCHEME=$(basename "$PROJET_APP" .xcodeproj)
+          WORKSPACE=$(find ios -maxdepth 1 -name '*.xcworkspace' | head -n 1)
+
+          # `type` et `chemin` sortent SÉPARÉMENT : les concaténer obligerait à
+          # interpoler le résultat sans guillemets, et un chemin contenant une
+          # espace se découperait en deux arguments.
+          if [ -n "$WORKSPACE" ]; then
+            TYPE=workspace
+            CHEMIN=$WORKSPACE
+          else
+            TYPE=project
+            CHEMIN=$PROJET_APP
+          fi
+
+          echo "Projet   : $CHEMIN"
+          echo "Schéma   : $SCHEME"
+          echo "Cible    : $TYPE"
+
+          SCHEMAS=$(xcodebuild "-$TYPE" "$CHEMIN" -list -json 2>/dev/null \
+            | node scripts/lire-schemas-xcodebuild.mjs || true)
+
+          # CONFIRMATION, pas sélection : le schéma est déjà déduit du projet.
+          # Une liste illisible avertit sans échouer — un contrôle de confort qui
+          # casse un build valide coûte plus cher que le défaut surveillé.
+          if [ -z "$SCHEMAS" ]; then
+            echo "::warning::La liste des schémas n'a pas pu être lue."
+          elif ! printf '%s\n' "$SCHEMAS" | grep -Fxq "$SCHEME"; then
+            echo "::error::Le schéma « $SCHEME » est absent de la liste :"
+            printf '%s\n' "$SCHEMAS"
+            exit 1
+          fi
+
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+          echo "chemin=$CHEMIN" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+
+      - name: Compiler sans signature
+        # Aucun `working-directory` ici : les chemins produits par l'étape
+        # précédente sont relatifs à la racine du dépôt. Les résoudre depuis
+        # `ios/` donnerait `ios/ios/…`, et xcodebuild répondrait « does not
+        # exist » pour un espace de travail qu'on vient de trouver.
+        #
+        # Les quatre réglages de signature sont nécessaires ENSEMBLE :
+        # `CODE_SIGNING_ALLOWED=NO` seul suffit la plupart du temps, mais Xcode
+        # retombe parfois sur une identité par défaut, et l'échec est alors un
+        # message de trousseau difficile à relier à sa cause.
+        run: |
+          xcodebuild "-${{ steps.cible.outputs.type }}" "${{ steps.cible.outputs.chemin }}" \
+            -scheme "${{ steps.cible.outputs.scheme }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+
+      - name: Empaqueter l'IPA
+        id: paquet
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          FICHIER="hifdh-$VERSION-non-signe.ipa"
+
+          APP=$(find ios/build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)
+
+          if [ -z "$APP" ]; then
+            echo "::error::Aucune application compilée dans Release-iphoneos."
+            exit 1
+          fi
+
+          echo "Application : $APP"
+
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry "$FICHIER" Payload
+          rm -rf Payload
+
+          echo "fichier=$FICHIER" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ls -lh "$FICHIER"
+
+      - name: Vérifier le contenu du paquet
+        # Le paquet est le SEUL endroit où l'on peut constater que la
+        # configuration y est réellement entrée. Le contrôle ne porte que si
+        # une configuration était attendue : sans variable, l'absence est
+        # normale, et un échec ici ferait croire à un défaut du build.
+        run: |
+          FICHIER="${{ steps.paquet.outputs.fichier }}"
+
+          if [ -z "$EXPO_PUBLIC_SUPABASE_URL" ]; then
+            echo "Aucune configuration Supabase attendue : contrôle ignoré."
+            exit 0
+          fi
+
+          HOTE=$(printf '%s' "$EXPO_PUBLIC_SUPABASE_URL" | sed 's#^https\?://##' | sed 's#/.*##')
+
+          if unzip -p "$FICHIER" 'Payload/*.app/main.jsbundle' | grep -q "$HOTE"; then
+            echo "Le paquet contient bien l'adresse « $HOTE »."
+          else
+            echo "::error::Le paquet ne contient pas l'adresse « $HOTE »."
+            echo "Les variables EXPO_PUBLIC_* sont inlinées au bundling :"
+            echo "elles doivent être déclarées au niveau du job."
+            exit 1
+          fi
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ipa-non-signe
+          path: ${{ steps.paquet.outputs.fichier }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publier la version (étiquette seulement)
+        # Une *release* plutôt qu'un artefact de flux : son téléchargement est
+        # anonyme, alors qu'un artefact de flux exige une connexion — ce qui est
+        # peu commode depuis un téléphone.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FICHIER="${{ steps.paquet.outputs.fichier }}"
+          VERSION="${{ steps.paquet.outputs.version }}"
+
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$FICHIER" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$FICHIER" \
+              --title "Hifdh $VERSION" \
+              --notes "IPA non signé. Voir la marche à suivre de re-signature ci-dessous." \
+              --generate-notes
+          fi
+
+      - name: Expliquer la suite
+        run: |
+          {
+            echo "## IPA non signé produit"
+            echo ""
+            echo "Fichier : \`${{ steps.paquet.outputs.fichier }}\`"
+            echo ""
+            echo "### Cet IPA ne s'installe pas tel quel"
+            echo ""
+            echo "iOS vérifie la signature et refuse tout ce qui n'en a pas. Il doit"
+            echo "être re-signé sur votre machine, avec Sideloadly ou AltStore."
+            echo ""
+            echo "### Ce qu'il faut prévoir"
+            echo ""
+            echo "- **Mode développeur** : Réglages > Confidentialité et sécurité >"
+            echo "  Mode développeur, puis redémarrer. Obligatoire depuis iOS 16."
+            echo "- **Mot de passe principal de l'identifiant Apple**, et non un mot"
+            echo "  de passe d'application : celui-ci est refusé avec un compte gratuit."
+            echo "- **Sous Windows**, iTunes doit venir du site d'Apple. La version du"
+            echo "  Microsoft Store n'installe pas les pilotes nécessaires, et"
+            echo "  Sideloadly répond « No devices detected »."
+            echo "- Sur l'iPhone, après installation : Réglages > Général > VPN et"
+            echo "  gestion de l'appareil > votre identifiant Apple > Faire confiance."
+            echo ""
+            echo "### Limites d'un compte Apple gratuit"
+            echo ""
+            echo "7 jours de validité, 3 applications installées à la fois,"
+            echo "10 identifiants d'application par tranche de 7 jours."
+            echo "Cochez le rafraîchissement automatique dans Sideloadly."
+          } >> "$GITHUB_STEP_SUMMARY"

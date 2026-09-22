@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "verifier:donnees": "python data/quran/verifier_divisions.py",
     "verifier:supabase": "node scripts/banc_supabase.mjs",
+    "verifier:flux": "node scripts/analyser-flux.mjs",
     "falsifier:tests": "python scripts/falsifier_tests_sync.py",
     "build:apk": "eas build --platform android --profile preview",
     "build:ipa": "eas build --platform ios --profile preview"

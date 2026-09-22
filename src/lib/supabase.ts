@@ -19,16 +19,38 @@ import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { creerStockageMorceaux, type DepotCles } from './stockageSecurise';
+import { normaliserUrlSupabase, premierNonVide } from './configSupabase';
 
-const supabaseUrl: string =
-  Constants.expoConfig?.extra?.supabaseUrl ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+/**
+ * L'URL du projet, et la clé publique.
+ *
+ * `premierNonVide` plutôt que `??` : une clé vide dans `app.json` n'est pas
+ * nulle, et l'emporterait sur la variable d'environnement.
+ */
+// L'URL est normalisée : le tableau de bord Supabase affiche en premier celle
+// de l'API REST (« .../rest/v1/ »), et la copier telle quelle casserait
+// l'authentification. Voir `configSupabase.ts`.
+const supabaseUrl: string = normaliserUrlSupabase(
+  premierNonVide(
+    Constants.expoConfig?.extra?.supabaseUrl,
+    process.env.EXPO_PUBLIC_SUPABASE_URL
+  )
+);
 
-const supabaseAnonKey: string =
-  Constants.expoConfig?.extra?.supabaseAnonKey ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const supabaseAnonKey: string = premierNonVide(
+  Constants.expoConfig?.extra?.supabaseAnonKey,
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+);
 
-/** Vrai si les deux clés sont renseignées. */
+/**
+ * Vrai si les deux clés sont renseignées.
+ *
+ * Accepte aussi bien la clé `anon` historique (un JWT commençant par « eyJ »)
+ * que la clé `publishable` actuelle (« sb_publishable_... ») : le client gère
+ * les deux, et la première est en cours de dépréciation.
+ */
 export function isSupabaseConfigured(): boolean {
-  return supabaseUrl.trim() !== '' && supabaseAnonKey.trim() !== '';
+  return supabaseUrl !== '' && supabaseAnonKey !== '';
 }
 
 /**

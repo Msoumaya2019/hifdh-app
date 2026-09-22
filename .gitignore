@@ -50,3 +50,9 @@ coverage/
 
 # Dossier de travail (telechargements et verifications ponctuelles)
 .tmp-dl/
+
+# Projets natifs : regeneres par `expo prebuild --clean`, jamais versionnes.
+# Un dossier `ios/` versionne porte ses references de signature et devient une
+# source constante de conflits a chaque mise a jour d'Expo.
+/ios/
+/android/

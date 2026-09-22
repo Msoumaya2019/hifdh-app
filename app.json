@@ -34,12 +34,7 @@
     "extra": {
       "eas": {
         "projectId": ""
-      },
-      "supabaseUrl": "",
-      "supabaseAnonKey": ""
-    },
-    "updates": {
-      "url": ""
+      }
     },
     "runtimeVersion": {
       "policy": "appVersion"

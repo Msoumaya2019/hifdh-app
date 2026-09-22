@@ -30,6 +30,11 @@ jobs:
       - name: Vérifier les types
         run: npm run typecheck
 
+      # Avant les tests : un flux cassé ne se voit qu'au lancement, sur un
+      # exécuteur qui coûte quinze minutes. Ce contrôle-ci prend une seconde.
+      - name: Analyser les flux de travail
+        run: npm run verifier:flux
+
       - name: Lancer les tests
         run: npm test
 

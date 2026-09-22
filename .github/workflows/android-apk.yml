@@ -1,0 +1,168 @@
+name: APK Android
+
+# Produit un APK Android installable, sans compte ni service externe.
+#
+# Pourquoi pas EAS Build : `eas build` exige un projet EAS enregistré
+# (`extra.eas.projectId`) et un compte. La chaîne d'outils native, elle, ne
+# demande rien — et `expo prebuild` génère une configuration `release` signée
+# avec la clé de débogage, ce qui suffit à installer l'APK sur un téléphone
+# pour l'essayer.
+#
+# Attention : cette clé de débogage n'est PAS une clé de publication. Le jour
+# où l'application irait sur un store, il faudrait une clé de release — et
+# Android interdit d'en changer ensuite pour une même application.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  apk:
+    name: Compiler un APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v5
+
+      - name: Installer Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installer Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Signaler la configuration manquante
+        # Avertissement, et non échec : l'application fonctionne entièrement
+        # hors ligne. La variable absente doit rester visible, sinon l'écran
+        # « Sauvegarde » dira simplement « non configuré » sans qu'on sache
+        # pourquoi.
+        run: |
+          manquantes=""
+
+          for nom in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY; do
+            if [ -z "${!nom}" ]; then
+              manquantes="$manquantes $nom"
+            fi
+          done
+
+          if [ -n "$manquantes" ]; then
+            echo "::warning::Variables de dépôt absentes :$manquantes"
+            echo "L'application fonctionnera hors ligne ; la sauvegarde en ligne restera inactive."
+          else
+            echo "Configuration Supabase présente."
+          fi
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier les types et les tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Générer le projet Android
+        run: npx expo prebuild --platform android --clean
+
+      - name: Compiler l'APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Empaqueter
+        id: paquet
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          FICHIER="hifdh-$VERSION.apk"
+
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "::error::Aucun APK produit dans apk/release."
+            exit 1
+          fi
+
+          cp "$APK" "$FICHIER"
+          echo "fichier=$FICHIER" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ls -lh "$FICHIER"
+
+      - name: Vérifier le contenu du paquet
+        # Un APK est une archive ZIP. On y cherche la configuration attendue,
+        # qui n'existe que si les variables étaient déclarées au niveau du job.
+        run: |
+          FICHIER="${{ steps.paquet.outputs.fichier }}"
+
+          if [ -z "$EXPO_PUBLIC_SUPABASE_URL" ]; then
+            echo "Aucune configuration Supabase attendue : contrôle ignoré."
+            exit 0
+          fi
+
+          HOTE=$(printf '%s' "$EXPO_PUBLIC_SUPABASE_URL" | sed 's#^https\?://##' | sed 's#/.*##')
+
+          # Le bundle est un asset compressé dans l'APK : on le décompresse
+          # avant de le fouiller, un `grep` sur l'archive ne verrait rien.
+          mkdir -p .tmp-apk
+          unzip -o -q "$FICHIER" 'assets/*' -d .tmp-apk || true
+
+          if grep -rq "$HOTE" .tmp-apk; then
+            echo "Le paquet contient bien l'adresse « $HOTE »."
+          else
+            echo "::error::Le paquet ne contient pas l'adresse « $HOTE »."
+            exit 1
+          fi
+
+          rm -rf .tmp-apk
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v7
+        with:
+          name: apk-android
+          path: ${{ steps.paquet.outputs.fichier }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publier la version (étiquette seulement)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FICHIER="${{ steps.paquet.outputs.fichier }}"
+          VERSION="${{ steps.paquet.outputs.version }}"
+
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$FICHIER" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$FICHIER" \
+              --title "Hifdh $VERSION" \
+              --notes "APK Android signé avec la clé de débogage, à installer directement." \
+              --generate-notes
+          fi
+
+      - name: Expliquer la suite
+        run: |
+          {
+            echo "## APK produit"
+            echo ""
+            echo "Fichier : \`${{ steps.paquet.outputs.fichier }}\`"
+            echo ""
+            echo "Cet APK s'installe directement sur un téléphone Android :"
+            echo "il est signé avec la clé de débogage. Android affichera un"
+            echo "avertissement d'installation depuis une source inconnue."
+            echo ""
+            echo "Cette clé ne convient pas à une publication sur un store :"
+            echo "Android interdit de changer de clé pour une même application."
+          } >> "$GITHUB_STEP_SUMMARY"
