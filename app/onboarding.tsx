@@ -17,9 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getAllSurahs, getAllJuz, getAllHizb } from '@/data/quranData';
-import { saveUserConfig, addMemorizedPassage } from '@/lib/database';
-import { generateProgram } from '@/lib/programGenerator';
-import { saveSession } from '@/lib/database';
+import { saveUserConfig, addMemorizedPassage, getAllSessions, getMemorizedPassages, appliquerRecalcul } from '@/lib/database';
+import { planifierRecalcul } from '@/lib/programGenerator';
 import { ScrollView as RNScrollView } from 'react-native';
 import type {
   UserConfig,
@@ -57,11 +56,17 @@ export default function OnboardingScreen() {
       await addMemorizedPassage(passage.surah, passage.startAyah, passage.endAyah, passage.level);
     }
 
-    // Générer le programme initial
-    const sessions = generateProgram(config);
-    for (const session of sessions) {
-      await saveSession(session);
-    }
+    // Recalculer le programme en tenant compte de l'existant.
+    //
+    // Sans cela, refaire le questionnaire depuis le profil empilait un second
+    // programme sur le premier : les séances déjà enregistrées n'étaient pas
+    // connues du générateur, et deux séances se retrouvaient à la même date.
+    // L'historique — séances terminées ou passées — est conservé.
+    const existantes = await getAllSessions();
+    // Les passages viennent de la base, où les séances terminées les ont ajoutés :
+    // `config.memorizedPassages` ne reflète que le questionnaire.
+    const memorises = await getMemorizedPassages();
+    await appliquerRecalcul(planifierRecalcul(config, existantes, memorises));
 
     router.replace('/(tabs)');
   }, [memorized, objective, unit, selectedDays, router]);

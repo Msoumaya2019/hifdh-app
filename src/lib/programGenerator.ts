@@ -438,6 +438,53 @@ export function reporterSeance(
   return versDateLocale(prochainJourApprentissage(depart, joursApprentissage));
 }
 
+// === Recalcul du programme ===
+
+export interface PlanRecalcul {
+  /** Identifiants des séances à effacer : l'avenir encore à faire. */
+  aSupprimer: string[];
+  /** Nouvelles séances, recalculées depuis aujourd'hui. */
+  aCreer: LearningSession[];
+}
+
+/**
+ * Recalcule le programme à venir après un changement d'objectif ou de rythme.
+ *
+ * L'historique est intouché : une séance terminée n'est jamais supprimée, c'est
+ * le travail déjà accompli. Tout ce qui reste à faire est en revanche replanifié
+ * depuis aujourd'hui — y compris les séances en retard, dont les versets sont par
+ * définition non mémorisés et se retrouvent donc dans le nouveau programme. Les
+ * conserver produirait un doublon.
+ *
+ * `passagesMemorises` est passé explicitement, et non lu dans `config` : la
+ * configuration n'est écrite qu'à l'onboarding, alors que terminer une séance
+ * ajoute un passage en base. Se fier à `config.memorizedPassages` reviendrait à
+ * replanifier des versets déjà appris.
+ *
+ * Sans cette fonction, refaire le questionnaire empilait un second programme sur
+ * le premier : les séances déjà enregistrées n'étaient pas connues du générateur,
+ * et deux séances se retrouvaient à la même date.
+ */
+export function planifierRecalcul(
+  config: UserConfig,
+  seancesExistantes: LearningSession[],
+  passagesMemorises: MemorizedPassage[],
+  maintenant: Date = new Date(),
+): PlanRecalcul {
+  const aSupprimer = seancesExistantes
+    .filter((s) => s.status !== 'completed')
+    .map((s) => s.id);
+
+  const historique = seancesExistantes.filter((s) => s.status === 'completed');
+
+  const configAJour: UserConfig = { ...config, memorizedPassages: passagesMemorises };
+
+  return {
+    aSupprimer,
+    aCreer: generateProgram(configAJour, historique, maintenant),
+  };
+}
+
 export function estimateCompletionDate(
   config: UserConfig,
   memorizedCount: number,

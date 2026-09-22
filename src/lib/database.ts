@@ -97,6 +97,14 @@ export async function getUserConfig(): Promise<UserConfig | null> {
 
 // === Passages mémorisés ===
 
+/**
+ * Ajoute un passage mémorisé, ou met à jour son niveau s'il existe déjà.
+ *
+ * L'insertion était inconditionnelle : refaire le questionnaire depuis le profil
+ * ajoutait une seconde fois les mêmes passages. Le niveau est celui de la
+ * dernière déclaration — un passage d'abord marqué « unknown » puis « perfect »
+ * doit être compté.
+ */
 export async function addMemorizedPassage(
   surah: number,
   startAyah: number,
@@ -105,6 +113,15 @@ export async function addMemorizedPassage(
 ): Promise<void> {
   const db = await getDatabase();
   const now = new Date().toISOString();
+
+  const miseAJour = await db.runAsync(
+    `UPDATE memorized_passages SET level = ?, updated_at = ?
+     WHERE surah = ? AND start_ayah = ? AND end_ayah = ?`,
+    [level, now, surah, startAyah, endAyah]
+  );
+
+  if ((miseAJour.changes ?? 0) > 0) return;
+
   await db.runAsync(
     `INSERT INTO memorized_passages (surah, start_ayah, end_ayah, level, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -143,24 +160,82 @@ export async function removeMemorizedPassage(
 
 // === Séances d'apprentissage ===
 
+const INSERT_SESSION = `INSERT OR REPLACE INTO learning_sessions
+   (id, date, surah, start_ayah, end_ayah, unit_json, status, completed_at, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+function parametresSession(session: LearningSession): (string | number | null)[] {
+  return [
+    session.id,
+    session.date,
+    session.surah,
+    session.startAyah,
+    session.endAyah,
+    JSON.stringify(session.unit),
+    session.status,
+    session.completedAt ?? null,
+    session.createdAt,
+  ];
+}
+
 export async function saveSession(session: LearningSession): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync(
-    `INSERT OR REPLACE INTO learning_sessions
-     (id, date, surah, start_ayah, end_ayah, unit_json, status, completed_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      session.id,
-      session.date,
-      session.surah,
-      session.startAyah,
-      session.endAyah,
-      JSON.stringify(session.unit),
-      session.status,
-      session.completedAt ?? null,
-      session.createdAt,
-    ]
-  );
+  await db.runAsync(INSERT_SESSION, parametresSession(session));
+}
+
+/**
+ * Applique un recalcul : efface l'avenir encore à faire, écrit le nouveau.
+ *
+ * Les deux étapes sont menées dans une seule transaction : une interruption
+ * entre l'effacement et l'écriture laisserait l'utilisateur sans programme.
+ */
+export async function appliquerRecalcul(plan: {
+  aSupprimer: string[];
+  aCreer: LearningSession[];
+}): Promise<void> {
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+    for (const id of plan.aSupprimer) {
+      await db.runAsync(`DELETE FROM learning_sessions WHERE id = ?`, [id]);
+    }
+    for (const session of plan.aCreer) {
+      await db.runAsync(INSERT_SESSION, parametresSession(session));
+    }
+  });
+}
+
+/**
+ * Toutes les séances, quel que soit leur statut.
+ *
+ * Nécessaire au recalcul : il faut connaître l'existant pour ne remplacer que
+ * l'avenir, et pour que refaire le questionnaire ne double pas le programme.
+ */
+export async function getAllSessions(): Promise<LearningSession[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    date: string;
+    surah: number;
+    start_ayah: number;
+    end_ayah: number;
+    unit_json: string;
+    status: string;
+    completed_at: string | null;
+    created_at: string;
+  }>(`SELECT * FROM learning_sessions ORDER BY date ASC`);
+
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.date,
+    surah: r.surah,
+    startAyah: r.start_ayah,
+    endAyah: r.end_ayah,
+    unit: JSON.parse(r.unit_json),
+    status: r.status as LearningSession['status'],
+    completedAt: r.completed_at ?? undefined,
+    createdAt: r.created_at,
+  }));
 }
 
 export async function getSessionsByDateRange(
