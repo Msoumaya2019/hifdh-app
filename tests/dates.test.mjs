@@ -4,12 +4,16 @@
 // `toISOString()` la calcule en UTC : en France (UTC+1 ou UTC+2), toute date
 // obtenue entre 00:00 et 02:00 heure locale est celle de la veille.
 //
-// Deux précautions rendent ces vérifications fiables :
+// Trois précautions rendent ces vérifications fiables :
 //
 //  1. le fuseau est fixé dans un processus fils, car `node:test` ne peut pas
 //     changer `TZ` dans le processus courant (la variable est lue au démarrage
 //     de Node) ;
-//  2. l'instant de référence est **injecté** dans les fonctions plutôt que lu de
+//  2. l'écriture de `TZ` n'a pas le même sens selon la plateforme : mesuré,
+//     `TZ=GMT+14` donne UTC+14 sous Windows et UTC−14 sous Linux. On sonde donc
+//     les écritures possibles et l'on retient celle qui produit réellement le
+//     décalage voulu, au lieu de supposer ;
+//  3. l'instant de référence est **injecté** dans les fonctions plutôt que lu de
 //     l'horloge. Adossée à l'heure courante, une vérification ne détecte le
 //     défaut que pendant une partie de la journée : mesuré, une mutation de la
 //     date passait inaperçue avant 10 h UTC.
@@ -21,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const RACINE = fileURLToPath(new URL('..', import.meta.url));
 
-function dansFuseau(tz, programme) {
+function executer(tz, programme) {
   const sortie = execFileSync(
     process.execPath,
     [
@@ -37,13 +41,66 @@ function dansFuseau(tz, programme) {
   return JSON.parse(lignes.at(-1));
 }
 
+// Écritures candidates. Le signe de `GMT±N` et de `Etc/GMT±N` s'interprètent
+// différemment selon la plateforme, d'où le balayage des deux signes pour une
+// même magnitude : c'est la sonde qui décide, pas une convention supposée.
+const CANDIDATS = (decalage) => {
+  const magnitude = Math.abs(decalage);
+  return [
+    `GMT+${magnitude}`, `GMT-${magnitude}`,
+    `Etc/GMT+${magnitude}`, `Etc/GMT-${magnitude}`,
+    `UTC+${magnitude}`, `UTC-${magnitude}`,
+  ];
+};
+
+const fuseauxResolus = new Map();
+
+/** Une écriture de `TZ` qui produit réellement ce décalage, sur cette machine. */
+function fuseauPour(decalageVoulu) {
+  if (fuseauxResolus.has(decalageVoulu)) return fuseauxResolus.get(decalageVoulu);
+
+  for (const candidat of CANDIDATS(decalageVoulu)) {
+    try {
+      const mesure = executer(
+        candidat,
+        'console.log(JSON.stringify({ d: -new Date().getTimezoneOffset() / 60 }))',
+      );
+      if (mesure.d === decalageVoulu) {
+        fuseauxResolus.set(decalageVoulu, candidat);
+        return candidat;
+      }
+    } catch {
+      // Écriture refusée par la plateforme : on essaie la suivante.
+    }
+  }
+
+  // On échoue plutôt que de laisser passer un test qui ne prouverait rien.
+  throw new Error(
+    `Aucune écriture de TZ ne donne le décalage ${decalageVoulu} sur cette plateforme : ` +
+      'les vérifications de fuseau ne peuvent pas être concluantes ici.',
+  );
+}
+
+function dansFuseau(decalage, programme) {
+  return executer(fuseauPour(decalage), programme);
+}
+
 // 22 septembre 2026 à 00 h 30, heure locale : la fenêtre où la date UTC est
 // encore celle de la veille, dans un fuseau en avance sur UTC.
 const INSTANT_PIEGE = 'new Date(2026, 8, 22, 0, 30)';
 
+test('le dispositif sait réellement fixer un fuseau', () => {
+  // Sans cette vérification, les tests suivants pourraient passer à vide sur une
+  // plateforme où `TZ` serait ignoré.
+  for (const decalage of [14, -5]) {
+    const mesure = dansFuseau(decalage, 'console.log(JSON.stringify({ d: -new Date().getTimezoneOffset() / 60 }))');
+    assert.equal(mesure.d, decalage, `le décalage ${decalage} n'a pas pu être appliqué`);
+  }
+});
+
 test('en fuseau positif, une date locale ne doit pas basculer la veille', () => {
   const mesure = dansFuseau(
-    'GMT+14',
+    14,
     `
       import { versDateLocale } from '@/lib/dates';
       const d = ${INSTANT_PIEGE};
@@ -55,8 +112,6 @@ test('en fuseau positif, une date locale ne doit pas basculer la veille', () => 
     `,
   );
 
-  // Prémisse : sans elle, le test pourrait passer à vide sur une machine où TZ
-  // serait ignoré, et ne rien prouver.
   assert.equal(mesure.decalage, 14, 'le fuseau demandé n\'a pas été appliqué au processus fils');
   assert.equal(mesure.locale, '2026-09-22', 'la date locale est fausse');
 
@@ -72,7 +127,7 @@ test('en fuseau positif, une date locale ne doit pas basculer la veille', () => 
 
 test('la première séance suit l\'instant injecté, pas la date UTC', () => {
   const mesure = dansFuseau(
-    'GMT+14',
+    14,
     `
       import { generateProgram } from '@/lib/programGenerator';
       const maintenant = ${INSTANT_PIEGE};
@@ -101,7 +156,7 @@ test('la première séance suit l\'instant injecté, pas la date UTC', () => {
 
 test('la date de fin estimée suit l\'instant injecté', () => {
   const mesure = dansFuseau(
-    'GMT+14',
+    14,
     `
       import { estimateCompletionDate } from '@/lib/programGenerator';
       import { versDateLocale } from '@/lib/dates';
@@ -126,7 +181,7 @@ test('la date de fin estimée suit l\'instant injecté', () => {
 
 test('dansJours et ilYAjours suivent l\'instant injecté', () => {
   const mesure = dansFuseau(
-    'GMT+14',
+    14,
     `
       import { dansJours, ilYAjours } from '@/lib/dates';
       const depuis = ${INSTANT_PIEGE};
@@ -147,7 +202,7 @@ test('dansJours et ilYAjours suivent l\'instant injecté', () => {
 
 test('la date de prochaine révision suit l\'instant injecté', () => {
   const mesure = dansFuseau(
-    'GMT+14',
+    14,
     `
       import { getNextReviewDate } from '@/lib/spacedRepetition';
       const depuis = ${INSTANT_PIEGE};
@@ -168,7 +223,7 @@ test('une date nue « AAAA-MM-JJ » est lue comme une date locale', () => {
   // À l'ouest de Greenwich, `new Date('2026-09-21')` (minuit UTC) tombe le
   // 20 septembre en heure locale : l'interface annonçait le mauvais jour.
   const mesure = dansFuseau(
-    'GMT-5',
+    -5,
     `
       import { analyserDateLocale } from '@/lib/dates';
       console.log(JSON.stringify({
@@ -186,7 +241,7 @@ test('une date nue « AAAA-MM-JJ » est lue comme une date locale', () => {
 
 test('l\'affichage d\'une date nue nomme le bon jour, même à l\'ouest de Greenwich', () => {
   const mesure = dansFuseau(
-    'GMT-5',
+    -5,
     `
       import { formatDate } from '@/lib/progress';
       console.log(JSON.stringify({
@@ -200,7 +255,7 @@ test('l\'affichage d\'une date nue nomme le bon jour, même à l\'ouest de Green
   assert.equal(mesure.rendu, 'lundi 21 septembre');
 });
 
-test('les tests de date ne modifient pas la configuration reçue', () => {
+test('la génération ne modifie pas la configuration reçue', async () => {
   // `generateProgram` triait `config.schedule.days` en place : l'appelant
   // retrouvait sa configuration réordonnée.
   const jours = [5, 1, 3];
@@ -211,8 +266,7 @@ test('les tests de date ne modifient pas la configuration reçue', () => {
     onboardingCompleted: true,
   };
 
-  return import('@/lib/programGenerator').then(({ generateProgram }) => {
-    generateProgram(config, [], new Date(2026, 8, 22, 12, 0));
-    assert.deepEqual(jours, [5, 1, 3], 'la configuration de l\'appelant a été réordonnée');
-  });
+  const { generateProgram } = await import('@/lib/programGenerator');
+  generateProgram(config, [], new Date(2026, 8, 22, 12, 0));
+  assert.deepEqual(jours, [5, 1, 3], 'la configuration de l\'appelant a été réordonnée');
 });
