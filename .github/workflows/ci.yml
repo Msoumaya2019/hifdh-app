@@ -137,3 +137,63 @@ jobs:
       # lieu d'un ordre. Aucune des deux ne se verrait sur un téléphone.
       - name: Falsifier les contrôles de renforcement
         run: npm run falsifier:renforcement
+
+  # Le tableau de bord a ses propres données, ses propres tests et ses propres
+  # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
+  # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas
+  # non plus — il rapporte « mutation non détectée » et accuse le code au lieu de
+  # lui-même. Cela s'est produit.
+  tableau-de-bord:
+    name: Tableau de bord
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier les types
+        run: npm run typecheck
+
+      # Avant les tests : les données du tableau de bord sont une copie de celles
+      # de l'application, comparée par empreinte SHA-256. Si elles ont dérivé,
+      # les tests qui suivent porteraient sur autre chose que ce qui sera relu.
+      - name: Vérifier la synchronisation des données
+        run: npm run donnees:verifier
+
+      - name: Lancer les tests
+        run: npm test
+
+      # Les tests portent sur le code ; ce contrôle-ci porte sur les données, et
+      # c'est d'elles que dépend une correction : la chaîne des toumoun est
+      # continue, aucun début de rub' n'est présenté comme estimé, et le résumé
+      # des métadonnées s'accorde avec les données.
+      - name: Vérifier les bornes des toumoun
+        run: npm run verifier:bornes
+
+      # Onze mutations du code de `bornes.ts`, chacune devant tomber sur le test
+      # qui la vise. Le témoin exige que le test nommé existe *et* passe : un
+      # motif qui ne correspond à aucun test fait sortir `node --test` en 0, et
+      # la mutation serait comptée « non détectée » pour une raison qui n'a rien
+      # à voir avec le code.
+      - name: Falsifier les contrôles de bornes
+        run: npm run falsifier:bornes
+
+      # Et quatre mutations des données elles-mêmes, présentées au contrôle
+      # ci-dessus : un toumoun estimé qui déclare ouvrir un rub', une chaîne
+      # rompue, un résumé qui ment, un début de rub' qui disparaît.
+      - name: Falsifier le contrôle des bornes
+        run: python3 scripts/falsifier_verifier_bornes.py
