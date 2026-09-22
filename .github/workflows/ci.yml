@@ -177,6 +177,53 @@ jobs:
       - name: Lancer les tests
         run: npm test
 
+      # `next build` n'était lancé nulle part : le tableau de bord n'avait jamais
+      # été construit pour la production, alors que c'est exactement ce que ferait
+      # un déploiement. Il compile, passe les types et engendre ses six pages
+      # statiques — vérifié à la main. En local, un garde-fou de l'environnement
+      # refuse la suppression en bloc du cache `.next` que Next.js effectue en fin
+      # de construction : le refus ne dit rien du projet, mais il empêche de
+      # conclure. Ici, il conclut.
+      #
+      # Les deux valeurs sont passées au build : Next.js les inline dans le paquet
+      # client, donc les omettre livrerait un tableau de bord sans configuration,
+      # et rien dans le journal ne le dirait. On les cherche ensuite dans ce qui
+      # sera servi — même exigence que le flux Android, qui cherche la sienne dans
+      # l'APK. Sans le refus sur variables absentes, un motif vide passerait
+      # toujours : la vérification ne prouverait rien.
+      - name: Construire pour la production
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Variables de dépôt absentes : le tableau de bord serait livré sans configuration."
+            exit 1
+          fi
+
+          npm run build
+
+          if [ ! -d .next/static ]; then
+            echo "::error::La construction n'a produit aucun paquet client (.next/static)."
+            exit 1
+          fi
+
+          HOTE=$(printf '%s' "$NEXT_PUBLIC_SUPABASE_URL" | sed 's#^https\?://##' | sed 's#/.*##')
+          # Un fragment suffit à prouver l'inlining, et évite d'écrire la clé
+          # entière dans un journal de build.
+          FRAGMENT=$(printf '%s' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" | cut -c1-24)
+
+          manquants=""
+          grep -rqa "$HOTE" .next/static || manquants="$manquants l'adresse « $HOTE »"
+          grep -rqa "$FRAGMENT" .next/static || manquants="$manquants la cle publique"
+
+          if [ -n "$manquants" ]; then
+            echo "::error::Le paquet client ne contient pas :$manquants"
+            exit 1
+          fi
+
+          echo "Le paquet client contient l'adresse et la cle publique attendues."
+
       # Les tests portent sur le code ; ce contrôle-ci porte sur les données, et
       # c'est d'elles que dépend une correction : la chaîne des toumoun est
       # continue, aucun début de rub' n'est présenté comme estimé, et le résumé
