@@ -78,6 +78,23 @@ export function getThumnCount(): number {
   return thumn.length;
 }
 
+/**
+ * Combien de limites de toumoun ne sont pas relevees, sur combien au total.
+ *
+ * Le compte se lit dans les donnees, et n'est jamais ecrit en dur. Une limite
+ * relue quitte `estimated_offset` pour `relue` : un ecran qui annoncerait
+ * « 151 » continuerait de le dire apres la relecture, et mentirait sur le
+ * travail restant — dans le sens qui rassure, c'est-a-dire le plus difficile a
+ * remarquer. Le meme piege existait dans le rapport des divisions, ou la
+ * colonne annoncait la fin du toumoun au lieu de sa limite.
+ */
+export function getCompteLimitesEstimees(): { estimees: number; total: number } {
+  return {
+    estimees: thumn.filter((t) => t.verificationStatus === 'estimated_offset').length,
+    total: thumn.length,
+  };
+}
+
 // === Helpers de conversion ===
 
 export function ayahRefToAyahId(ref: AyahRef): number {

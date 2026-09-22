@@ -39,7 +39,7 @@ hifdh-app/
 ├── .github/workflows/      # CI/CD GitHub Actions
 └── docs/                   # Documentation
     ├── SECRETS.md              # Configuration, compilation, installation
-    └── divisions-estimees.md   # Les 151 bornes non vérifiées (engendré)
+    └── divisions-estimees.md   # Les limites non vérifiées (engendré)
 ```
 
 ## Données coraniques
@@ -57,6 +57,10 @@ hifdh-app/
     **engendré** par `data/quran/rapport_divisions_estimees.py` ; le contrôle
     `npm run verifier:rapport` refuse qu'il dérive des données sans que personne
     ne le voie.
+  - 0 limite relue (`relue`) — lue sur un moushaf Hafs imprimé, puis appliquée par
+    `data/quran/appliquer_corrections.py`. Ce décompte monte à mesure que le
+    travail de relecture avance, et `estimated_offset` baisse d'autant ; le
+    tableau de bord `admin/` sert à le mener.
 - **Pagination du moushaf** : les 604 pages du moushaf de Médine. Le champ `page`
   est porté par chaque verset ; il était présent depuis l'import mais n'était lu
   par aucun code. `npm run verifier:pages` en établit la cohérence (6 236 versets

@@ -5,7 +5,7 @@ Pourquoi ce document existe
 ---------------------------
 
 `thumn_hafs.json` porte, pour chacun des 480 toumoun, un champ
-`verificationStatus`. Trois valeurs, et elles ne disent pas la meme chose :
+`verificationStatus`. Quatre valeurs, et elles ne disent pas la meme chose :
 
   - `verified_hafs`  : la borne vient des donnees Hafs de quran-meta (KFGQPC) ;
   - `verified`       : borne intermediaire, deduite d'un mappage direct depuis
@@ -13,12 +13,17 @@ Pourquoi ce document existe
                        deux lectures, le report est donc sur ;
   - `estimated_offset` : borne intermediaire, deduite par report d'un **decalage
                        cumulatif** entre Hafs et Qaloun. Elle peut etre fausse
-                       de plus ou moins un verset.
+                       de plus ou moins un verset ;
+  - `relue`          : borne lue sur un moushaf Hafs imprime par un relecteur,
+                       puis appliquee par `data/quran/appliquer_corrections.py`.
+                       Ce n'est pas `verified` : `verified` dit une propriete du
+                       calcul, pas une lecture.
 
 Le troisieme cas est celui qui compte : une borne estimee est presentee dans
 l'application exactement comme une borne verifiee. Le present rapport les liste
 une par une, avec la reference Qaloun dont chacune est issue, pour qu'elles
-puissent etre confrontees a un mushaf Hafs imprime.
+puissent etre confrontees a un mushaf Hafs imprime. A mesure que des bornes sont
+relues, elles quittent cette liste.
 
 Ce que ce script garantit
 -------------------------
@@ -46,12 +51,6 @@ RACINE = Path(__file__).resolve().parent.parent.parent
 CHEMIN_THUMN = RACINE / "data" / "quran" / "thumn_hafs.json"
 CHEMIN_SOURATES = RACINE / "data" / "quran" / "surahs.json"
 CHEMIN_SORTIE = RACINE / "docs" / "divisions-estimees.md"
-
-STATUTS = {
-    "verified_hafs": "verifiee (donnees Hafs)",
-    "verified": "verifiee (mappage direct)",
-    "estimated_offset": "**estimee**",
-}
 
 
 def charger() -> tuple[dict, list[dict], list[dict]]:
@@ -134,7 +133,10 @@ def engendrer(metadata: dict, thumn: list[dict], sourates: list[dict]) -> str:
     a("avec un statut de verification. Ce document liste celles des bornes qui ne sont")
     a("**pas** verifiees.")
     a("")
-    a("## Pourquoi 151 bornes ne sont pas verifiees")
+    # Le compte est pris dans les donnees, et non ecrit ici : une relecture
+    # appliquee par `appliquer_corrections.py` le fait baisser, et un titre qui
+    # annoncerait encore 151 bornes mentirait sur le travail restant.
+    a(f"## Pourquoi {compte.get('estimated_offset', 0)} bornes ne sont pas verifiees")
     a("")
     a("Les 240 limites de **rub' al-hizb** (les toumoun impairs) viennent des donnees")
     a("Hafs de quran-meta, source KFGQPC. Elles sont verifiees.")
@@ -153,16 +155,28 @@ def engendrer(metadata: dict, thumn: list[dict], sourates: list[dict]) -> str:
       "limite intermediaire, sourate de meme longueur en Hafs et en Qaloun |")
     a(f"| **Estimee** | **{compte.get('estimated_offset', 0)}** | "
       "limite intermediaire, sourate de longueur differente : report par decalage |")
+    # Cette ligne n'apparait qu'a partir de la premiere relecture. Une ligne a
+    # zero dans un document qui liste ce qui reste a faire ne dirait rien, et
+    # ferait grandir le document sans raison.
+    if compte.get("relue", 0):
+        a(f"| Relue | {compte['relue']} | borne lue sur un moushaf Hafs imprime, "
+          "puis appliquee par `data/quran/appliquer_corrections.py` |")
     a("")
     a("## Comment s'en servir")
     a("")
-    a("Chaque ligne donne la borne de **fin** d'un toumoun, c'est-a-dire le point ou le")
-    a("toumoun suivant commence. Pour verifier, ouvrir un mushaf Hafs imprime (edition")
-    a("Madina, KFGQPC) a la sourate indiquee et regarder si le verset marque comme fin")
-    a("de toumoun est bien celui-la.")
+    a("Chaque ligne donne la **limite estimee** : le premier verset du toumoun indique.")
+    a("Le toumoun precedent finit au verset qui precede. Pour verifier, ouvrir un mushaf")
+    a("Hafs imprime (edition Madina, KFGQPC) a la sourate indiquee et regarder si le")
+    a("toumoun commence bien a ce verset-la.")
     a("")
-    a("La colonne **Reference Qaloun** donne la borne d'ou l'estimation a ete tiree.")
-    a("Quand les deux numeros de verset different, c'est que le decalage a joue.")
+    a("**C'est le debut du toumoun qui est estime, et non sa fin.** La fin d'un toumoun")
+    a("pair est une fin de rub' al-hizb, prise des donnees Hafs de KFGQPC : elle est")
+    a("verifiee, et le fichier le dit. Le statut `estimated_offset` porte sur la valeur")
+    a("qui ouvre le toumoun, celle qui a ete reportee depuis Qaloun. Confondre les deux")
+    a("enverrait le relecteur verifier un verset qui n'a jamais ete en doute.")
+    a("")
+    a("La colonne **Reference Qaloun** donne la valeur Qaloun d'ou l'estimation a ete")
+    a("tiree. Quand les deux numeros de verset different, c'est que le decalage a joue.")
     a("")
     a("Ces bornes sont utilisables en l'etat pour un programme d'apprentissage : un")
     a("ecart d'un verset sur une limite interieure de huitieme de hizb ne change pas la")
@@ -170,9 +184,13 @@ def engendrer(metadata: dict, thumn: list[dict], sourates: list[dict]) -> str:
     a("etre presentees comme authentifiees.")
     a("")
 
+    # Le regroupement suit la sourate ou tombe la **limite estimee**, c'est-a-dire
+    # celle ou le relecteur doit ouvrir son moushaf. Regrouper par la fin du
+    # toumoun l'aurait envoye a la sourate suivante des que la limite et la fin
+    # ne sont pas dans la meme sourate.
     par_sourate: dict[int, list[dict]] = defaultdict(list)
     for t in estimees:
-        par_sourate[t["hafs"]["endSurah"]].append(t)
+        par_sourate[t["hafs"]["startSurah"]].append(t)
 
     a("## Les bornes estimees, sourate par sourate")
     a("")
@@ -183,16 +201,18 @@ def engendrer(metadata: dict, thumn: list[dict], sourates: list[dict]) -> str:
         a("")
         a(f"{len(lot)} borne(s) estimee(s).")
         a("")
-        a("| Toumoun | Hizb | Rub' | Fin estimee | Reference Qaloun |")
+        a("| Toumoun | Hizb | Rub' | Limite estimee | Reference Qaloun |")
         a("| ---: | ---: | ---: | --- | --- |")
         for t in sorted(lot, key=lambda x: x["thumnNumber"]):
             h = t["hafs"]
             q = t["qalounReference"]
-            fin = f"{h['endSurah']}:{h['endAyah']}"
-            ref = f"{q['endSurah']}:{q['endAyah']}"
-            if (q["endSurah"], q["endAyah"]) != (h["endSurah"], h["endAyah"]):
+            # La limite est le **premier verset** du toumoun : c'est cette valeur
+            # que porte le statut, et c'est elle qu'il faut confronter au moushaf.
+            limite = f"{h['startSurah']}:{h['startAyah']}"
+            ref = f"{q['startSurah']}:{q['startAyah']}"
+            if (q["startSurah"], q["startAyah"]) != (h["startSurah"], h["startAyah"]):
                 ref = f"{ref} (ecart)"
-            a(f"| {t['thumnNumber']} | {t['hizbNumber']} | {t['rubNumber']} | {fin} | {ref} |")
+            a(f"| {t['thumnNumber']} | {t['hizbNumber']} | {t['rubNumber']} | {limite} | {ref} |")
         a("")
 
     a("## Traçabilite")

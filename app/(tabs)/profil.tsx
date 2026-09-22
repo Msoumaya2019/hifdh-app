@@ -8,10 +8,17 @@ import { Card } from '@/components/Card';
 import { SauvegardeSection } from '@/components/SauvegardeSection';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, saveUserConfig, getMemorizedPassages, getReviewItemCount } from '@/lib/database';
+import { getCompteLimitesEstimees } from '@/data/quranData';
 import { formatDate, getDayName } from '@/lib/progress';
 import type { UserConfig, MemorizedPassage } from '@/types';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+
+// Le compte des limites estimees se lit dans les donnees, pour la meme raison
+// que la version se lit dans `app.json` : ecrit en dur, il finirait par mentir.
+// Une limite relue quitte `estimated_offset`, et l'ecran continuerait d'annoncer
+// le chiffre d'avant la relecture.
+const compteToumoun = getCompteLimitesEstimees();
 
 export default function ProfilScreen() {
   const router = useRouter();
@@ -156,7 +163,7 @@ export default function ProfilScreen() {
             Récitation: Hafs an Asim{'\n'}
             Texte: Tanzil (Uthmani){'\n'}
             Métadonnées: quran-meta (MIT){'\n'}
-            Divisions: 480 toumoun, dont 151 bornes estimées{'\n'}
+            Divisions: {compteToumoun.total} toumoun, dont {compteToumoun.estimees} bornes estimées{'\n'}
             Version: {version}
           </Text>
         </Card>

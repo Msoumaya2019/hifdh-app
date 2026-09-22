@@ -182,10 +182,10 @@ CREATE POLICY "Revisions lisibles par un administrateur" ON public.review_items
 CREATE TABLE IF NOT EXISTS public.division_verifications (
   thumn_number INTEGER PRIMARY KEY,
   -- « confirmee » : la borne estimée était juste. « corrigee » : elle ne l'était
-  -- pas, et fin_surah/fin_ayah portent la bonne.
+  -- pas, et limite_surah/limite_ayah portent la bonne.
   statut TEXT NOT NULL,
-  fin_surah INTEGER,
-  fin_ayah INTEGER,
+  limite_surah INTEGER,
+  limite_ayah INTEGER,
   note TEXT,
   verifie_par UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   verifie_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -198,8 +198,8 @@ CREATE TABLE IF NOT EXISTS public.division_verifications (
   -- n'en porte pas : c'est justement le cas où la borne estimée était la bonne.
   CONSTRAINT division_verifications_correction_complete
     CHECK (
-      (statut = 'confirmee' AND fin_surah IS NULL AND fin_ayah IS NULL)
-      OR (statut = 'corrigee' AND fin_surah IS NOT NULL AND fin_ayah IS NOT NULL)
+      (statut = 'confirmee' AND limite_surah IS NULL AND limite_ayah IS NULL)
+      OR (statut = 'corrigee' AND limite_surah IS NOT NULL AND limite_ayah IS NOT NULL)
     )
 );
 

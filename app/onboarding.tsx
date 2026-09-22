@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
-import { getAllSurahs, getAllJuz, getAllHizb } from '@/data/quranData';
+import { getAllSurahs, getAllJuz, getAllHizb, getCompteLimitesEstimees } from '@/data/quranData';
 import { saveUserConfig, synchroniserPassagesDeclares, getAllSessions, getMemorizedPassages, appliquerRecalcul, getUserConfig } from '@/lib/database';
 import { planifierRecalcul } from '@/lib/programGenerator';
 import type {
@@ -29,6 +29,10 @@ import type {
 
 const TOTAL_STEPS = 4;
 const DAY_NAMES = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+
+// Lu dans les donnees, jamais recopie : le compte des limites estimees baisse a
+// chaque relecture appliquee.
+const compteToumoun = getCompteLimitesEstimees();
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -659,13 +663,19 @@ function StepRhythm({
 
       {/* Une borne estimee est presentee dans l'application comme n'importe
           quelle autre. Le choix du toumoun comme rythme est donc le seul endroit
-          ou l'utilisateur doit apprendre que 151 des 480 limites sont deduites
-          et non relevees. Le dire ici plutot que de le taire. */}
+          ou l'utilisateur doit apprendre que des limites sont deduites et non
+          relevees. Le dire ici plutot que de le taire.
+
+          Le nombre se lit dans les donnees : une limite relue quitte
+          `estimated_offset`, et un texte fige continuerait d'annoncer le chiffre
+          d'avant la relecture. Les 240 limites de rub' al-hizb, elles, sont
+          structurelles — un rub' vient des donnees Hafs et ne se relit pas. */}
       {unit.type === 'thumn' && (
         <Text style={styles.precisionNote}>
-          151 des 480 limites de toumoun ne sont pas vérifiées : elles ont été
-          reportées depuis la lecture Qaloun et peuvent s'écarter d'un verset.
-          Les 240 limites de rub' al-hizb, elles, viennent des données Hafs.
+          {compteToumoun.estimees} des {compteToumoun.total} limites de toumoun ne sont
+          pas vérifiées : elles ont été reportées depuis la lecture Qaloun et peuvent
+          s'écarter d'un verset. Les 240 limites de rub' al-hizb, elles, viennent des
+          données Hafs.
         </Text>
       )}
     </View>

@@ -595,7 +595,7 @@ await db.exec(`
 
 function insererVerification(tx, valeurs) {
   return tx.query(
-    `insert into public.division_verifications (thumn_number, statut, fin_surah, fin_ayah, note)
+    `insert into public.division_verifications (thumn_number, statut, limite_surah, limite_ayah, note)
      values ($1, $2, $3, $4, $5)`,
     valeurs
   );
@@ -696,18 +696,18 @@ function insererVerification(tx, valeurs) {
   const r = await enTantQue(USER_ADMIN, async (tx) => {
     await insererVerification(tx, [7, 'confirmee', null, null, 'première lecture']);
     await tx.query(
-      `update public.division_verifications set statut = 'corrigee', fin_surah = 3, fin_ayah = 200
+      `update public.division_verifications set statut = 'corrigee', limite_surah = 3, limite_ayah = 200
         where thumn_number = 7`
     );
     const n = await tx.query('select count(*)::int as n from public.division_verifications');
     const ligne = await tx.query(
-      'select statut, fin_surah from public.division_verifications where thumn_number = 7'
+      'select statut, limite_surah from public.division_verifications where thumn_number = 7'
     );
-    return { total: n.rows[0].n, statut: ligne.rows[0]?.statut, fin: ligne.rows[0]?.fin_surah };
+    return { total: n.rows[0].n, statut: ligne.rows[0]?.statut, limite: ligne.rows[0]?.limite_surah };
   });
   noter(
     'un administrateur peut revenir sur sa propre vérification',
-    r.total === 2 && r.statut === 'corrigee' && r.fin === 3,
+    r.total === 2 && r.statut === 'corrigee' && r.limite === 3,
     JSON.stringify(r)
   );
 }

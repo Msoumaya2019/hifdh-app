@@ -65,12 +65,21 @@ vérification dans `data/quran/thumn_hafs.json` :
 | `verified_hafs` | 240 | limite lue directement dans les données Hafs |
 | `verified` | 89 | limite intermédiaire, sourate au nombre de versets identique |
 | `estimated_offset` | 151 | limite intermédiaire estimée, **à confirmer** sur un mushaf imprimé |
+| `relue` | 0 | limite lue sur un mushaf Hafs imprimé, puis appliquée |
+
+`relue` n'est pas une nuance de `verified` : `verified` dit une **propriété du
+calcul** — la sourate a le même nombre de versets dans les deux lectures, donc
+le report depuis Qaloun est exact. `relue` dit autre chose : quelqu'un a ouvert
+un moushaf imprimé et a lu la limite. Les confondre ferait disparaître la
+distinction sans le dire. Le décompte de `estimated_offset` baisse à chaque
+relecture appliquée par `data/quran/appliquer_corrections.py` ; les nombres
+ci-dessus sont ceux du fichier livré.
 
 Les entrées `estimated_offset` ne doivent pas être présentées comme
 authentifiées. L'architecture les isole dans un fichier unique, de sorte qu'une
 correction n'exige aucune modification du reste de l'application.
 
-La liste précise de ces 151 bornes — sourate par sourate, avec la référence
+La liste précise des limites estimées — sourate par sourate, avec la référence
 Qaloun dont chacune est issue — est dans **`docs/divisions-estimees.md`**. Ce
 document est engendré par `data/quran/rapport_divisions_estimees.py`, et le
 contrôle `npm run verifier:rapport` refuse qu'il dérive des données.

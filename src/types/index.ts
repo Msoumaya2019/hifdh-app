@@ -57,7 +57,16 @@ export interface Thumn {
     startAyahId: number;
     endAyahId: number;
   };
-  verificationStatus: 'verified_hafs' | 'verified' | 'estimated_offset';
+  /**
+   * D'ou vient la borne, et ce qu'on en sait.
+   *
+   * `verified_hafs` et `verified` disent une **propriete du calcul** : la borne
+   * vient des donnees Hafs, ou d'un report exact depuis Qaloun parce que la
+   * sourate a le meme nombre de versets dans les deux lectures. `relue` dit
+   * autre chose : un relecteur a ouvert un moushaf Hafs imprime et a lu la
+   * borne. Les confondre ferait disparaitre la distinction sans le dire.
+   */
+  verificationStatus: 'verified_hafs' | 'verified' | 'estimated_offset' | 'relue';
 }
 
 export interface Ayah {
