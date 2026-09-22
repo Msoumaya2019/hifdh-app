@@ -373,25 +373,28 @@ export async function supprimerSeancesFuturesATraiter(aPartirDe: string): Promis
 
 // === Items de révision ===
 
+const INSERT_REVIEW = `INSERT OR REPLACE INTO review_items
+   (id, surah, start_ayah, end_ayah, level, next_review_date, last_reviewed_at, review_count, interval_days, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+function parametresReview(item: ReviewItem): (string | number | null)[] {
+  return [
+    item.id,
+    item.surah,
+    item.startAyah,
+    item.endAyah,
+    item.level,
+    item.nextReviewDate,
+    item.lastReviewedAt ?? null,
+    item.reviewCount,
+    item.intervalDays,
+    item.createdAt,
+  ];
+}
+
 export async function saveReviewItem(item: ReviewItem): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync(
-    `INSERT OR REPLACE INTO review_items
-     (id, surah, start_ayah, end_ayah, level, next_review_date, last_reviewed_at, review_count, interval_days, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      item.id,
-      item.surah,
-      item.startAyah,
-      item.endAyah,
-      item.level,
-      item.nextReviewDate,
-      item.lastReviewedAt ?? null,
-      item.reviewCount,
-      item.intervalDays,
-      item.createdAt,
-    ]
-  );
+  await db.runAsync(INSERT_REVIEW, parametresReview(item));
 }
 
 export async function getReviewItemsDue(today: string): Promise<ReviewItem[]> {
@@ -432,4 +435,113 @@ export async function getReviewItemCount(): Promise<number> {
     `SELECT COUNT(*) as count FROM review_items`
   );
   return row?.count ?? 0;
+}
+
+export async function getAllReviewItems(): Promise<ReviewItem[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    surah: number;
+    start_ayah: number;
+    end_ayah: number;
+    level: number;
+    next_review_date: string;
+    last_reviewed_at: string | null;
+    review_count: number;
+    interval_days: number;
+    created_at: string;
+  }>(`SELECT * FROM review_items ORDER BY next_review_date ASC`);
+
+  return rows.map((r) => ({
+    id: r.id,
+    surah: r.surah,
+    startAyah: r.start_ayah,
+    endAyah: r.end_ayah,
+    level: r.level,
+    nextReviewDate: r.next_review_date,
+    lastReviewedAt: r.last_reviewed_at ?? undefined,
+    reviewCount: r.review_count,
+    intervalDays: r.interval_days,
+    createdAt: r.created_at,
+  }));
+}
+
+// === Sauvegarde et restauration ===
+
+/**
+ * Vrai si l'appareil ne porte encore aucune donnée personnelle.
+ *
+ * Sert de garde-fou à la restauration : écraser sans confirmation une
+ * progression existante la détruirait définitivement.
+ */
+export async function estBaseVide(): Promise<boolean> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ total: number }>(
+    `SELECT
+       (SELECT COUNT(*) FROM user_config)
+     + (SELECT COUNT(*) FROM memorized_passages)
+     + (SELECT COUNT(*) FROM learning_sessions)
+     + (SELECT COUNT(*) FROM review_items) AS total`
+  );
+  return (row?.total ?? 0) === 0;
+}
+
+export interface PartiesLocales {
+  config: UserConfig | null;
+  memorized: MemorizedPassage[];
+  sessions: LearningSession[];
+  reviews: ReviewItem[];
+}
+
+/** Tout l'état personnel, en une fois. */
+export async function lireTout(): Promise<PartiesLocales> {
+  const [config, memorized, sessions, reviews] = await Promise.all([
+    getUserConfig(),
+    getMemorizedPassages(),
+    getAllSessions(),
+    getAllReviewItems(),
+  ]);
+  return { config, memorized, sessions, reviews };
+}
+
+/**
+ * Remplace intégralement l'état local.
+ *
+ * Une seule transaction : une interruption au milieu laisserait un appareil
+ * dont la moitié des données vient d'une sauvegarde et l'autre moitié de
+ * l'état précédent — un état qui n'a jamais existé, et impossible à démêler.
+ */
+export async function remplacerTout(parties: PartiesLocales): Promise<void> {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM learning_sessions`);
+    await db.runAsync(`DELETE FROM review_items`);
+    await db.runAsync(`DELETE FROM memorized_passages`);
+    await db.runAsync(`DELETE FROM user_config`);
+
+    if (parties.config !== null) {
+      await db.runAsync(
+        `INSERT INTO user_config (id, config_json, updated_at) VALUES (1, ?, ?)`,
+        [JSON.stringify(parties.config), now]
+      );
+    }
+
+    for (const passage of parties.memorized) {
+      await db.runAsync(
+        `INSERT INTO memorized_passages (surah, start_ayah, end_ayah, level, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [passage.surah, passage.startAyah, passage.endAyah, passage.level, now, now]
+      );
+    }
+
+    for (const session of parties.sessions) {
+      await db.runAsync(INSERT_SESSION, parametresSession(session));
+    }
+
+    for (const review of parties.reviews) {
+      await db.runAsync(INSERT_REVIEW, parametresReview(review));
+    }
+  });
 }

@@ -33,5 +33,19 @@ jobs:
       - name: Lancer les tests
         run: npm test
 
+      # Éprouve le schéma Supabase sous un vrai Postgres compilé en WebAssembly :
+      # clés primaires composites, politiques RLS des deux côtés (lecture et
+      # écriture), et remplacement atomique des données. C'est le seul garde-fou
+      # automatique sur la frontière de sécurité.
+      - name: Éprouver le schéma Supabase
+        run: npm run verifier:supabase
+
       - name: Vérifier le pavage des divisions coraniques
         run: python3 data/quran/verifier_divisions.py
+
+      # Réintroduit volontairement chaque défaut que les tests de sauvegarde
+      # prétendent couvrir, et exige que le test échoue. Un test qu'on n'a jamais
+      # vu échouer ne prouve rien. Le script restaure les fichiers à l'octet près
+      # et le vérifie par empreinte SHA-256.
+      - name: Falsifier les tests de sauvegarde
+        run: python3 scripts/falsifier_tests_sync.py

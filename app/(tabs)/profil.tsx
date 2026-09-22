@@ -5,6 +5,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Alert, RefreshControl } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
+import { SauvegardeSection } from '@/components/SauvegardeSection';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, saveUserConfig, getMemorizedPassages, getReviewItemCount } from '@/lib/database';
 import { formatDate, getDayName } from '@/lib/progress';
@@ -138,6 +139,9 @@ export default function ProfilScreen() {
           <Text style={styles.actionText}>Modifier mes connaissances</Text>
           <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
         </Pressable>
+
+        {/* Sauvegarde en ligne */}
+        <SauvegardeSection onDonneesChangees={loadData} />
 
         {/* À propos */}
         <Text style={styles.sectionTitle}>À propos</Text>
