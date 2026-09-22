@@ -46,11 +46,7 @@
     "experiments": {
       "typedRoutes": true
     },
-    "extra": {
-      "eas": {
-        "projectId": ""
-      }
-    },
+    "extra": {},
     "runtimeVersion": {
       "policy": "appVersion"
     }

@@ -1,91 +1,148 @@
-# Configuration des secrets et certifications
+# Configuration, compilation et installation
 
-Ce document explique ce qui nécessite votre intervention pour finaliser l'application.
+Ce document dit **ce qui est déjà en place**, **ce qui exige votre intervention**, et **où
+cliquer**.
 
-## 1. GitHub - Dépôt et Actions
+Il remplace une version antérieure qui décrivait une chaîne de compilation par EAS. Cette chaîne a
+été abandonnée : voir « Pourquoi pas EAS » en fin de document.
 
-### Créer le dépôt
-1. Créez un dépôt **public** sur GitHub (ex: `hifdh-app`)
-2. Initialisez git et poussez le code:
+## 1. Ce qui est déjà en place
+
+| Élément | État |
+| --- | --- |
+| Dépôt | `https://github.com/Msoumaya2019/hifdh-app` (public) |
+| Variables de dépôt | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` |
+| Schéma Supabase | `supabase/schema.sql`, écrit et appliqué |
+| Flux de compilation | `ci.yml`, `android-apk.yml`, `ios-unsigned.yml` |
+
+Aucune action n'est requise de votre part pour cette partie.
+
+## 2. Les deux valeurs publiques du projet Supabase
+
+L'adresse du projet et la clé `anon` sont **publiques par nature** : elles sont embarquées dans
+l'application, et quiconque a le paquet peut les lire. Ce ne sont donc **pas** des secrets GitHub,
+mais des **variables**.
+
+La distinction n'est pas cosmétique : un secret est masqué dans les journaux, une variable est
+lisible. Traiter comme secrète une valeur qui ne l'est pas donne une fausse impression de
+protection — et fait perdre du temps à chercher pourquoi une valeur « secrète » apparaît en clair
+dans un binaire.
+
+C'est la clé `service_role` qui ne doit **jamais** approcher l'application : elle contourne toutes
+les politiques RLS.
+
+Pour les lire ou les corriger :
+
 ```bash
-cd hifdh-app
-git init
-git add .
-git commit -m "Initial commit - Hifdh app"
-git remote add origin https://github.com/VOTRE-UTILISATEUR/hifdh-app.git
-git push -u origin main
+gh variable list
+
+gh variable set EXPO_PUBLIC_SUPABASE_URL      --body "https://VOTRE-PROJET.supabase.co"
+gh variable set EXPO_PUBLIC_SUPABASE_ANON_KEY --body "eyJhbGciOi..."
 ```
 
-### Secrets GitHub Actions à configurer
-Allez dans: `Settings > Secrets and variables > Actions > New repository secret`
+Les deux flux de compilation **échouent** si l'une des deux manque, et ils vérifient ensuite que la
+valeur se retrouve bien dans le binaire produit. C'est délibéré : une compilation verte qui livre un
+paquet sans configuration est plus dangereuse qu'une compilation rouge.
 
-| Secret | Description | Obligatoire |
-|--------|-------------|-------------|
-| `EXPO_TOKEN` | Token Expo (https://expo.dev/accounts/[user]/settings/access-tokens) | Oui |
-| `SUPABASE_URL` | URL du projet Supabase | Oui (sync) |
-| `SUPABASE_ANON_KEY` | Clé anon Supabase | Oui (sync) |
+## 3. Compiler
 
-## 2. Expo EAS
+Rien à installer en local : les deux compilations tournent sur les exécuteurs de GitHub.
 
-### Lier le projet EAS
 ```bash
-eas login
-eas init --id [PROJECT_ID]
-```
-Le PROJECT_ID sera automatiquement ajouté à `app.json` > `extra.eas.projectId`.
+# à la demande
+gh workflow run android-apk.yml      # APK Android
+gh workflow run ios-unsigned.yml     # IPA non signé
 
-### Compiler
+# ou en publiant une version
+git tag -a v1.0.3 -m "Hifdh 1.0.3"
+git push origin v1.0.3               # déclenche LES DEUX flux
+```
+
+Le nom du fichier produit vient de `app.json` (`hifdh-1.0.3.apk`) ; le nom de la version publiée
+vient de l'étiquette. **Gardez les deux alignés** — sans quoi le fichier et sa version portent deux
+numéros différents, et l'on ne sait plus quel binaire correspond à quelle étiquette.
+
+Suivre une compilation :
+
 ```bash
-# APK Android
-eas build --platform android --profile preview
-
-# IPA iOS (non signée, à signer côté Apple)
-eas build --platform ios --profile preview
+gh run list --limit 5
+gh run watch <identifiant>
 ```
 
-## 3. Supabase
+Les fichiers sont attachés à la version, dans l'onglet **Releases** du dépôt.
 
-### Créer le projet
-1. Allez sur https://supabase.com et créez un nouveau projet
-2. Récupérez l'URL et la clé anon dans `Project Settings > API`
-3. Ajoutez-les dans les secrets GitHub et dans un fichier `.env` local:
+## 4. Installer l'APK (Android)
+
+1. Téléchargez `hifdh-<version>.apk` depuis l'onglet **Releases**.
+2. Ouvrez le fichier sur le téléphone. Android demande d'autoriser l'installation depuis cette
+   source : acceptez.
+3. Si une version précédente est installée avec une **autre** signature, désinstallez-la d'abord.
+
+**Cet APK est signé avec la clé de débogage**, pas avec une clé de publication. Cela suffit pour
+essayer l'application ; cela ne suffit pas pour la publier. Le jour où elle irait sur le Play Store,
+il faudrait une clé de release — et Android **interdit** d'en changer ensuite pour une même
+application : cette décision se prend avant la première publication, pas après.
+
+## 5. Installer l'IPA (iPhone)
+
+**Un IPA non signé ne s'installe pas tel quel.** iOS vérifie la signature et refuse tout ce qui n'en
+a pas. Il faut donc le re-signer sur votre machine, avec un identifiant Apple.
+
+- **Sideloadly** (Windows et macOS), ou **AltStore** / **SideStore**.
+- Sous Windows, installez **iTunes depuis le site d'Apple**, et non depuis le Microsoft Store : la
+  version du Store ne fournit pas les pilotes nécessaires à la communication avec l'iPhone.
+- Sur iOS 16 et suivants, activez le **mode développeur** :
+  `Réglages > Confidentialité et sécurité > Mode développeur`, puis redémarrez le téléphone.
+- L'outil demande votre mot de passe Apple pour obtenir un certificat de développement. Il est saisi
+  dans l'outil, sur votre machine : **ne le communiquez à personne** et n'en faites pas un secret
+  GitHub.
+
+Limites d'Apple avec un **compte gratuit** — elles viennent d'Apple, pas de l'outil :
+
+| Contrainte | Compte gratuit | Compte développeur (99 $/an) |
+| --- | --- | --- |
+| Validité de la signature | **7 jours** | 1 an |
+| Applications installées à la fois | **3** | davantage |
+
+Passé le délai, l'application cesse de s'ouvrir : il faut re-signer. AltStore et SideStore savent le
+faire automatiquement, y compris sans fil.
+
+## 6. Supabase
+
+Le schéma est dans `supabase/schema.sql` : tables, déclencheurs, politiques RLS. Il ne contient
+**aucun secret**, et reste donc versionné.
+
+Pour l'appliquer : `Supabase > SQL Editor > New query`, collez le fichier, exécutez.
+
+Pour éprouver le schéma **sans Docker ni projet distant** :
+
+```bash
+npm run verifier:supabase
 ```
-EXPO_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJxxxxx
-```
 
-### Schéma SQL à exécuter
-Le schéma SQL pour Supabase sera fourni dans `supabase/schema.sql`.
-Les politiques RLS (Row Level Security) doivent garantir que chaque utilisateur
-ne voit que ses propres données.
+Ce banc le joue sous PGlite — Postgres compilé en WebAssembly — et vérifie les politiques RLS, les
+clés primaires composites et les transactions.
 
-## 4. Apple (iOS)
+## 7. Sécurité
 
-Pour signer l'IPA ou la publier sur l'App Store:
+- Aucun secret dans le dépôt : ni certificat, ni mot de passe, ni clé `service_role`, ni jeton.
+- `.env` est dans `.gitignore`.
+- La clé `anon` est publique **et** protégée par les politiques RLS — les deux, pas l'un ou l'autre.
+- Les certificats Apple ne vont **jamais** dans le dépôt.
 
-### Option A: Signature automatique via EAS
-Si vous avez un compte Apple Developer ($99/an):
-1. `eas credentials` → suivez les instructions
-2. EAS gère les certificats et profils automatiquement
+### Un secret à retirer : `EXPO_TOKEN`
 
-### Option B: IPA non signée (installation manuelle)
-1. L'IPA est construite sans signature
-2. Signez-la avec votre certificat Apple Developer
-3. Installez via Xcode, Sideloadly ou AltStore
+Un secret `EXPO_TOKEN` subsiste dans les secrets du dépôt, hérité de la chaîne EAS abandonnée.
+**Aucun flux ne le lit.** Un identifiant inutilisé est une exposition sans contrepartie.
 
-### Fichiers à fournir si signature manuelle
-- Certificat de distribution (.p12)
-- Profil de provisionnement (.mobileprovision)
-- Mot de passe du .p12
+Pour le supprimer : `Settings > Secrets and variables > Actions > EXPO_TOKEN > Remove`. À conserver
+uniquement si vous prévoyez de revenir à EAS.
 
-Ces fichiers vont dans les secrets GitHub:
-- `EXPO_APPLE_ID` (votre Apple ID)
-- `EXPO_APPLE_PASSWORD` (mot de passe d'app)
-- `EXPO_APPLE_TEAM_ID` (Team ID)
+## Pourquoi pas EAS
 
-## 5. Sécurité
+`eas build` exige un projet EAS enregistré (`extra.eas.projectId`) et un compte Expo. La chaîne
+native, elle, ne demande rien : `expo prebuild` génère le projet, `xcodebuild` ou Gradle le
+compilent, et `gh release` publie le fichier. C'est exactement ce que font les deux flux.
 
-- Aucune clé secrète n'est dans le code source
-- Le fichier `.env` est dans `.gitignore`
-- Les clés Supabase anon sont sûres à exposer côté client (RLS protège les données)
-- Les certificats Apple ne sont jamais dans le dépôt
+Le fichier `eas.json` a été retiré pour cette raison : il décrivait une chaîne qui ne peut pas
+fonctionner ici, et sa présence laissait croire le contraire.
