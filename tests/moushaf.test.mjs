@@ -303,3 +303,92 @@ test('la table des polices écrit les 604 chemins en clair, et ils existent', ()
     assert.ok(statSync(fichier).size > 10_000, `page ${page} : ${chemin} est trop petit`);
   }
 });
+
+// === Les ornements de la page ==============================================
+//
+// Un ornement ne se mesure pas comme un mot : il n'a pas de largeur d'encre à
+// confronter à l'imprimé. Ce qu'un test peut tenir, et qui compte, c'est que la
+// page reste **cohérente** : les teintes des ornements sont celles relevées sur
+// l'imprimé, et non celles de la charte ; le médaillon reçoit bien le caractère
+// du numéro au lieu de le redessiner ; et les cartouches sont bien dimensionnés
+// d'après le pas des lignes, si bien qu'ils suivent la page à toutes les tailles.
+//
+// Ce qui n'est PAS éprouvé ici : que le dessin ressemble à l'imprimé. Cela se
+// voit, et la planche de contrôle est dans le journal de mesures.
+
+const ORNEMENTS = readFileSync(join(RACINE, 'src/components/ornementsMoushaf.tsx'), 'utf8');
+
+test('les ornements portent les teintes relevées sur la page imprimée', () => {
+  // Ces six valeurs ont été échantillonnées sur la page 177 : le brun de
+  // l'encadrement, le crème des cartouches, le violet des fleurons, l'encre.
+  // Elles ne viennent pas de `src/theme`, et c'est délibéré — une page du
+  // moushaf rimée aux couleurs de l'application ne serait plus le moushaf.
+  for (const teinte of ['#B07B4F', '#7A4A28', '#ECDDD4', '#F2E6DC', '#6B4A9E', '#1C1C1C']) {
+    assert.ok(
+      ORNEMENTS.includes(teinte),
+      `la teinte ${teinte} relevée sur l'imprimé a disparu des ornements`
+    );
+  }
+});
+
+test('le médaillon reçoit le numéro au lieu de le dessiner', () => {
+  // Le caractère du numéro de verset vient de la police de page : c'est un
+  // glyphe du moushaf, et le redessiner à la main donnerait un chiffre qui ne
+  // serait plus celui du calligraphe. Trois choses doivent tenir ensemble :
+  // le composant déclare un emplacement pour ce caractère, il le rend dans son
+  // `Svg`, et le lecteur lui passe bien le code du numéro.
+  const corpsDuMedaillon = ORNEMENTS.match(
+    /export function MedaillonVerset\(\{[\s\S]*?\n\}\n/
+  );
+  assert.ok(corpsDuMedaillon, 'le composant MedaillonVerset est introuvable');
+  assert.match(corpsDuMedaillon[0], /children\?: ReactNode/);
+  // Le rendu effectif du caractère, et non seulement sa déclaration : un
+  // composant qui accepterait `children` sans le dessiner ne montrerait rien.
+  assert.match(corpsDuMedaillon[0], /\{children\}/);
+
+  const lecteur = readFileSync(join(RACINE, 'app/lecteur.tsx'), 'utf8');
+  assert.match(lecteur, /<MedaillonVerset taille=\{[^}]+\}>/);
+  assert.match(lecteur, /element\.mot/);
+});
+
+test('les cartouches se dimensionnent sur le pas des lignes', () => {
+  // Le pas est la hauteur d'une ligne, calculée d'après la largeur du bloc. Un
+  // cartouche qui aurait une taille fixe en pixels ne suivrait pas la page d'un
+  // écran à l'autre — il déborderait sur un petit écran, ou flotterait au
+  // milieu d'une grande page.
+  const lecteur = readFileSync(join(RACINE, 'app/lecteur.tsx'), 'utf8');
+  assert.match(lecteur, /<CartoucheNumero largeur=\{[^}]*largeurDuBloc[^}]*\} hauteur=\{/);
+  assert.match(lecteur, /<BandeauSourate largeur=\{largeurDuBloc\} hauteur=\{pas\}/);
+  // Et la taille du support du médaillon se prend aussi sur le pas.
+  assert.match(lecteur, /taille=\{pas \* 0\.78\}/);
+});
+
+test("aucun ornement ne dessine de texte coranique", () => {
+  // Règle du projet, tenue par un test : le module d'ornements ne doit contenir
+  // aucun caractère arabe **dans son code**. Les ornements sont de la forme ; le
+  // texte vient de Tanzil et des polices de page, jamais d'un littéral écrit ici.
+  //
+  // Les commentaires sont retirés avant de chercher : ils ont le droit de citer
+  // `سُورَةُ` ou un numéro de page en chiffres arabes pour expliquer ce qui se
+  // passe à l'écran, et un caractère dans un commentaire ne se dessine pas.
+  const sansCommentaires = ORNEMENTS
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  const arabes = sansCommentaires.match(/[\u0600-\u06FF\u0750-\u077F\uFB50-\uFC79]/g) ?? [];
+  assert.deepEqual(
+    arabes,
+    [],
+    `des caractères arabes ont été écrits dans les ornements : ${arabes.join('')}`
+  );
+});
+
+test('le cadre se dessine en fond, sans occuper de place dans le flux', () => {
+  // Un `Svg` posé en fond doit être en position absolue : sinon il pousserait
+  // les quinze lignes vers le bas, et la page ne tiendrait plus dans l'écran.
+  assert.match(ORNEMENTS, /position: 'absolute'/);
+  const lecteur = readFileSync(join(RACINE, 'app/lecteur.tsx'), 'utf8');
+  assert.match(lecteur, /<CadreDePage largeur=\{mesure\.largeur\} hauteur=\{mesure\.hauteur\} \/>/);
+  // Et le bandeau de sourate est en fond de la ligne qui le porte.
+  assert.match(lecteur, /styles\.bandeauDerriereLigne/);
+  assert.match(lecteur, /pointerEvents="none"/);
+});

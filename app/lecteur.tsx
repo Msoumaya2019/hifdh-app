@@ -17,6 +17,25 @@
 // pages 1, 2, 77, 100, 128, 177, 208, 249, 443, 454. Le texte, lui, reste celui
 // de Tanzil : la mise en page ne dit que des intervalles de jetons, jamais des
 // lettres.
+//
+// LA FORME DE LA PAGE, ELLE AUSSI
+// -------------------------------
+// La disposition ne fait pas tout : un moushaf se reconnaît à ce qui l'entoure.
+// Les ornements — médaillon de verset, cartouche de sourate, bandeau de marge,
+// cartouche du numéro, filets d'encadrement — sont donc dessinés eux aussi, dans
+// `src/components/ornementsMoushaf.tsx`, d'après les mesures relevées sur la
+// page imprimée. Le médaillon de verset est intéressant : son ovale est un
+// **support**, et le caractère du numéro vient de la police de page, qui le
+// dessine déjà. On pose donc la forme autour du glyphe, plutôt que de
+// reproduire le glyphe.
+//
+// LE MASQUAGE EN MODE PAGE
+// ------------------------
+// Il subsiste, mais il porte sur le **verset**, non sur le mot : un verset caché
+// devient transparent et garde sa place, si bien que la ligne ne se recompose
+// pas. Cacher mot à mot demanderait de mesurer chaque mot, donc de défaire le
+// collage des codes — et le moindre écart replacerait les mots autrement que
+// l'imprimeur. C'est le compromis assumé de ce mode : la page reste la page.
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -32,6 +51,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights, lineHeights } from '@/theme';
+import {
+  BandeauSourate,
+  CadreDePage,
+  CartoucheNumero,
+  MedaillonVerset,
+  teintesMoushaf,
+} from '@/components/ornementsMoushaf';
 import {
   getSurah,
   loadQuranText,
@@ -533,10 +559,18 @@ function PageDuMoushaf({
   return (
     <View style={styles.pageWrapper}>
       <View style={styles.feuille}>
-        {/* Bande de marge, comme sur la page imprimée : le juz' et la sourate
-            du premier verset, ou la sourate renvoyée en marge quand la page
-            ouvre une sourate — c'est alors là, et non dans la page, que le
-            moushaf écrit son nom. */}
+        {/* Le filet d'encadrement, en fond : deux traits, l'épais puis le fin,
+            aux mesures de l'imprimé. Le treillis de fleurons qui court entre
+            eux n'est pas redessiné — un ornement inventé ne serait plus celui
+            du moushaf (voir `ornementsMoushaf.tsx`). */}
+        {mesure.largeur > 0 && mesure.hauteur > 0 && (
+          <CadreDePage largeur={mesure.largeur} hauteur={mesure.hauteur} />
+        )}
+
+        {/* Bande de marge, comme sur la page imprimée : le juz' à droite et la
+            sourate à gauche, dans un bandeau à fleurons. Quand la page ouvre une
+            sourate, c'est le nom renvoyé en marge que le moushaf y écrit — et
+            non celui qui figure dans la page. */}
         <View style={styles.enTetePage}>
           <Text style={styles.enTeteJuz}>{juz !== null ? `Juz' ${juz}` : ''}</Text>
           <Text style={styles.enTeteSourate}>
@@ -568,8 +602,33 @@ function PageDuMoushaf({
                 { width: largeurDuBloc, height: pas * nombreDeLignes },
               ]}
             >
+              {/* Le cartouche du nom de sourate, posé derrière la ligne qui le
+                  porte. Il est en arrière-plan, et non dans le flux : une `View`
+                  de hauteur nulle n'occupe aucune place dans une ligne de
+                  texte, alors qu'un cartouche doit se voir derrière le nom. */}
+              {lignes.map((ligne, indiceLigne) => {
+                if (!ligne.some((element) => element.type === 'entete')) return null;
+                return (
+                  <View
+                    key={`bandeau-${indiceLigne}`}
+                    style={[
+                      styles.bandeauDerriereLigne,
+                      {
+                        top: pas * indiceLigne,
+                        height: pas,
+                        width: largeurDuBloc,
+                      },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    <BandeauSourate largeur={largeurDuBloc} hauteur={pas} />
+                  </View>
+                );
+              })}
+
               {lignes.map((ligne, indiceLigne) => {
                 const estLaBasmala = ligne.some((element) => element.type === 'basmala');
+                const estEntete = ligne.some((element) => element.type === 'entete');
                 return (
                   <Text
                     key={`ligne-${indiceLigne}`}
@@ -587,7 +646,8 @@ function PageDuMoushaf({
                       indiceLigne,
                       hideMode,
                       hiddenVerses,
-                      onBasculerVerset
+                      onBasculerVerset,
+                      pas
                     )}
                   </Text>
                 );
@@ -607,7 +667,12 @@ function PageDuMoushaf({
           )}
         </View>
 
-        <Text style={styles.numeroPage}>{toArabicNumber(page)}</Text>
+        {/* Le numéro de page, dans son cartouche, en pied de page. */}
+        <View style={styles.piedPage}>
+          <CartoucheNumero largeur={Math.max(56, largeurDuBloc * 0.16)} hauteur={Math.max(22, pas * 0.52)}>
+            <Text style={styles.numeroDansCartouche}>{toArabicNumber(page)}</Text>
+          </CartoucheNumero>
+        </View>
       </View>
 
       <Text style={styles.notePage}>
@@ -741,13 +806,27 @@ function PageDeSecours({
  *
  * Un verset masqué garde ses mots à leur place : ils deviennent transparents,
  * mais ils continuent de mesurer, si bien que la ligne ne se recompose pas.
+ *
+ * LES ORNEMENTS QUI SE POSENT DANS LE FLUX
+ * ----------------------------------------
+ * Le médaillon d'un numéro de verset n'est pas un glyphe à composer : c'est un
+ * **support** ovale, et le numéro que la police de page dessine vient par-dessus.
+ * Il est donc enveloppé avec le caractère, dans un conteneur de la hauteur d'une
+ * ligne — et comme ce conteneur participe à la ligne, il en déplace les mots
+ * exactement comme le fait le médaillon imprimé.
+ *
+ * Les cartouches, eux, ne sont pas dans le flux : leur `Svg` est posé en
+ * arrière-plan du bloc (`position: absolute`), parce qu'une `View` de hauteur
+ * nulle n'occupe aucune place dans une ligne de texte.
  */
 function contenuDeLigne(
   ligne: ElementCodes[],
   indiceLigne: number,
   hideMode: boolean,
   hiddenVerses: Set<string>,
-  onBasculerVerset: (cle: string) => void
+  onBasculerVerset: (cle: string) => void,
+  /** La hauteur d'une ligne : elle donne la taille du support du médaillon. */
+  pas: number
 ): ReactNode[] {
   const noeuds: ReactNode[] = [];
 
@@ -757,7 +836,8 @@ function contenuDeLigne(
     switch (element.type) {
       case 'entete': {
         // Le bandeau de la sourate n'est pas dessiné par la police de page : il
-        // est composé en police de texte, comme le fait le moushaf imprimé.
+        // est composé en police de texte, comme le fait le moushaf imprimé, et
+        // son cartouche à fleurons est posé derrière.
         const surah = getSurah(element.surah);
         noeuds.push(
           <Text key={cle} style={styles.enteteMoushaf}>
@@ -787,7 +867,32 @@ function contenuDeLigne(
       }
 
       case 'medaillon':
-        noeuds.push(<Text key={cle}>{element.mot}</Text>);
+        // Le support ovale, et le numéro par-dessus. Le conteneur a la largeur
+        // du médaillon et la hauteur d'une ligne : il réserve donc sa place dans
+        // la ligne, comme le fait l'imprimé.
+        noeuds.push(
+          <View
+            key={cle}
+            style={[
+              styles.supportMedaillon,
+              {
+                width: pas * 0.78,
+                height: pas,
+              },
+            ]}
+          >
+            <MedaillonVerset taille={pas * 0.78}>
+              <Text
+                style={[
+                  styles.numeroVersetDansMedaillon,
+                  { fontSize: pas * 0.3, lineHeight: pas },
+                ]}
+              >
+                {element.mot}
+              </Text>
+            </MedaillonVerset>
+          </View>
+        );
         break;
     }
   });
@@ -982,7 +1087,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
-  // La feuille : fond légèrement crème et bord discret, comme une page.
+  // La feuille : le crème de l'imprimé, et rien d'autre.
+  //
+  // Ce n'est pas le blanc de l'application, c'est le fond de la page du moushaf :
+  // un blanc pur ferait ressortir les ornements comme des collages, là où le
+  // crème les fond dans la page comme sur le papier.
   //
   // Elle occupe toute la hauteur disponible et ne défile pas : une page du
   // moushaf tient sur un écran, et ses quinze lignes se partagent la place. Un
@@ -990,13 +1099,14 @@ const styles = StyleSheet.create({
   // justement ce que le moushaf ne fait pas.
   feuille: {
     flex: 1,
-    backgroundColor: '#FFFDF7',
+    backgroundColor: teintesMoushaf.cremeClair,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.beige,
+    borderColor: teintesMoushaf.brun,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.xs,
+    overflow: 'hidden',
   },
   enTetePage: {
     flexDirection: 'row',
@@ -1004,17 +1114,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: spacing.xs,
     marginBottom: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.beige,
   },
   enTeteJuz: {
     fontSize: fontSizes.xs,
-    color: colors.textTertiary,
+    color: teintesMoushaf.brunFonce,
     fontWeight: fontWeights.medium,
   },
   enTeteSourate: {
     fontSize: fontSizes.sm,
-    color: colors.primary,
+    color: teintesMoushaf.encre,
     fontFamily: fonts.araby,
   },
   // Le corps : c'est lui qui donne sa hauteur à la page, et donc la hauteur
@@ -1031,14 +1139,45 @@ const styles = StyleSheet.create({
   blocMoushaf: {
     justifyContent: 'center',
   },
+  // Le cartouche d'une ligne d'en-tête, posé en arrière-plan de cette ligne.
+  bandeauDerriereLigne: {
+    position: 'absolute',
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Le support ovale d'un numéro de verset : il réserve la place du médaillon
+  // dans la ligne, et le glyphe du numéro vient par-dessus.
+  supportMedaillon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  numeroVersetDansMedaillon: {
+    fontFamily: fonts.araby,
+    color: teintesMoushaf.encre,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+  },
   // Une ligne du moushaf : un seul `Text`, dont les mots sont les codes de la
   // police de page collés les uns aux autres. Aucun séparateur, aucun
   // `letterSpacing`, aucune marge : le blanc entre les mots est dans l'avance
   // du glyphe, et l'ajouter élargirait la ligne de 2 %.
   ligneMoushaf: {
-    color: colors.textPrimary,
+    color: teintesMoushaf.encre,
     textAlign: 'center',
     writingDirection: 'rtl',
+  },
+  // Le pied de page : le numéro, dans son cartouche, centré.
+  piedPage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing.xs,
+  },
+  numeroDansCartouche: {
+    fontFamily: fonts.araby,
+    color: teintesMoushaf.encre,
+    textAlign: 'center',
+    textAlignVertical: 'center',
   },
   texteMoushaf: {
     fontFamily: fonts.quran,
@@ -1068,13 +1207,6 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: colors.textTertiary,
     lineHeight: 20,
-  },
-  numeroPage: {
-    textAlign: 'center',
-    marginTop: spacing.xs,
-    fontSize: fontSizes.sm,
-    color: colors.textTertiary,
-    fontFamily: fonts.araby,
   },
   notePage: {
     fontSize: fontSizes.xs,

@@ -90,6 +90,17 @@ hifdh-app/
   pour octet, jamais modifiées ; `data/quran/polices_pages.json` en porte la
   taille et l'empreinte SHA-256, et `npm run verifier:polices` confronte chaque
   code employé au dessin de sa police.
+- **Ornements de la page** : le médaillon de verset, le bandeau de sourate, le
+  cartouche du numéro et les filets d'encadrement, dessinés en SVG dans
+  `src/components/ornementsMoushaf.tsx`, aux teintes relevées sur la page
+  imprimée. Le médaillon est le cas intéressant : son ovale est un **support**, et
+  le caractère du numéro est celui que la police de page dessine déjà — on pose
+  donc la forme autour du glyphe, on ne redessine pas le glyphe. Le treillis de
+  fleurons qui court dans l'encadrement n'est **pas** reproduit : inventé, il ne
+  serait plus celui du moushaf. Le mode page n'a pas de réglage de taille et ne
+  défile pas, comme une page ne se réagence pas ; le masquage y porte sur le
+  **verset** (il devient transparent et garde sa place), non sur le mot, parce que
+  cacher mot à mot demande de défaire le collage des codes.
 - **Licences et provenance** : voir `NOTICE.md`
 
 Le texte coranique n'est jamais modifié ni généré : il est recopié de la source
@@ -146,7 +157,7 @@ npm run verifier:supabase  # schéma Supabase sous Postgres réel (PGlite)
 npm run falsifier:pages    # éprouve les contrôles de pagination
 npm run falsifier:layout   # éprouve les contrôles de mise en page
 npm run falsifier:polices  # éprouve les contrôles de codes de police
-npm run falsifier:moushaf  # éprouve les contrôles de la page du moushaf
+npm run falsifier:moushaf  # éprouve les contrôles de la page du moushaf et de ses ornements
 npm run falsifier:renforcement  # éprouve les contrôles de « À renforcer »
 ```
 

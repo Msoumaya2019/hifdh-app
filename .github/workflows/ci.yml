@@ -157,13 +157,17 @@ jobs:
       - name: Falsifier les contrôles de codes de police
         run: npm run falsifier:polices
 
-      # Et pour la page du moushaf telle qu'elle se dessine : huit mutations des
-      # deux fichiers qui portent sa géométrie et ses codes, chacune devant
-      # tomber sur le test nommé pour elle. Le témoin de ce script exige en plus
-      # que le fichier de tests ait été réellement joué — `node --test` sort en 0
-      # quand aucun test ne s'exécute, et un banc qui se contenterait du code de
-      # sortie annoncerait « mutation détectée » pour une raison qui n'a rien à
-      # voir avec le code muté.
+      # Et pour la page du moushaf telle qu'elle se dessine : quatorze mutations,
+      # chacune devant tomber sur le test nommé pour elle. Huit portent sur les
+      # deux fichiers de géométrie et de codes ; six sur les ornements — une
+      # teinte inventée, le médaillon privé de son emplacement puis muet, un
+      # cartouche à taille fixe, le cadre remis dans le flux, et un caractère
+      # coranique écrit en dur. Le témoin de ce script exige en plus que le
+      # fichier de tests ait été réellement joué — `node --test` sort en 0 quand
+      # aucun test ne s'exécute, et un banc qui se contenterait du code de sortie
+      # annoncerait « mutation détectée » pour une raison qui n'a rien à voir avec
+      # le code muté. Une ancre qui apparaît plusieurs fois fait refuser la
+      # mutation : muter le mauvais endroit prouverait autre chose.
       - name: Falsifier les contrôles de la page du moushaf
         run: npm run falsifier:moushaf
 

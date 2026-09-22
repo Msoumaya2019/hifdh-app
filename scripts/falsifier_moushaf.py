@@ -31,6 +31,20 @@ CE QUI EST MUTILE, ET LE CONTROLE QUI DOIT TOMBER
   6. la basmala d'une page changee    -> « la basmala est celle de la page 1 » ;
   7. un element retire des codes      -> « les codes et le texte decrivent la meme page » ;
   8. un chemin de police abime        -> « la table des polices ecrit les 604 chemins ».
+  9. une teinte d'ornement inventee   -> « les ornements portent les teintes relevees » ;
+ 10. le medaillon sans emplacement    -> « le medaillon recoit le numero » ;
+ 11. le medaillon qui n'affiche rien  -> « le medaillon recoit le numero » ;
+ 12. un cartouche a taille fixe       -> « les cartouches se dimensionnent sur le pas » ;
+ 13. le cadre remis dans le flux      -> « le cadre se dessine en fond » ;
+ 14. un caractere arabe dans les ornements -> « aucun ornement ne dessine de texte coranique ».
+
+L'ANCRE DOIT ETRE UNIQUE
+------------------------
+Une ancre qui apparait plusieurs fois fait muter le mauvais endroit : le script
+compte les occurrences, et refuse d'ecrire si ce n'est pas **1**. Et le fragment
+du controle attendu doit etre un morceau **exact** du nom du test : un fragment
+mal orthographie fait annoncer « non detectee » alors que le test est tombe, ce
+qui accuse le code au lieu du harnais. Les deux cas se sont produits.
 
 Usage :
     python scripts/falsifier_moushaf.py
@@ -50,11 +64,13 @@ RACINE = pathlib.Path(__file__).resolve().parent.parent
 FICHIER_LAYOUT = RACINE / "data" / "quran" / "moushaf_layout.json"
 FICHIER_LARGEURS = RACINE / "data" / "quran" / "largeurs_pages.json"
 FICHIER_POLICES = RACINE / "src" / "data" / "policesPages.ts"
+FICHIER_ORNEMENTS = RACINE / "src" / "components" / "ornementsMoushaf.tsx"
+FICHIER_LECTEUR = RACINE / "app" / "lecteur.tsx"
 TEST = RACINE / "tests" / "moushaf.test.mjs"
 
 # Le nombre de tests du fichier. S'il change, le temoin change aussi : c'est
 # volontaire, un test ajoute doit se voir ici.
-TESTS_ATTENDUS = 14
+TESTS_ATTENDUS = 19
 
 
 def lancer_controle():
@@ -115,6 +131,23 @@ def page_avec_basmala(layout):
             if any(element[0] == "b" for element in ligne):
                 return numero
     raise LookupError("aucune basmala")
+
+
+def remplacer_une_fois(chemin, ancre, remplacement):
+    """Remplace une ancre dans un fichier de texte, et refuse si elle n'est pas unique.
+
+    Une ancre qui apparait plusieurs fois ferait muter le mauvais endroit : les
+    deux premiers remplacements reussiraient, le troisieme aussi, et la mutation
+    n'eprouverait plus ce qu'elle annonce. On exige donc **une** occurrence, et on
+    echoue bruyamment sinon.
+    """
+    texte = chemin.read_text(encoding="utf-8")
+    occurrences = texte.count(ancre)
+    if occurrences != 1:
+        raise LookupError(
+            f"{chemin.name} : l'ancre apparait {occurrences} fois, il en faut exactement 1"
+        )
+    chemin.write_text(texte.replace(ancre, remplacement), encoding="utf-8")
 
 
 def mutations():
@@ -181,6 +214,56 @@ def mutations():
             encoding="utf-8",
         )
 
+    # --- les ornements : mutations de texte, non de donnees ------------------
+    #
+    # Les controles d'ornements lisent le source pour tenir une coherence (les
+    # teintes sont celles de l'imprime, les cartouches suivent le pas, le cadre
+    # est en fond). Une mutation doit donc viser exactement ce que le controle
+    # annonce, sans quoi on eprouverait autre chose.
+
+    def teinte_inventee(_fichier):
+        remplacer_une_fois(FICHIER_ORNEMENTS, "brun: '#B07B4F',", "brun: '#123456',")
+
+    def medaillon_sans_emplacement(_fichier):
+        # Le composant cesse d'accepter un caractere : le numero de verset n'aurait
+        # plus ou se poser, et le medaillon resterait vide.
+        remplacer_une_fois(
+            FICHIER_ORNEMENTS,
+            "  children?: ReactNode;\n}) {\n  return (\n"
+            '    <Svg width={taille} height={taille} viewBox="0 0 100 100">',
+            "}) {\n  return (\n"
+            '    <Svg width={taille} height={taille} viewBox="0 0 100 100">',
+        )
+
+    def medaillon_muet(_fichier):
+        # Le composant accepte le caractere mais ne le dessine pas : la
+        # declaration seule ne prouverait rien.
+        remplacer_une_fois(
+            FICHIER_ORNEMENTS,
+            "        strokeWidth={0.9}\n      />\n      {children}",
+            "        strokeWidth={0.9}\n      />",
+        )
+
+    def cartouche_a_taille_fixe(_fichier):
+        # Un cartouche en pixels ne suivrait plus la page d'un ecran a l'autre.
+        remplacer_une_fois(
+            FICHIER_LECTEUR,
+            "<CartoucheNumero largeur={Math.max(56, largeurDuBloc * 0.16)}",
+            "<CartoucheNumero largeur={56}",
+        )
+
+    def cadre_dans_le_flux(_fichier):
+        remplacer_une_fois(FICHIER_ORNEMENTS, "position: 'absolute'", "position: 'relative'")
+
+    def texte_arabe_dans_les_ornements(_fichier):
+        # Un caractere coranique ecrit en dur dans le module d'ornements : c'est
+        # exactement ce que la regle du projet interdit.
+        remplacer_une_fois(
+            FICHIER_ORNEMENTS,
+            "  encre: '#1C1C1C',",
+            "  encre: '#1C1C1C',\n  piegeArabe: '\u0628\u0650\u0633\u0652\u0645\u0650',",
+        )
+
     return [
         (
             "geometrie faussee",
@@ -238,6 +321,48 @@ def mutations():
             chemin_abime,
             "la table des polices écrit les 604 chemins",
         ),
+        (
+            "teinte inventee",
+            "le brun de l'encadrement devient un brun de charte",
+            FICHIER_ORNEMENTS,
+            teinte_inventee,
+            "les ornements portent les teintes relevées",
+        ),
+        (
+            "medaillon sans emplacement",
+            "le medaillon n'accepte plus de caractere",
+            FICHIER_ORNEMENTS,
+            medaillon_sans_emplacement,
+            "le médaillon reçoit le numéro",
+        ),
+        (
+            "medaillon muet",
+            "le medaillon accepte le caractere sans le dessiner",
+            FICHIER_ORNEMENTS,
+            medaillon_muet,
+            "le médaillon reçoit le numéro",
+        ),
+        (
+            "cartouche a taille fixe",
+            "le cartouche du numero ne suit plus la largeur du bloc",
+            FICHIER_LECTEUR,
+            cartouche_a_taille_fixe,
+            "les cartouches se dimensionnent sur le pas",
+        ),
+        (
+            "cadre dans le flux",
+            "le cadre prend une place dans le flux au lieu du fond",
+            FICHIER_ORNEMENTS,
+            cadre_dans_le_flux,
+            "le cadre se dessine en fond",
+        ),
+        (
+            "arabe dans les ornements",
+            "un caractere coranique est ecrit en dur dans les ornements",
+            FICHIER_ORNEMENTS,
+            texte_arabe_dans_les_ornements,
+            "aucun ornement ne dessine de texte coranique",
+        ),
     ]
 
 
@@ -277,7 +402,11 @@ def main() -> None:
             for fichier_origine, octets in originaux.items():
                 fichier_origine.write_bytes(octets)
 
-            if chemin.suffix == ".ts":
+            # Un fichier de donnees se lit et s'ecrit en JSON ; un fichier de
+            # source (.ts, .tsx) est mute sur son texte directement, par
+            # `remplacer_une_fois`. Confondre les deux ferait echouer la lecture
+            # JSON sur du TypeScript.
+            if chemin.suffix in (".ts", ".tsx"):
                 muter(None)
             else:
                 fichier = lire(chemin)
