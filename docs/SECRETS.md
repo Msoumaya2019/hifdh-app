@@ -234,15 +234,28 @@ interface.
 3. **Le réglage qui compte** : à côté de **Root Directory**, cliquez **Edit** et choisissez
    **`admin`**. Sans cela, Vercel prend la racine du dépôt — qui est l'application Expo — et la
    construction échoue.
-4. Dépliez **Environment Variables** et ajoutez les deux valeurs de §2, sous les noms exacts :
+4. Dépliez **Environment Variables** et ajoutez **deux** variables, avec **ces noms exacts** :
 
-   | Key | Value |
-   | --- | --- |
-   | `NEXT_PUBLIC_SUPABASE_URL` | l'adresse du projet |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | la clé `anon` |
+   | Key | Value | Type |
+   | --- | --- | --- |
+   | `NEXT_PUBLIC_SUPABASE_URL` | l'adresse du projet | **Config** |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | la clé `anon` | **Config** |
 
-   Choisissez **Config** (et non **Secret**) : ces valeurs sont publiques, et les déclarer secrètes
-   les rendrait illisibles après coup. Cochez au moins **Production**.
+   **Le préfixe n'est pas celui des variables du dépôt, et c'est le piège.** Le dépôt porte
+   `EXPO_PUBLIC_*` : ce sont les noms que lit l'**application mobile**. Le tableau de bord est une
+   application Next.js, et Next.js ne publie au navigateur que ce qui commence par `NEXT_PUBLIC_`.
+   Une variable nommée `EXPO_PUBLIC_*` sur Vercel **n'est pas lue** : le tableau de bord se
+   déploierait en annonçant « non configuré ». Le flux de vérification fait la traduction à votre
+   place pour la compilation ; sur Vercel, il n'y a pas de traduction — c'est le nom de Next.js
+   qu'il faut écrire. En cas d'erreur, l'écran déployé nomme lui-même les deux variables attendues.
+
+   **Choisissez `Config` avant d'enregistrer.** Une valeur enregistrée en `Secret` devient
+   illisible et **ne peut plus être repassée en `Config`** : Vercel l'annonce dans la fenêtre
+   (« Saved secrets are write-only, so this variable can't be changed to Config »). La seule
+   correction est alors de supprimer la variable et de la recréer. Ce n'est pas une perte : ces deux
+   valeurs sont publiques, elles sont déjà dans l'application livrée.
+
+   Cochez au moins **Production**.
 5. Cliquez **Deploy**.
 
 ### 7.3 Deux pièges, mesurés
