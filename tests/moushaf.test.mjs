@@ -422,6 +422,30 @@ test('les cartouches se dimensionnent sur le pas des lignes', () => {
   // Les dimensions arrivent bien par les propriétés, jamais écrites en dur.
   assert.match(ornements, /largeur[,:]/, 'CartoucheNumero doit recevoir sa largeur');
   assert.match(ornements, /hauteur[,:]/, 'CartoucheNumero doit recevoir sa hauteur');
+
+  // Le médaillon est un SUPPORT : son ovale se pose derrière le numéro que la
+  // police de page dessine déjà. Il doit donc accepter ce numéro, sinon la
+  // pastille serait dessinée vide — le défaut le plus discret de tous, puisque
+  // la page resterait « correcte » à l'œil d'un test qui ne regarde que la
+  // forme de la signature.
+  //
+  // Ce contrôle manquait : une mutation retirant `children?: ReactNode;`
+  // laissait le fichier vert, la signature `({...})` restant valide sans cette
+  // propriété. On exige donc la déclaration ET son emploi.
+  const medaillon = ornements.match(
+    /export function MedaillonVerset\(\{[\s\S]*?\n\}\n/
+  );
+  assert.ok(medaillon, 'MedaillonVerset est introuvable');
+  assert.match(
+    medaillon[0],
+    /children\??:\s*ReactNode/,
+    'MedaillonVerset doit accepter un caractère à dessiner (children)'
+  );
+  assert.match(
+    medaillon[0],
+    /\{children\}/,
+    'MedaillonVerset accepte children mais ne le dessine pas : la pastille resterait vide'
+  );
 });
 
 test("aucun ornement ne dessine de texte coranique", () => {
