@@ -110,6 +110,58 @@ def verifier_sans_reseau() -> list[str]:
     if "resizeMode=\"contain\"" not in lecteur:
         problemes.append("l'image n'est pas en resizeMode=\"contain\" : elle serait deformee")
 
+    # 7. LE CACHE DISQUE N'EST PAS TOUJOURS DISPONIBLE, ET LE CODE DOIT LE SAVOIR.
+    #
+    #    Defaut mesure sur appareil : `expo-file-system` resout son module natif
+    #    par `requireOptionalNativeModule('ExponentFileSystem') ?? shim`, et le
+    #    shim declare `cacheDirectory = null`. Un `?? ''` construisait alors un
+    #    chemin **relatif sans schema** (`pages-moushaf/page-1.jpg`), que
+    #    `downloadAsync` refuse ; le `catch` transformait ce refus en « verifie
+    #    ta connexion ». La page ne s'affichait donc jamais, et le message
+    #    accusait le reseau a tort.
+    #
+    #    Trois choses doivent donc tenir, et aucune ne se voit a la compilation :
+    #    on ne fabrique pas de chemin avec un repli vide, on ne confond pas
+    #    « pas de cache » avec « pas de reseau », et une page qu'on ne peut pas
+    #    mettre en cache reste affichable par son URL distante.
+    cache = lire(RACINE / "src" / "lib" / "cachePagesMoushaf.ts")
+    cache_code = re.sub(r"/\*[\s\S]*?\*/", "", cache)
+    cache_code = "\n".join(
+        ligne for ligne in cache_code.split("\n")
+        if not ligne.lstrip().startswith("//")
+    )
+    if "?? ''" in cache_code:
+        problemes.append(
+            "cachePagesMoushaf fabrique un chemin avec un repli vide : "
+            "cacheDirectory peut etre null, et le chemin serait alors sans schema"
+        )
+    #    Meme piege que ci-dessus, et mesure : `DOSSIER === null` apparait dans
+    #    quatre gardes (`preparerDossier`, `cheminLocal`, `assurerPage`,
+    #    `viderCachePages`). Chercher la seule chaine reste donc vert meme si
+    #    `cheminLocal` cesse de rendre `null` — mutation faite, et NON detectee.
+    #    On ancre sur la LIGNE qui decide, pas sur le motif nu.
+    if not re.search(
+        r"return DOSSIER === null \? null : `\$\{DOSSIER\}page-\$\{page\}\.jpg`;",
+        cache_code,
+    ):
+        problemes.append(
+            "cheminLocal fabrique un chemin meme sans cache disque : "
+            "un cache indisponible serait rapporte comme une panne reseau"
+        )
+    #    Le repli doit etre la GARDE elle-meme, pas un `return url;` quelconque :
+    #    ce motif apparait quatre fois dans le fichier (dans la garde, dans le
+    #    controle de chemin, apres le telechargement, et dans le `catch`). Un
+    #    controle qui cherche la seule instruction reste vert meme si la garde
+    #    rend `null` — mesure : la mutation « le repli sur l'URL distante est
+    #    retire » n'etait PAS detectee. On ancre donc sur la condition ET sur ce
+    #    qu'elle rend, sur la meme ligne.
+    if not re.search(r"if \(DOSSIER === null\) return url;", cache_code):
+        problemes.append(
+            "cachePagesMoushaf ne retombe pas sur l'URL distante quand le cache "
+            "disque est absent : une page s'afficherait en echec alors que le "
+            "reseau repond"
+        )
+
     return problemes
 
 

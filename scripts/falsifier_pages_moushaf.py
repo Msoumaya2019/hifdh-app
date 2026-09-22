@@ -24,6 +24,7 @@ VERIF = "scripts/verifier_pages_moushaf.py"
 SOURCE = RACINE / "src/lib/pagesMoushaf.ts"
 LECTEUR = RACINE / "src/components/LecteurPageMoushaf.tsx"
 AUTRE = RACINE / "src/lib/progress.ts"
+CACHE = RACINE / "src/lib/cachePagesMoushaf.ts"
 
 
 def sha(p: Path) -> str:
@@ -75,6 +76,32 @@ MUTATIONS = [
         AUTRE,
         "import type {",
         "const URL_PAGE = 'https://cdn.jsdelivr.net/gh/Zohanur2026/zohanur-mushaf-pages-hafs/1.jpg';\nimport type {",
+    ),
+    # --- le cache disque indisponible : le defaut signale sur appareil -------
+    (
+        # Le retour du `?? ''` qui a fait echouer toutes les pages en vrai : le
+        # chemin perd son schema `file://`, et downloadAsync le refuse.
+        "le chemin de cache est fabrique avec un repli vide",
+        CACHE,
+        "const DOSSIER: string | null = FileSystem.cacheDirectory\n  ? `${FileSystem.cacheDirectory}pages-moushaf/`\n  : null;",
+        "const DOSSIER: string = `${FileSystem.cacheDirectory ?? ''}pages-moushaf/`;",
+    ),
+    (
+        # `cheminLocal` cesse de rendre `null` quand le cache manque, et fabrique
+        # un chemin malgre tout. On n'ecrit pas `?? ''` ici : ce serait viser
+        # deux regles a la fois, et l'on ne saurait pas laquelle a parle.
+        "cheminLocal fabrique un chemin sans cache",
+        CACHE,
+        "return DOSSIER === null ? null : `${DOSSIER}page-${page}.jpg`;",
+        "return `${DOSSIER}page-${page}.jpg`;",
+    ),
+    (
+        # Le repli sur l'URL distante disparait : une page qu'on ne peut pas
+        # mettre en cache s'affiche en echec alors que le reseau repond.
+        "le repli sur l'URL distante est retire",
+        CACHE,
+        "  if (DOSSIER === null) return url;",
+        "  if (DOSSIER === null) return null;",
     ),
 ]
 

@@ -180,6 +180,11 @@ dans le cache local de l'appareil.
   modifier pour en changer.
 - **Cache** : `src/lib/cachePagesMoushaf.ts` — une page téléchargée est écrite
   sur le disque et n'est plus retéléchargée.
+- **Repli** : si le cache disque n'est pas disponible sur l'appareil — le module
+  natif de fichiers peut être absent, et `cacheDirectory` vaut alors `null` sans
+  lever — l'image n'est **pas** cachée : c'est l'URL distante qui est rendue, et
+  l'`Image` de React Native l'affiche avec son propre cache réseau. Une panne du
+  cache ne doit jamais retirer la page à la personne qui la lit.
 - **Vérification** : `npm run verifier:pages-moushaf` (et son falsificateur
   `npm run falsifier:pages-moushaf`), qui contrôle les invariants de la source
   et, avec `--reseau`, l'existence réelle des pages.

@@ -33,8 +33,8 @@
 // CHANGER DE SOURCE PLUS TARD
 // ---------------------------
 // Tout passe par `getMushafPageImage`. Changer de fournisseur se fait en
-// modifiant `BASE_IMAGES` et `extension` dans `SOURCE_PAGES` : rien d'autre dans
-// l'application ne connaît l'URL.
+// modifiant `SOURCE_PAGES` (son `gabarit`, et `nombreDePages` si le nouveau jeu
+// n'en compte pas 604) : rien d'autre dans l'application ne connaît l'URL.
 
 /**
  * La source des images. Un seul endroit à modifier pour en changer.

@@ -38,7 +38,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fonts, radii, spacing } from '@/theme';
 import { getRatioPage } from '@/lib/pagesMoushaf';
-import { usePageMoushaf } from '@/lib/cachePagesMoushaf';
+import { raisonCacheIndisponible, usePageMoushaf } from '@/lib/cachePagesMoushaf';
 
 export interface LecteurPageMoushafProps {
   /** La page à montrer, de 1 à 604. */
@@ -134,6 +134,16 @@ export function LecteurPageMoushaf({
               <Text style={styles.messageDiscret}>
                 Vérifie ta connexion, puis réessaie : la page se garde ensuite sans réseau.
               </Text>
+              {/* La raison exacte, quand on la connaît. Sans elle, toutes les
+                  pannes se ressemblent et l'utilisateur cherche un problème de
+                  réseau qui n'existe pas — c'est ce qui s'est produit sur
+                  appareil, où un chemin de fichier invalide s'affichait comme
+                  une panne de connexion. */}
+              {raisonCacheIndisponible !== null && (
+                <Text style={styles.messageCause}>
+                  Cause : {raisonCacheIndisponible}.
+                </Text>
+              )}
               <Pressable
                 style={styles.boutonReessayer}
                 onPress={() => setTentative((n) => n + 1)}
@@ -322,6 +332,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textPrimary,
     textAlign: 'center',
+  },
+  messageCause: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   boutonReessayer: {
     flexDirection: 'row',
