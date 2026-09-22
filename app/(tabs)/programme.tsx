@@ -8,6 +8,7 @@ import { Card } from '@/components/Card';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, getSessionsByDateRange, getReviewItemsDue, updateSessionStatus, saveReviewItem, addMemorizedPassage } from '@/lib/database';
 import { formatDate } from '@/lib/progress';
+import { aujourdHui, dansJours } from '@/lib/dates';
 import { reviewCard, getNextReviewDate, createNewCard } from '@/lib/spacedRepetition';
 import type { UserConfig, LearningSession, ReviewItem, ReviewRating } from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,10 +23,8 @@ export default function ProgrammeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const future = new Date();
-    future.setDate(future.getDate() + 90);
-    const futureStr = future.toISOString().split('T')[0];
+    const today = aujourdHui();
+    const futureStr = dansJours(90);
 
     const sess = await getSessionsByDateRange(today, futureStr);
     setSessions(sess);

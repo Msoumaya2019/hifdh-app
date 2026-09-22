@@ -9,6 +9,7 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, getTodaySessions, getMemorizedPassages, getReviewItemsDue, getReviewItemCount, getSessionsByDateRange } from '@/lib/database';
 import { computeProgressStats, formatDate } from '@/lib/progress';
+import { aujourdHui, ilYAjours } from '@/lib/dates';
 import type { UserConfig, LearningSession, MemorizedPassage } from '@/types';
 
 export default function AccueilScreen() {
@@ -29,14 +30,12 @@ export default function AccueilScreen() {
       return;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = aujourdHui();
     const sessions = await getTodaySessions();
     setTodaySessions(sessions);
 
     // Charger les séances de cette semaine et ce mois pour les stats
-    const monthAgo = new Date();
-    monthAgo.setDate(monthAgo.getDate() - 30);
-    const monthStr = monthAgo.toISOString().split('T')[0];
+    const monthStr = ilYAjours(30);
     const monthSessions = await getSessionsByDateRange(monthStr, today);
     setAllSessions(monthSessions);
 

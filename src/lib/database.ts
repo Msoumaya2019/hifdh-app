@@ -8,6 +8,7 @@ import type {
   ReviewItem,
   MemorizedPassage,
 } from '@/types';
+import { aujourdHui } from './dates';
 
 const DB_NAME = 'hifdh.db';
 
@@ -196,7 +197,7 @@ export async function getSessionsByDateRange(
 }
 
 export async function getTodaySessions(): Promise<LearningSession[]> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = aujourdHui();
   return getSessionsByDateRange(today, today);
 }
 

@@ -9,6 +9,7 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import { getUserConfig, getMemorizedPassages, getSessionsByDateRange, getReviewItemCount, getReviewItemsDue } from '@/lib/database';
 import { computeProgressStats, formatDate } from '@/lib/progress';
+import { aujourdHui, ilYAjours, versDateLocale } from '@/lib/dates';
 import type { UserConfig, LearningSession, MemorizedPassage, ProgressStats } from '@/types';
 
 type Period = 'jour' | 'semaine' | 'mois';
@@ -23,10 +24,8 @@ export default function ProgresScreen() {
     const config = await getUserConfig();
     if (!config) return;
 
-    const today = new Date().toISOString().split('T')[0];
-    const monthAgo = new Date();
-    monthAgo.setDate(monthAgo.getDate() - 30);
-    const monthStr = monthAgo.toISOString().split('T')[0];
+    const today = aujourdHui();
+    const monthStr = ilYAjours(30);
 
     const sessions = await getSessionsByDateRange(monthStr, today);
     const memorized = await getMemorizedPassages();
@@ -163,7 +162,7 @@ function WeekChart({ sessions }: { sessions: LearningSession[] }) {
   const data = dayOffsets.map((_, i) => {
     const dayDate = new Date(startOfWeek);
     dayDate.setDate(startOfWeek.getDate() + i);
-    const dateStr = dayDate.toISOString().split('T')[0];
+    const dateStr = versDateLocale(dayDate);
     return sessions
       .filter((s) => s.date === dateStr && s.status === 'completed')
       .reduce((sum, s) => sum + (s.endAyah - s.startAyah + 1), 0);

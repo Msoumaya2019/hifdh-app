@@ -1,61 +1,65 @@
 // Calculs de progression et statistiques
 
 import type { UserConfig, LearningSession, MemorizedPassage, ProgressStats, Objective } from '@/types';
-import { getAllSurahs, getTotalAyahs, ayahRefToAyahId } from '@/data/quranData';
+import { getAllSurahs, getAllHizb, getSurah, getTotalAyahs, ayahRefToAyahId } from '@/data/quranData';
 import { computeObjectiveRanges, estimateCompletionDate } from './programGenerator';
+import { aujourdHui, ilYAjours, analyserDateLocale } from './dates';
 
 // Calculer le nombre total de versets dans le Coran
 export function getTotalQuranVerses(): number {
   return getTotalAyahs(); // 6236
 }
 
-// Calculer le nombre de versets mémorisés
-export function getMemorizedVerseCount(memorized: MemorizedPassage[]): number {
-  let count = 0;
+/**
+ * Identifiants globaux (1..6236) des versets marqués comme mémorisés.
+ *
+ * On passe par un ensemble plutôt que d'additionner la longueur de chaque
+ * passage : deux passages qui se chevauchent — 2:1-10 puis 2:5-15 — comptaient
+ * 21 versets au lieu de 15, et gonflaient le pourcentage affiché sur l'accueil.
+ * Un passage « unknown » n'est jamais compté.
+ */
+function identifiantsMemorises(memorized: MemorizedPassage[]): Set<number> {
+  const ids = new Set<number>();
+
   for (const passage of memorized) {
     if (passage.level === 'unknown') continue;
-    count += passage.endAyah - passage.startAyah + 1;
+    const surah = getSurah(passage.surah);
+    if (!surah) continue;
+    for (let a = passage.startAyah; a <= passage.endAyah; a++) {
+      ids.add(surah.startAyahId + a - 1);
+    }
   }
-  return count;
+
+  return ids;
+}
+
+// Calculer le nombre de versets mémorisés (versets distincts)
+export function getMemorizedVerseCount(memorized: MemorizedPassage[]): number {
+  return identifiantsMemorises(memorized).size;
 }
 
 // Calculer le nombre de versets dans l'objectif
 export function getObjectiveVerseCount(objective: Objective): number {
-  const ranges = computeObjectiveRanges(objective);
   let count = 0;
-  for (const range of ranges) {
-    const surah = getAllSurahs().find((s) => s.number === range.surah);
-    if (!surah) continue;
-    // Si la plage couvre toute la sourate
-    if (range.startAyah === 1 && range.endAyah >= surah.ayahCount) {
-      count += surah.ayahCount;
-    } else {
-      // Plage partielle
-      count += range.endAyah - range.startAyah + 1;
-    }
+  for (const range of computeObjectiveRanges(objective)) {
+    count += range.endAyah - range.startAyah + 1;
   }
   return count;
 }
 
-// Calculer le nombre de versets mémorisés dans l'objectif
+// Calculer le nombre de versets mémorisés dans l'objectif (versets distincts)
 export function getMemorizedInObjective(
   objective: Objective,
   memorized: MemorizedPassage[]
 ): number {
-  const objRanges = computeObjectiveRanges(objective);
+  const ids = identifiantsMemorises(memorized);
   let count = 0;
 
-  for (const objRange of objRanges) {
-    for (const mem of memorized) {
-      if (mem.level === 'unknown') continue;
-      if (mem.surah !== objRange.surah) continue;
-
-      // Chevauchement
-      const overlapStart = Math.max(mem.startAyah, objRange.startAyah);
-      const overlapEnd = Math.min(mem.endAyah, objRange.endAyah);
-      if (overlapEnd >= overlapStart) {
-        count += overlapEnd - overlapStart + 1;
-      }
+  for (const range of computeObjectiveRanges(objective)) {
+    const surah = getSurah(range.surah);
+    if (!surah) continue;
+    for (let a = range.startAyah; a <= range.endAyah; a++) {
+      if (ids.has(surah.startAyahId + a - 1)) count++;
     }
   }
 
@@ -78,33 +82,35 @@ export function computeProgressStats(
   const objectivePercentage = objectiveTotal > 0 ? (memorizedInObj / objectiveTotal) * 100 : 0;
 
   // Versets aujourd'hui
-  const today = new Date().toISOString().split('T')[0];
+  const today = aujourdHui();
   const todayVerses = sessions
     .filter((s) => s.date === today && s.status === 'completed')
     .reduce((sum, s) => sum + (s.endAyah - s.startAyah + 1), 0);
 
   // Versets cette semaine (7 derniers jours)
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const weekStr = weekAgo.toISOString().split('T')[0];
+  const weekStr = ilYAjours(7);
   const weekVerses = sessions
     .filter((s) => s.date >= weekStr && s.date <= today && s.status === 'completed')
     .reduce((sum, s) => sum + (s.endAyah - s.startAyah + 1), 0);
 
   // Versets ce mois (30 derniers jours)
-  const monthAgo = new Date();
-  monthAgo.setDate(monthAgo.getDate() - 30);
-  const monthStr = monthAgo.toISOString().split('T')[0];
+  const monthStr = ilYAjours(30);
   const monthVerses = sessions
     .filter((s) => s.date >= monthStr && s.date <= today && s.status === 'completed')
     .reduce((sum, s) => sum + (s.endAyah - s.startAyah + 1), 0);
 
-  // Hizb terminés (un hizb = ~104 versets, on compte les hizb entièrement mémorisés)
+  // Hizb terminés : un hizb est compté lorsque tous ses versets sont mémorisés.
+  const idsMemorises = identifiantsMemorises(memorized);
   let hizbCompleted = 0;
-  for (let h = 1; h <= 60; h++) {
-    // Vérifier si tout le hizb est mémorisé
-    // Simplifié: on compte sur la base des versets mémorisés par hizb
-    // TODO: implémenter précisément avec les données de hizb
+  for (const hizb of getAllHizb()) {
+    let complet = true;
+    for (let id = hizb.start.ayahId; id <= hizb.end.ayahId; id++) {
+      if (!idsMemorises.has(id)) {
+        complet = false;
+        break;
+      }
+    }
+    if (complet) hizbCompleted++;
   }
 
   // Jours d'apprentissage (jours uniques avec au moins une séance terminée)
@@ -133,7 +139,13 @@ export function computeProgressStats(
 
 // Formater une date pour l'affichage
 export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  // Une date nue « AAAA-MM-JJ » doit être lue comme une date locale : `new
+  // Date('2026-09-21')` la lit comme minuit UTC, ce qui affiche la veille pour
+  // tout utilisateur à l'ouest de Greenwich. Les horodatages complets, eux,
+  // désignent un instant et restent analysés tels quels.
+  const date = dateStr.length === 10 && dateStr.includes('-')
+    ? analyserDateLocale(dateStr)
+    : new Date(dateStr);
   const months = [
     'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
     'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'

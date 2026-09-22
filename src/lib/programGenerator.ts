@@ -18,8 +18,9 @@ import {
   getAllSurahs,
   getAllRub,
   getAllThumn,
-  getSurah,
+  getTotalAyahs,
 } from '@/data/quranData';
+import { versDateLocale } from './dates';
 
 // === Types internes ===
 
@@ -31,64 +32,68 @@ interface VerseRange {
 
 // === Étape 1: Calculer l'objectif comme une liste de plages ===
 
+/**
+ * Découpe un intervalle de versets, exprimé en identifiants globaux (1..6236),
+ * en une plage par sourate traversée.
+ *
+ * C'est indispensable pour les divisions : le Juz 1 va de 1:1 à 2:141. Le
+ * réduire à une seule plage `{ surah: 1, endAyah: 141 }` ferait générer des
+ * séances portant sur 1:8 à 1:141, alors que la sourate 1 ne compte que
+ * 7 versets. Chaque division qui traverse une frontière de sourate — donc
+ * presque toutes — était concernée.
+ */
+function rangesDepuisIds(startAyahId: number, endAyahId: number): VerseRange[] {
+  const ranges: VerseRange[] = [];
+
+  for (const surah of getAllSurahs()) {
+    const premierDeLaSourate = surah.startAyahId;
+    const dernierDeLaSourate = surah.startAyahId + surah.ayahCount - 1;
+
+    if (dernierDeLaSourate < startAyahId || premierDeLaSourate > endAyahId) continue;
+
+    ranges.push({
+      surah: surah.number,
+      startAyah: Math.max(startAyahId, premierDeLaSourate) - premierDeLaSourate + 1,
+      endAyah: Math.min(endAyahId, dernierDeLaSourate) - premierDeLaSourate + 1,
+    });
+  }
+
+  return ranges;
+}
+
 export function computeObjectiveRanges(objective: Objective): VerseRange[] {
   switch (objective.type) {
     case 'full_quran': {
-      // Tout le Coran : les 114 sourates
-      const ranges: VerseRange[] = [];
-      for (let s = 1; s <= 114; s++) {
-        const surah = getSurah(s);
-        if (surah) ranges.push({ surah: s, startAyah: 1, endAyah: surah.ayahCount });
-      }
-      return ranges;
+      // Tout le Coran : une plage par sourate
+      return rangesDepuisIds(1, getTotalAyahs());
     }
 
     case 'juz_amma': {
-      // Juz 30 = sourates 78 à 114
-      const ranges: VerseRange[] = [];
-      for (let s = 78; s <= 114; s++) {
-        const surah = getSurah(s);
-        if (surah) ranges.push({ surah: s, startAyah: 1, endAyah: surah.ayahCount });
-      }
-      return ranges;
+      // Juz 'Amma = Juz 30 (sourates 78 à 114)
+      const juz = getJuz(30);
+      if (!juz) return [];
+      return rangesDepuisIds(juz.start.ayahId, juz.end.ayahId);
     }
 
     case 'hizb_sabbih': {
-      // Hizb Sabbih = Hizb 1 (début du Coran à sourate 2 verset 74)
-      const hizb = getHizb(1);
+      // Hizb Sabbih = le hizb qui commence par « سَبِّحِ ٱسْمَ رَبِّكَ ٱلْأَعْلَى »
+      // (sourate 87), soit le hizb 60.
+      const hizb = getHizb(60);
       if (!hizb) return [];
-      return [
-        {
-          surah: hizb.start.surah,
-          startAyah: hizb.start.ayah,
-          endAyah: hizb.end.ayah,
-        },
-      ];
+      return rangesDepuisIds(hizb.start.ayahId, hizb.end.ayahId);
     }
 
     case 'specific_juz': {
       const juz = getJuz(objective.juzNumber ?? 1);
       if (!juz) return [];
-      return [
-        {
-          surah: juz.start.surah,
-          startAyah: juz.start.ayah,
-          endAyah: juz.end.ayah,
-        },
-      ];
+      return rangesDepuisIds(juz.start.ayahId, juz.end.ayahId);
     }
 
     case 'specific_hizb': {
       const ranges: VerseRange[] = [];
       for (const hNum of objective.hizbNumbers ?? []) {
         const h = getHizb(hNum);
-        if (h) {
-          ranges.push({
-            surah: h.start.surah,
-            startAyah: h.start.ayah,
-            endAyah: h.end.ayah,
-          });
-        }
+        if (h) ranges.push(...rangesDepuisIds(h.start.ayahId, h.end.ayahId));
       }
       return ranges;
     }
@@ -313,9 +318,18 @@ function getDivisionRangesForRange(
 
 // === Étape 4: Assigner les séances aux dates ===
 
+/**
+ * Génère le programme d'apprentissage.
+ *
+ * `maintenant` est injectable : sans cela, la fonction lit l'horloge en interne
+ * et aucune vérification ne peut être déterministe. Un banc qui s'appuie sur
+ * l'heure courante ne détecte un défaut de date que pendant une partie de la
+ * journée — mesuré : une mutation de la date n'était attrapée qu'après 10 h UTC.
+ */
 export function generateProgram(
   config: UserConfig,
-  existingSessions: LearningSession[] = []
+  existingSessions: LearningSession[] = [],
+  maintenant: Date = new Date()
 ): LearningSession[] {
   // 1. Calculer les plages de l'objectif
   const objectiveRanges = computeObjectiveRanges(config.objective);
@@ -327,9 +341,11 @@ export function generateProgram(
   const sessionRanges = splitIntoSessions(remaining, config.schedule.unit);
 
   // 4. Assigner aux dates
-  const learningDays = config.schedule.days.sort();
+  // Copie avant tri : `sort()` modifie le tableau en place, et l'appelant
+  // retrouverait sa configuration réordonnée.
+  const learningDays = [...config.schedule.days].sort((a, b) => a - b);
   const sessions: LearningSession[] = [];
-  const now = new Date();
+  const now = maintenant;
   let sessionIndex = 0;
 
   // Générer les dates à partir d'aujourd'hui
@@ -347,7 +363,7 @@ export function generateProgram(
 
     const session: LearningSession = {
       id: `session_${date.getTime()}_${sessionIndex}`,
-      date: date.toISOString().split('T')[0],
+      date: versDateLocale(date),
       surah: range.surah,
       startAyah: range.startAyah,
       endAyah: range.endAyah,
@@ -377,7 +393,8 @@ export function generateProgram(
 export function estimateCompletionDate(
   config: UserConfig,
   memorizedCount: number,
-  objectiveTotal: number
+  objectiveTotal: number,
+  depuis: Date = new Date()
 ): string | undefined {
   const remaining = objectiveTotal - memorizedCount;
   if (remaining <= 0) return undefined;
@@ -401,7 +418,7 @@ export function estimateCompletionDate(
   const weeksNeeded = Math.ceil(sessionsNeeded / daysPerWeek);
   const daysNeeded = Math.ceil(weeksNeeded * 7);
 
-  const completion = new Date();
+  const completion = new Date(depuis);
   completion.setDate(completion.getDate() + daysNeeded);
-  return completion.toISOString().split('T')[0];
+  return versDateLocale(completion);
 }

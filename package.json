@@ -7,6 +7,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "test": "node --import ./scripts/register-alias.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.mjs\"",
+    "typecheck": "tsc --noEmit",
+    "verifier:donnees": "python data/quran/verifier_divisions.py",
     "build:apk": "eas build --platform android --profile preview",
     "build:ipa": "eas build --platform ios --profile preview"
   },

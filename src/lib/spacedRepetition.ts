@@ -3,10 +3,11 @@
 // Algorithme simplifié basé sur SM-2 (SuperMemo 2)
 // Adapté pour la mémorisation du Coran.
 //
-// Niveaux de maîtrise: 0 (nouveau) à 5 (maîtrise parfaite)
+// Niveaux de maîtrise: 0 (nouveau) à 8 (maîtrise parfaite)
 // Le niveau détermine l'intervalle avant la prochaine révision.
 
 import type { ReviewRating } from '@/types';
+import { versDateLocale } from './dates';
 
 // Intervalles par niveau (en jours)
 const INTERVALS = [1, 1, 2, 4, 7, 14, 30, 60, 90];
@@ -78,10 +79,17 @@ export function reviewCard(card: SRSCard, rating: ReviewRating): SRSCard {
   };
 }
 
-export function getNextReviewDate(intervalDays: number): string {
-  const date = new Date();
+/**
+ * Date de la prochaine révision, dans le calendrier local.
+ *
+ * `depuis` est injectable pour que la vérification soit déterministe : adossée à
+ * l'heure courante, elle ne détecterait un défaut de date que pendant une partie
+ * de la journée.
+ */
+export function getNextReviewDate(intervalDays: number, depuis: Date = new Date()): string {
+  const date = new Date(depuis);
   date.setDate(date.getDate() + intervalDays);
-  return date.toISOString().split('T')[0];
+  return versDateLocale(date);
 }
 
 // Calculer le pourcentage de rétention d'un item
