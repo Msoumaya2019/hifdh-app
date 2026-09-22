@@ -31,6 +31,7 @@
     "falsifier:rapport": "python scripts/falsifier_rapport.py",
     "falsifier:pages": "python scripts/falsifier_pages.py",
     "falsifier:renforcement": "python scripts/falsifier_renforcement.py",
+    "falsifier:accueil": "python scripts/falsifier_accueil.py",
     "build:apk": "gh workflow run android-apk.yml",
     "build:ipa": "gh workflow run ios-unsigned.yml"
   },

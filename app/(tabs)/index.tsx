@@ -153,19 +153,40 @@ export default function AccueilScreen() {
         )}
       </Card>
 
-      {/* À renforcer */}
+      {/* À renforcer. La carte EST le raccourci : un appui mène directement à
+          l'onglet « À renforcer », où la liste est groupée par sourate. Le
+          chevron est là pour que la carte se voie cliquable — sans lui, un
+          raccourci invisible ne vaut pas mieux que pas de raccourci. */}
       {aRenforcer > 0 && (
-        <Card>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>À renforcer</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{aRenforcer}</Text>
+        <Pressable
+          onPress={() =>
+            // L'horodatage n'est pas décoratif : l'écran Programme reste monté
+            // entre deux visites, et sans une valeur qui change, son effet ne
+            // se rejouerait pas — le second appui ne ferait rien.
+            router.push({
+              pathname: '/(tabs)/programme',
+              params: { onglet: 'renforcer', t: String(Date.now()) },
+            })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Voir les ${aRenforcer} passage${aRenforcer > 1 ? 's' : ''} à renforcer`}
+          style={({ pressed }) => [styles.carteCliquable, pressed && styles.cartePressee]}
+        >
+          <Card>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>À renforcer</Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{aRenforcer}</Text>
+              </View>
             </View>
-          </View>
-          <Text style={styles.reviewText}>
-            {aRenforcer} passage{aRenforcer > 1 ? 's' : ''} à renforcer
-          </Text>
-        </Card>
+            <View style={styles.ligneRenforcer}>
+              <Text style={styles.reviewText}>
+                {aRenforcer} passage{aRenforcer > 1 ? 's' : ''} à renforcer
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </View>
+          </Card>
+        </Pressable>
       )}
 
       {/* Statistiques rapides */}
@@ -364,6 +385,23 @@ const styles = StyleSheet.create({
   reviewText: {
     fontSize: fontSizes.md,
     color: colors.textSecondary,
+  },
+  // Le conteneur de la carte cliquable. Il ne porte aucun habillage : le style
+  // de la carte reste celui de `Card`, une seule source pour la forme.
+  carteCliquable: {
+    borderRadius: radii.lg,
+  },
+  // L'appui doit se voir. `opacity` plutôt qu'un changement de fond : la carte
+  // garde sa couleur, donc rien ne saute à l'écran quand le doigt arrive.
+  cartePressee: {
+    opacity: 0.7,
+  },
+  // Le texte et le chevron sur une même ligne : le chevron se place au bout,
+  // contre le bord, et non collé au texte.
+  ligneRenforcer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   statsRow: {
     flexDirection: 'row',

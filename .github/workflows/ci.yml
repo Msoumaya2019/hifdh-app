@@ -186,6 +186,17 @@ jobs:
       - name: Falsifier les contrôles de renforcement
         run: npm run falsifier:renforcement
 
+      # Et pour l'accueil : celui-ci tient un accord entre deux écrans qui ne
+      # peuvent pas se lire — l'accueil émet le paramètre, l'onglet Programme le
+      # consomme. Un nom de paramètre qui divergerait d'un côté ne casse ni la
+      # compilation ni l'exécution : l'onglet s'ouvrirait simplement sur
+      # « Apprentissage », ce qui ressemble à un bouton sans effet. Sept
+      # mutations, dont la carte redevenue inerte et la bascule qui cesse de
+      # dépendre de l'horodatage — sans lui, l'écran restant monté, le second
+      # appui ne ferait plus rien.
+      - name: Falsifier les contrôles de l'accueil
+        run: npm run falsifier:accueil
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas
