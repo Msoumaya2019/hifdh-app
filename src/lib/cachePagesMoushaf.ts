@@ -154,9 +154,17 @@ export async function assurerPage(page: number): Promise<string | null> {
   return promesse;
 }
 
-/** Vrai si l'image de cette page est déjà sur le disque. */
+/**
+ * Vrai si l'image de cette page est déjà **sur le disque**.
+ *
+ * Faux quand le cache disque est indisponible : il n'y a alors rien sur le
+ * disque, et `cheminLocal` rend `null`. Cette condition est écrite ici plutôt
+ * que laissée implicite, parce que le succès de la page ne dépend pas d'elle :
+ * une page sans cache disque s'affiche par son URL, et confondre « pas en
+ * cache » avec « pas affichable » ramènerait exactement le défaut corrigé.
+ */
 export function pageEnCache(page: number): boolean {
-  return pretes.has(page);
+  return DOSSIER !== null && pretes.has(page);
 }
 
 /**

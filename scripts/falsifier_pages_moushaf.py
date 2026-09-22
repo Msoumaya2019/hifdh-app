@@ -103,6 +103,16 @@ MUTATIONS = [
         "  if (DOSSIER === null) return url;",
         "  if (DOSSIER === null) return null;",
     ),
+    (
+        # Une seule regle visee : la garde du cache disque dans `pageEnCache`.
+        # La retirer ne casse rien AUJOURD'HUI (`pretes` ne se remplit que du
+        # cote disque), et c'est exactement pourquoi la mutation est utile : elle
+        # montre que l'invariant tient la garde elle-meme, pas son effet du jour.
+        "pageEnCache ne verifie plus le cache disque",
+        CACHE,
+        "  return DOSSIER !== null && pretes.has(page);",
+        "  return pretes.has(page);",
+    ),
 ]
 
 print("=" * 74)

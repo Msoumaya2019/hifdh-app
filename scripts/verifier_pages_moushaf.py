@@ -161,6 +161,19 @@ def verifier_sans_reseau() -> list[str]:
             "disque est absent : une page s'afficherait en echec alors que le "
             "reseau repond"
         )
+    #    `pageEnCache` decide si le chargement doit etre SAUTE. Sans la garde du
+    #    cache disque, elle pourrait repondre « oui » alors que `cheminLocal` ne
+    #    peut offrir aucun chemin : le chargement serait saute, `cheminLocal`
+    #    rendrait `null`, et la page s'afficherait en echec -- le defaut meme
+    #    qu'on vient de corriger, par une autre porte. Aujourd'hui `pretes` ne se
+    #    remplit que du cote disque, donc la garde est redondante ; c'est
+    #    justement pourquoi elle s'ecrit, pour que la sureté ne depende pas d'un
+    #    invariant que rien ne tient.
+    if not re.search(r"return DOSSIER !== null && pretes\.has\(page\);", cache_code):
+        problemes.append(
+            "pageEnCache ne verifie pas que le cache disque existe : une page "
+            "serait declaree prete alors qu'aucun chemin local n'existe"
+        )
 
     return problemes
 
