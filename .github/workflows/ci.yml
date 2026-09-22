@@ -38,6 +38,22 @@ jobs:
       - name: Lancer les tests
         run: npm test
 
+      # Le seul contrôle qui reproduise fidèlement ce que fait un build natif :
+      # Metro parcourt le graphe de modules depuis l'entrée. C'est là que se
+      # manifeste un défaut qu'aucun test ni `tsc` ne voit — un paquet qui
+      # réclame un module que personne ne déclare. Cela s'est produit :
+      # `expo-router@4.0.22` appelle `query-string`, fourni par
+      # `@react-navigation/core` jusqu'à la 7.22.0, retiré en 7.22.1. Le build
+      # macOS échouait au bout de quinze minutes ; ce contrôle-ci prend deux.
+      #
+      # `--clear` sur le premier : le cache de transformation de Metro n'est pas
+      # indexé sur les valeurs de `EXPO_PUBLIC_*`. Un cache chaud peut donc
+      # figer une configuration périmée dans le paquet, silencieusement.
+      - name: Éprouver l'empaquetage Metro
+        run: |
+          npx expo export --platform ios --output-dir .tmp-export-ios --clear
+          npx expo export --platform android --output-dir .tmp-export-android
+
       # Éprouve le schéma Supabase sous un vrai Postgres compilé en WebAssembly :
       # clés primaires composites, politiques RLS des deux côtés (lecture et
       # écriture), et remplacement atomique des données. C'est le seul garde-fou

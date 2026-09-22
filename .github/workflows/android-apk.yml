@@ -44,11 +44,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Signaler la configuration manquante
-        # Avertissement, et non échec : l'application fonctionne entièrement
-        # hors ligne. La variable absente doit rester visible, sinon l'écran
-        # « Sauvegarde » dira simplement « non configuré » sans qu'on sache
-        # pourquoi.
+      - name: Exiger la configuration
+        # Un ÉCHEC, et non un avertissement : un binaire livré sans configuration
+        # ne le dit pas. L'écran « Sauvegarde » afficherait « non configuré »,
+        # et rien dans le build ne l'aurait signalé.
+        #
+        # Ces deux valeurs sont publiques par nature (URL du projet et clé
+        # `anon`, embarquée dans l'application) : ce sont des *variables*, et
+        # non des secrets.
         run: |
           manquantes=""
 
@@ -59,11 +62,13 @@ jobs:
           done
 
           if [ -n "$manquantes" ]; then
-            echo "::warning::Variables de dépôt absentes :$manquantes"
-            echo "L'application fonctionnera hors ligne ; la sauvegarde en ligne restera inactive."
-          else
-            echo "Configuration Supabase présente."
+            echo "::error::Variables de dépôt absentes :$manquantes"
+            echo "À poser dans Settings > Secrets and variables > Actions >"
+            echo "Variables, onglet « Variables » — et non « Secrets »."
+            exit 1
           fi
+
+          echo "Configuration Supabase présente."
 
       - name: Installer les dépendances
         run: npm ci
@@ -103,28 +108,42 @@ jobs:
       - name: Vérifier le contenu du paquet
         # Un APK est une archive ZIP. On y cherche la configuration attendue,
         # qui n'existe que si les variables étaient déclarées au niveau du job.
+        #
+        # Les DEUX valeurs sont cherchées séparément : n'en contrôler qu'une
+        # laisserait passer le cas où l'autre n'a pas été inlinée.
         run: |
           FICHIER="${{ steps.paquet.outputs.fichier }}"
 
-          if [ -z "$EXPO_PUBLIC_SUPABASE_URL" ]; then
-            echo "Aucune configuration Supabase attendue : contrôle ignoré."
-            exit 0
-          fi
-
           HOTE=$(printf '%s' "$EXPO_PUBLIC_SUPABASE_URL" | sed 's#^https\?://##' | sed 's#/.*##')
+          # Un fragment suffit à prouver l'inlining, et évite d'écrire la clé
+          # entière dans un journal de build.
+          FRAGMENT=$(printf '%s' "$EXPO_PUBLIC_SUPABASE_ANON_KEY" | cut -c1-24)
 
           # Le bundle est un asset compressé dans l'APK : on le décompresse
           # avant de le fouiller, un `grep` sur l'archive ne verrait rien.
           mkdir -p .tmp-apk
-          unzip -o -q "$FICHIER" 'assets/*' -d .tmp-apk || true
+          unzip -o -q "$FICHIER" 'assets/*' -d .tmp-apk
 
-          if grep -rq "$HOTE" .tmp-apk; then
-            echo "Le paquet contient bien l'adresse « $HOTE »."
-          else
-            echo "::error::Le paquet ne contient pas l'adresse « $HOTE »."
+          BUNDLE=$(find .tmp-apk -type f -name '*index.android.bundle' | head -n 1)
+
+          if [ -z "$BUNDLE" ]; then
+            echo "::error::Le paquet ne contient pas de assets/*index.android.bundle."
+            unzip -l "$FICHIER" | grep assets | head -20
             exit 1
           fi
 
+          manquants=""
+          grep -aq "$HOTE" "$BUNDLE" || manquants="$manquants l'adresse « $HOTE »"
+          grep -aq "$FRAGMENT" "$BUNDLE" || manquants="$manquants la clé publique"
+
+          if [ -n "$manquants" ]; then
+            echo "::error::Le paquet ne contient pas :$manquants"
+            echo "Les variables EXPO_PUBLIC_* doivent être déclarées au niveau du job."
+            exit 1
+          fi
+
+          echo "Le paquet contient l'adresse et la clé publique attendues."
+          ls -l "$BUNDLE"
           rm -rf .tmp-apk
 
       - name: Publier l'artefact

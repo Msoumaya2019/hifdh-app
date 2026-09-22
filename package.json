@@ -13,8 +13,8 @@
     "verifier:supabase": "node scripts/banc_supabase.mjs",
     "verifier:flux": "node scripts/analyser-flux.mjs",
     "falsifier:tests": "python scripts/falsifier_tests_sync.py",
-    "build:apk": "eas build --platform android --profile preview",
-    "build:ipa": "eas build --platform ios --profile preview"
+    "build:apk": "gh workflow run android-apk.yml",
+    "build:ipa": "gh workflow run ios-unsigned.yml"
   },
   "dependencies": {
     "@expo/vector-icons": "~14.0.4",
@@ -31,6 +31,7 @@
     "expo-secure-store": "~14.0.0",
     "expo-sqlite": "~15.1.4",
     "expo-status-bar": "~2.0.0",
+    "query-string": "^7.1.3",
     "react": "18.3.1",
     "react-native": "0.76.5",
     "react-native-gesture-handler": "~2.20.2",

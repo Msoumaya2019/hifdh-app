@@ -60,12 +60,17 @@ jobs:
 
           echo "Xcode $VERSION"
 
-      - name: Signaler la configuration manquante
-        # Un avertissement, et non un échec : l'application est conçue pour
-        # fonctionner entièrement hors ligne, et n'exige un compte que pour la
-        # sauvegarde. Une variable absente n'est donc pas une erreur — mais
-        # elle doit être visible, sinon l'écran « Sauvegarde » dira simplement
-        # que tout est « non configuré » sans qu'on sache pourquoi.
+      - name: Exiger la configuration
+        # Un ÉCHEC, et non un avertissement. L'application sait fonctionner hors
+        # ligne, mais un binaire livré sans configuration ne le dit pas : l'écran
+        # « Sauvegarde » afficherait « non configuré », et rien dans le build ne
+        # l'aurait signalé. Un avertissement se perd dans un journal de quinze
+        # minutes ; un binaire incomplet se découvre sur le téléphone.
+        #
+        # Ces deux valeurs sont publiques par nature — l'URL du projet et la clé
+        # `anon`, qui est embarquée dans l'application. Ce sont donc des
+        # *variables*, et non des secrets : les mettre en secrets n'apporterait
+        # aucune protection et empêcherait de les relire.
         run: |
           manquantes=""
 
@@ -76,12 +81,13 @@ jobs:
           done
 
           if [ -n "$manquantes" ]; then
-            echo "::warning::Variables de dépôt absentes :$manquantes"
-            echo "L'application fonctionnera hors ligne ; la sauvegarde en ligne restera inactive."
-            echo "À poser dans Settings > Secrets and variables > Actions > Variables."
-          else
-            echo "Configuration Supabase présente."
+            echo "::error::Variables de dépôt absentes :$manquantes"
+            echo "À poser dans Settings > Secrets and variables > Actions >"
+            echo "Variables, onglet « Variables » — et non « Secrets »."
+            exit 1
           fi
+
+          echo "Configuration Supabase présente."
 
       - name: Installer les dépendances
         run: npm ci
@@ -193,27 +199,44 @@ jobs:
 
       - name: Vérifier le contenu du paquet
         # Le paquet est le SEUL endroit où l'on peut constater que la
-        # configuration y est réellement entrée. Le contrôle ne porte que si
-        # une configuration était attendue : sans variable, l'absence est
-        # normale, et un échec ici ferait croire à un défaut du build.
+        # configuration y est réellement entrée. Les variables EXPO_PUBLIC_*
+        # sont remplacées par Metro pendant le *bundling*, qui se déroule à
+        # l'intérieur de xcodebuild : mal déclarées, elles laissent un binaire
+        # qui compile parfaitement et ne contient rien.
+        #
+        # Les DEUX valeurs sont cherchées séparément. N'en contrôler qu'une
+        # laisserait passer le cas où l'autre n'a pas été inlinée — et une
+        # application avec une adresse mais sans clé reste « non configurée ».
         run: |
           FICHIER="${{ steps.paquet.outputs.fichier }}"
 
-          if [ -z "$EXPO_PUBLIC_SUPABASE_URL" ]; then
-            echo "Aucune configuration Supabase attendue : contrôle ignoré."
-            exit 0
+          if ! unzip -p "$FICHIER" 'Payload/*.app/main.jsbundle' > .tmp-main.jsbundle; then
+            echo "::error::Le paquet ne contient pas de Payload/*.app/main.jsbundle."
+            echo "Contenu de l'application :"
+            unzip -l "$FICHIER" | head -40
+            exit 1
           fi
 
           HOTE=$(printf '%s' "$EXPO_PUBLIC_SUPABASE_URL" | sed 's#^https\?://##' | sed 's#/.*##')
+          # Un fragment suffit à prouver l'inlining, et évite d'écrire la clé
+          # entière dans un journal de build.
+          FRAGMENT=$(printf '%s' "$EXPO_PUBLIC_SUPABASE_ANON_KEY" | cut -c1-24)
 
-          if unzip -p "$FICHIER" 'Payload/*.app/main.jsbundle' | grep -q "$HOTE"; then
-            echo "Le paquet contient bien l'adresse « $HOTE »."
-          else
-            echo "::error::Le paquet ne contient pas l'adresse « $HOTE »."
-            echo "Les variables EXPO_PUBLIC_* sont inlinées au bundling :"
-            echo "elles doivent être déclarées au niveau du job."
+          manquants=""
+          grep -aq "$HOTE" .tmp-main.jsbundle || manquants="$manquants l'adresse « $HOTE »"
+          grep -aq "$FRAGMENT" .tmp-main.jsbundle || manquants="$manquants la clé publique"
+
+          if [ -n "$manquants" ]; then
+            echo "::error::Le paquet ne contient pas :$manquants"
+            echo "Les variables EXPO_PUBLIC_* doivent être déclarées au niveau"
+            echo "du JOB : Metro les remplace pendant le bundling, à l'intérieur"
+            echo "de xcodebuild."
             exit 1
           fi
+
+          echo "Le paquet contient l'adresse et la clé publique attendues."
+          ls -l .tmp-main.jsbundle
+          rm -f .tmp-main.jsbundle
 
       - name: Publier l'artefact
         uses: actions/upload-artifact@v7

@@ -48,8 +48,10 @@ coverage/
 # Temporary
 *.log
 
-# Dossier de travail (telechargements et verifications ponctuelles)
-.tmp-dl/
+# Dossiers de travail : telechargements, export local du paquet, bundle extrait
+# d'un IPA ou d'un APK. Regenerables, et volumineux.
+.tmp-*/
+.tmp-main.jsbundle
 
 # Projets natifs : regeneres par `expo prebuild --clean`, jamais versionnes.
 # Un dossier `ios/` versionne porte ses references de signature et devient une
