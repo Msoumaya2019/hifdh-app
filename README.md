@@ -28,9 +28,13 @@ hifdh-app/
 │   └── components/         # Composants réutilisables
 ├── data/quran/             # Données coraniques (texte, divisions, thumn)
 │   ├── quran_text_uthmani.json       # Texte + juz, page, hizbQuarter
+│   ├── moushaf_layout.json           # Où chaque mot tombe : 604 pages × 15 lignes
+│   ├── largeurs_pages.json           # La largeur naturelle des 15 lignes, page par page
+│   ├── polices_pages.json            # Taille et empreinte des 604 polices de page
 │   ├── verifier_pages.py             # Contrôle des 604 pages du moushaf
 │   └── rapport_divisions_estimees.py # Engendre docs/divisions-estimees.md
-├── assets/                 # Polices (Amiri), images
+├── assets/                 # Polices (Amiri, images) — et les 604 polices de page
+│   └── polices-pages/                # p001.ttf … p604.ttf (95 Mo, QCF v1, KFGQPC)
 ├── supabase/               # Schéma SQL Supabase
 │   ├── schema.sql                    # Tables, politiques RLS (rejouable)
 │   └── administration.sql            # Rôles, vérification des toumoun (rejouable)
@@ -68,8 +72,24 @@ hifdh-app/
   `divisions.json` — les 30 transitions de juz' et les 240 de rub' tombent
   exactement au même endroit, deux sources indépendantes. `npm run recouper:pages`
   compare en outre les 6 236 versets à l'API de quran.com : **aucun écart**.
-  Les **bornes** de page sont donc exactes ; la coupure des **lignes**, elle,
-  suit l'écran et non la page imprimée.
+  Les **bornes** de page sont donc exactes ; la coupure des **lignes** ne suit
+  pas l'écran, elle suit la page imprimée (voir ci-dessous).
+- **Mise en page du moushaf** : où chaque mot tombe, sur les 604 pages. Les
+  numéros de ligne viennent de l'API quran.com (`mushaf=1`) ; le texte, lui,
+  reste celui de Tanzil, et `moushaf_layout.json` ne porte donc que des
+  **intervalles de jetons**, jamais une lettre. La coupure publiée est recoupée
+  par les avances de la police de page : une ligne plus large que sa page de
+  plus de 5 % n'a pas pu être imprimée, et deux pages ont ainsi été corrigées
+  (177 et 443), chacune vérifiée sur le moushaf imprimé. `npm run verifier:layout`
+  contrôle l'ensemble hors ligne.
+- **Polices de page** : les 604 polices QCF v1 du complexe KFGQPC, une par page.
+  Elles ne dessinent pas des lettres mais **des mots** — chaque mot imprimé y est
+  un seul point de code, dont l'avance est celle du calligraphe. C'est ce qui
+  permet à l'écran de page d'être la page imprimée : mêmes coupures, mêmes
+  places, même justification, sans recomposition. Elles sont recopiées octet
+  pour octet, jamais modifiées ; `data/quran/polices_pages.json` en porte la
+  taille et l'empreinte SHA-256, et `npm run verifier:polices` confronte chaque
+  code employé au dessin de sa police.
 - **Licences et provenance** : voir `NOTICE.md`
 
 Le texte coranique n'est jamais modifié ni généré : il est recopié de la source
@@ -117,10 +137,16 @@ npm test                   # node:test, sans transpileur
 npm run verifier:donnees   # cohérence des divisions coraniques
 npm run verifier:pages     # cohérence de la pagination du moushaf (604 pages)
 npm run recouper:pages     # recoupement des 6 236 pages avec l'API quran.com
+npm run verifier:layout    # mise en page du moushaf : 604 pages × 15 lignes
+npm run verifier:polices   # chaque code est-il dessiné par la police de sa page ?
+npm run verifier:polices-ts # la table des 604 chemins suit son manifeste
 npm run verifier:rapport   # le rapport des bornes estimées suit les données
 npm run verifier:flux      # analyse statique des flux GitHub Actions
 npm run verifier:supabase  # schéma Supabase sous Postgres réel (PGlite)
 npm run falsifier:pages    # éprouve les contrôles de pagination
+npm run falsifier:layout   # éprouve les contrôles de mise en page
+npm run falsifier:polices  # éprouve les contrôles de codes de police
+npm run falsifier:moushaf  # éprouve les contrôles de la page du moushaf
 npm run falsifier:renforcement  # éprouve les contrôles de « À renforcer »
 ```
 

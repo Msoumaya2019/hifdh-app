@@ -7,17 +7,18 @@
 //     donc celle que beaucoup connaissent.
 //
 // L'affichage « page » ne se réorganise pas selon la largeur de l'écran, et il
-// n'a pas de réglage de taille : une page du moushaf ne se réagence pas. La
-// taille du texte est calculée une fois, pour que chacune des quinze lignes
-// tienne d'un seul tenant — un mot qui passerait à la ligne suivante ne serait
-// plus à la place que le moushaf lui donne.
+// n'a pas de réglage de taille : une page du moushaf ne se réagence pas. Elle
+// est dessinée avec la police de page du complexe KFGQPC, celle du moushaf de
+// Madine, où chaque mot imprimé est un seul glyphe : les mots ne peuvent donc
+// pas tomber ailleurs que là où l'imprimeur les a mis.
 //
 // D'où viennent les coupures de ligne : de la mise en page engendrée par
-// `data/quran/generer_layout_moushaf.py`, recoupée sur cinq pages du moushaf
-// imprimé (1, 2, 77, 128, 401). Le texte, lui, reste celui de Tanzil : la mise
-// en page ne dit que des intervalles de jetons, jamais des lettres.
+// `data/quran/generer_layout_moushaf.py`, recoupée sur le moushaf imprimé —
+// pages 1, 2, 77, 100, 128, 177, 208, 249, 443, 454. Le texte, lui, reste celui
+// de Tanzil : la mise en page ne dit que des intervalles de jetons, jamais des
+// lettres.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import {
   View,
@@ -45,8 +46,13 @@ import {
   getEnteteEnMarge,
   getLignesParPageMoushaf,
   getTexteJetons,
+  getCodesDuMoushaf,
+  getLargeursPage,
+  getGeometrieMoushaf,
+  PAGE_DE_LA_BASMALA,
 } from '@/data/quranData';
-import type { ElementMoushaf } from '@/data/quranData';
+import type { ElementMoushaf, ElementCodes } from '@/data/quranData';
+import { usePolicesDePage } from '@/lib/policesMoushaf';
 import {
   updateSessionStatus,
   renforcerPassage,
@@ -395,23 +401,38 @@ export default function LecteurScreen() {
 
 // === L'affichage « page du moushaf » =======================================
 //
-// La page est rendue comme un seul bloc de texte, dont les quinze lignes sont
-// séparées par des retours à la ligne. Le choix n'est pas cosmétique : dans un
-// bloc de texte, `textAlign: 'justify'` étire **toutes** les lignes sauf la
-// dernière. Quinze blocs séparés ne s'étireraient pas du tout — chacun serait
-// la dernière ligne de son propre bloc — et la page aurait des bords en dents
-// de scie au lieu des deux bords pleins du moushaf.
+// LA PAGE EST CELLE DE L'IMPRIMEUR, PAS UNE COMPOSITION QUI LUI RESSEMBLE
+// ----------------------------------------------------------------------
+// Une page du moushaf de Madine ne se recompose pas : ses coupures de ligne,
+// ses médaillons de verset et ses en-têtes de sourate sont ceux du calligraphe.
+// On ne peut donc pas la composer avec une police de texte — il faudrait
+// justifier soi-même, et les mots ne tomberaient pas aux mêmes endroits.
 //
-// La hauteur de ligne vaut le quinzième de la hauteur disponible, si bien que
-// les quinze lignes remplissent exactement la page. La taille du texte, elle,
-// est la plus grande qui laisse chaque ligne d'un seul tenant : on la cherche
-// en réduisant tant qu'une ligne se coupe, ce que `onTextLayout` signale en
-// rendant plus de quinze lignes.
+// Les 604 polices de page du complexe KFGQPC (QCF v1) dessinent **des mots, pas
+// des lettres** : chaque mot imprimé y est un seul point de code, et son avance
+// est celle du calligraphe. Une page se dessine donc en collant les codes de sa
+// ligne, sans le moindre séparateur : le blanc entre les mots est **dans
+// l'avance du glyphe**. Mesuré sur la page 177 au corps que donne sa référence
+// (45,08 px), les neuf mots de la ligne 2 collés donnent 638 px d'encre, quand
+// l'imprimé en donne 638 à 642 ; les mêmes mots joints par une espace donnent
+// 654 px, soit 2 % de trop.
+//
+// L'échelle n'est donc pas cherchée : elle se calcule. Le corps vaut
+// `largeur × unitesParEm / largeur de la page`, où la largeur de la page est la
+// plus large de ses lignes ; la hauteur d'une ligne vaut le quinzième de
+// `hauteurDuBloc × largeur`, `hauteurDuBloc` étant le rapport mesuré sur
+// l'imprimé entre la hauteur des quinze lignes et leur largeur (1,664). La page
+// garde ainsi ses proportions, quel que soit l'écran, et rien n'est clippé.
+//
+// DEUX POLICES AU PLUS
+// --------------------
+// Celle de la page, et celle de la page 1 quand la page porte une basmala :
+// l'API ne donne la basmala comme mots que pour Al-Fatiha, où elle EST le
+// premier verset, et c'est donc la police de la page 1 — et elle seule — qui la
+// dessine. Les 604 polices pèsent 92 Mo : on les charge page par page, et le
+// texte de Tanzil reste affiché tant que la police n'est pas arrivée.
 
-/** Taille de départ de la recherche. Réduite tant qu'une ligne se coupe. */
-const TAILLE_PAGE_DEPART = 26;
-
-/** Plancher : en dessous, la page ne serait plus lisible. */
+/** Plancher de la recherche de taille, pour l'affichage de secours seulement. */
 const TAILLE_PAGE_MIN = 11;
 
 /** Part de la hauteur de ligne que la taille du texte ne doit pas dépasser. */
@@ -439,33 +460,73 @@ function PageDuMoushaf({
   const surahDeLaPage = premier ? getSurah(premier.surah) : undefined;
   const juz = premier ? getJuzOfAyah(premier.surah, premier.ayah) : null;
 
-  const lignes = getLignesDuMoushaf(page);
+  const lignes = getCodesDuMoushaf(page);
+  const largeurs = getLargeursPage(page);
+  const geometrie = getGeometrieMoushaf();
   const surahEnMarge = getEnteteEnMarge(page);
   const nombreDeLignes = getLignesParPageMoushaf();
 
-  const [hauteur, setHauteur] = useState(0);
-  const [taille, setTaille] = useState(TAILLE_PAGE_DEPART);
-  const [coupee, setCoupee] = useState(false);
+  // La basmala n'est dessinée que par la police de la page 1 : si la page en
+  // porte une, il faut donc deux polices, et pas une.
+  const porteLaBasmala =
+    lignes?.some((ligne) => ligne.some((element) => element.type === 'basmala')) ?? false;
 
-  // Une autre page : on repart de la taille haute, et on remesure.
-  useEffect(() => {
-    setTaille(TAILLE_PAGE_DEPART);
-    setCoupee(false);
-  }, [page]);
+  const pagesAPreter = useMemo(() => {
+    const demandees = [page];
+    if (porteLaBasmala && page !== PAGE_DE_LA_BASMALA) demandees.push(PAGE_DE_LA_BASMALA);
+    return demandees;
+  }, [page, porteLaBasmala]);
 
-  // Tant qu'une ligne se coupe, on réduit. Le plancher arrête la boucle : au
-  // plancher, la taille ne change plus, donc plus rien ne se remesure.
-  useEffect(() => {
-    if (!coupee) return;
-    setCoupee(false);
-    setTaille((precedente) => {
-      if (precedente <= TAILLE_PAGE_MIN) return precedente;
-      return Math.max(TAILLE_PAGE_MIN, Math.round(precedente * 0.94 * 10) / 10);
+  const polices = usePolicesDePage(pagesAPreter);
+  const famille = polices.familles[page] ?? null;
+  const familleBasmala = polices.familles[PAGE_DE_LA_BASMALA] ?? null;
+
+  const [mesure, setMesure] = useState({ largeur: 0, hauteur: 0 });
+
+  // La largeur de la page : la plus large de ses lignes. La basmala s'en
+  // excepte — elle est dessinée à part, dans une autre police, à une autre
+  // échelle, et sa largeur n'est donc pas comparable à celle du texte.
+  const largeurDeLaPage = useMemo(() => {
+    if (lignes === null || largeurs === null) return 0;
+    let large = largeurs.reference;
+    lignes.forEach((ligne, indice) => {
+      if (ligne.some((element) => element.type === 'basmala')) return;
+      const valeur = largeurs.lignes[indice];
+      if (typeof valeur === 'number' && valeur > large) large = valeur;
     });
-  }, [coupee]);
+    return large;
+  }, [lignes, largeurs]);
 
-  const hauteurDeLigne = hauteur > 0 ? hauteur / nombreDeLignes : 0;
-  const tailleUtile = Math.min(taille, hauteurDeLigne * PART_HAUTEUR_TEXTE);
+  // La page imprimée a un rapport fixe entre la hauteur de son bloc de quinze
+  // lignes et sa largeur : elle se dessine donc à l'échelle, et non en
+  // s'étirant. On prend la plus petite des deux contraintes, si bien qu'aucune
+  // ligne ne déborde et que rien n'est jamais coupé.
+  const largeurDuBloc = useMemo(() => {
+    if (geometrie === null || mesure.largeur === 0 || mesure.hauteur === 0) return 0;
+    return Math.min(mesure.largeur, mesure.hauteur / geometrie.hauteurDuBloc);
+  }, [geometrie, mesure]);
+
+  const corps =
+    geometrie !== null && largeurDuBloc > 0 && largeurDeLaPage > 0
+      ? (largeurDuBloc * geometrie.unitesParEm) / largeurDeLaPage
+      : 0;
+
+  const pas = geometrie !== null && largeurDuBloc > 0
+    ? (largeurDuBloc * geometrie.hauteurDuBloc) / nombreDeLignes
+    : 0;
+
+  const corpsBasmala =
+    geometrie !== null && largeurDuBloc > 0
+      ? (geometrie.partDeLaBasmala * largeurDuBloc * geometrie.unitesParEm) /
+        geometrie.unitesDeLaBasmala
+      : 0;
+
+  const pageDessinable =
+    lignes !== null &&
+    largeurs !== null &&
+    geometrie !== null &&
+    famille !== null &&
+    (!porteLaBasmala || familleBasmala !== null);
 
   const dansLePassage = pagesDuPassage.includes(page);
 
@@ -488,33 +549,61 @@ function PageDuMoushaf({
 
         <View
           style={styles.corpsPage}
-          onLayout={(evenement) => setHauteur(evenement.nativeEvent.layout.height)}
+          onLayout={(evenement) =>
+            setMesure({
+              largeur: evenement.nativeEvent.layout.width,
+              hauteur: evenement.nativeEvent.layout.height,
+            })
+          }
         >
-          {lignes === null ? (
+          {lignes === null || largeurs === null || geometrie === null ? (
             <Text style={styles.pageIndisponible}>
               La mise en page de cette page n’est pas disponible. Les versets
               restent lisibles dans l’affichage « Verset par verset ».
             </Text>
-          ) : (
-            hauteur > 0 && (
-              <Text
-                style={[
-                  styles.texteMoushaf,
-                  { fontSize: tailleUtile, lineHeight: hauteurDeLigne },
-                ]}
-                selectable
-                onTextLayout={(evenement) => {
-                  if (evenement.nativeEvent.lines.length > nombreDeLignes) setCoupee(true);
-                }}
-              >
-                {lignes.map((ligne, indiceLigne) => (
-                  <Text key={`ligne-${indiceLigne}`}>
-                    {indiceLigne > 0 ? '\n' : ''}
-                    {contenuDeLigne(ligne, indiceLigne, hideMode, hiddenVerses, onBasculerVerset)}
+          ) : pageDessinable ? (
+            <View
+              style={[
+                styles.blocMoushaf,
+                { width: largeurDuBloc, height: pas * nombreDeLignes },
+              ]}
+            >
+              {lignes.map((ligne, indiceLigne) => {
+                const estLaBasmala = ligne.some((element) => element.type === 'basmala');
+                return (
+                  <Text
+                    key={`ligne-${indiceLigne}`}
+                    style={[
+                      styles.ligneMoushaf,
+                      {
+                        fontFamily: (estLaBasmala ? familleBasmala : famille) ?? undefined,
+                        fontSize: estLaBasmala ? corpsBasmala : corps,
+                        lineHeight: pas,
+                      },
+                    ]}
+                  >
+                    {contenuDeLigne(
+                      ligne,
+                      indiceLigne,
+                      hideMode,
+                      hiddenVerses,
+                      onBasculerVerset
+                    )}
                   </Text>
-                ))}
-              </Text>
-            )
+                );
+              })}
+            </View>
+          ) : (
+            // La police de la page n'est pas encore là, ou n'a pas pu être
+            // chargée : on montre le texte de Tanzil plutôt qu'une page vide.
+            <PageDeSecours
+              page={page}
+              hideMode={hideMode}
+              hiddenVerses={hiddenVerses}
+              onBasculerVerset={onBasculerVerset}
+              mesure={mesure}
+              nombreDeLignes={nombreDeLignes}
+            />
           )}
         </View>
 
@@ -565,13 +654,155 @@ function PageDuMoushaf({
 }
 
 /**
- * Le contenu d'une ligne : ses mots, ses médaillons, son en-tête, sa basmala.
+ * La page composée avec le texte de Tanzil, tant que la police n'est pas là.
  *
- * Les mots sont pris au texte de Tanzil par leurs indices, jamais recopiés : la
- * mise en page ne porte que des intervalles, et une plage qui sortirait du
- * verset rend `null` plutôt qu'un mot déplacé.
+ * C'est un pis-aller assumé : les mots sont ceux du verset, mais leur place
+ * n'est pas encore celle du moushaf. Il vaut mieux cela qu'une page blanche —
+ * et l'écran ne ment pas, puisqu'il n'affiche la page de l'imprimeur que
+ * lorsqu'il l'a.
+ *
+ * La taille se cherche ici, faute de pouvoir se calculer : on réduit tant
+ * qu'une ligne se coupe, ce que `onTextLayout` signale en rendant plus de
+ * quinze lignes.
+ */
+function PageDeSecours({
+  page,
+  hideMode,
+  hiddenVerses,
+  onBasculerVerset,
+  mesure,
+  nombreDeLignes,
+}: {
+  page: number;
+  hideMode: boolean;
+  hiddenVerses: Set<string>;
+  onBasculerVerset: (cle: string) => void;
+  mesure: { largeur: number; hauteur: number };
+  nombreDeLignes: number;
+}) {
+  const lignes = getLignesDuMoushaf(page);
+  const [taille, setTaille] = useState(TAILLE_PAGE_MIN);
+  const [coupee, setCoupee] = useState(false);
+
+  useEffect(() => {
+    setTaille(TAILLE_PAGE_MIN);
+    setCoupee(false);
+  }, [page]);
+
+  useEffect(() => {
+    if (!coupee) return;
+    setCoupee(false);
+    setTaille((precedente) => {
+      if (precedente <= TAILLE_PAGE_MIN) return precedente;
+      return Math.max(TAILLE_PAGE_MIN, Math.round(precedente * 0.94 * 10) / 10);
+    });
+  }, [coupee]);
+
+  if (lignes === null || mesure.hauteur === 0) {
+    return (
+      <Text style={styles.pageIndisponible}>
+        La mise en page de cette page n’est pas disponible. Les versets restent
+        lisibles dans l’affichage « Verset par verset ».
+      </Text>
+    );
+  }
+
+  const hauteurDeLigne = mesure.hauteur / nombreDeLignes;
+  const tailleUtile = Math.min(taille, hauteurDeLigne * PART_HAUTEUR_TEXTE);
+
+  return (
+    <Text
+      style={[
+        styles.texteMoushaf,
+        { fontSize: tailleUtile, lineHeight: hauteurDeLigne },
+      ]}
+      onTextLayout={(evenement) => {
+        if (evenement.nativeEvent.lines.length > nombreDeLignes) setCoupee(true);
+      }}
+    >
+      {lignes.map((ligne, indiceLigne) => (
+        <Text key={`ligne-${indiceLigne}`}>
+          {indiceLigne > 0 ? '\n' : ''}
+          {contenuDeLigneTanzil(ligne, indiceLigne, hideMode, hiddenVerses, onBasculerVerset)}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+/**
+ * Le contenu d'une ligne, en **codes de police** : un mot, un point de code.
+ *
+ * Les codes sont collés sans séparateur, et c'est la police qui porte le blanc
+ * entre les mots : voir l'en-tête de section. Ils viennent du fichier de mise
+ * en page, jamais du texte de Tanzil — un code déplacé se verrait sur la page,
+ * et c'est pourquoi `getCodesDuMoushaf` rend `null` plutôt qu'une page
+ * partielle.
+ *
+ * Un verset masqué garde ses mots à leur place : ils deviennent transparents,
+ * mais ils continuent de mesurer, si bien que la ligne ne se recompose pas.
  */
 function contenuDeLigne(
+  ligne: ElementCodes[],
+  indiceLigne: number,
+  hideMode: boolean,
+  hiddenVerses: Set<string>,
+  onBasculerVerset: (cle: string) => void
+): ReactNode[] {
+  const noeuds: ReactNode[] = [];
+
+  ligne.forEach((element, indiceElement) => {
+    const cle = `l${indiceLigne}-e${indiceElement}`;
+
+    switch (element.type) {
+      case 'entete': {
+        // Le bandeau de la sourate n'est pas dessiné par la police de page : il
+        // est composé en police de texte, comme le fait le moushaf imprimé.
+        const surah = getSurah(element.surah);
+        noeuds.push(
+          <Text key={cle} style={styles.enteteMoushaf}>
+            {surah ? `سُورَةُ ${surah.name}` : ''}
+          </Text>
+        );
+        break;
+      }
+
+      case 'basmala':
+        noeuds.push(<Text key={cle}>{element.mots.join('')}</Text>);
+        break;
+
+      case 'verset': {
+        const cleVerset = CLE(element.surah, element.ayah);
+        const cache = hideMode && hiddenVerses.has(cleVerset);
+        noeuds.push(
+          <Text
+            key={cle}
+            style={cache ? styles.motCache : undefined}
+            onPress={hideMode ? () => onBasculerVerset(cleVerset) : undefined}
+          >
+            {element.mots.join('')}
+          </Text>
+        );
+        break;
+      }
+
+      case 'medaillon':
+        noeuds.push(<Text key={cle}>{element.mot}</Text>);
+        break;
+    }
+  });
+
+  return noeuds;
+}
+
+/**
+ * Le contenu d'une ligne pour l'affichage de secours, pris au texte de Tanzil.
+ *
+ * Les mots y sont séparés par une espace, parce qu'une police de texte n'a pas
+ * le blanc de l'imprimeur dans ses avances : c'est la seule différence avec le
+ * rendu du moushaf, et c'est ce qui fait que ce rendu-ci n'est pas la page.
+ */
+function contenuDeLigneTanzil(
   ligne: ElementMoushaf[],
   indiceLigne: number,
   hideMode: boolean,
@@ -596,8 +827,6 @@ function contenuDeLigne(
       }
 
       case 'basmala': {
-        // La basmala est celle du verset 1 de la sourate, dans le texte de
-        // Tanzil : elle y est écrite, on ne la fabrique pas.
         const texte = getTexteJetons(element.surah, 1, 0, 3);
         noeuds.push(
           <Text key={cle} style={styles.basmalaMoushaf}>
@@ -793,6 +1022,23 @@ const styles = StyleSheet.create({
   // n'aurait pas de sens.
   corpsPage: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Le bloc des quinze lignes : ses dimensions sont celles de la page
+  // imprimée, calculées à partir de sa largeur. Il est centré dans la place
+  // disponible, et ne s'étire jamais.
+  blocMoushaf: {
+    justifyContent: 'center',
+  },
+  // Une ligne du moushaf : un seul `Text`, dont les mots sont les codes de la
+  // police de page collés les uns aux autres. Aucun séparateur, aucun
+  // `letterSpacing`, aucune marge : le blanc entre les mots est dans l'avance
+  // du glyphe, et l'ajouter élargirait la ligne de 2 %.
+  ligneMoushaf: {
+    color: colors.textPrimary,
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
   texteMoushaf: {
     fontFamily: fonts.quran,

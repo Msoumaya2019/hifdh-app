@@ -1,6 +1,6 @@
 {
   "name": "hifdh-app",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -15,6 +15,11 @@
     "engendrer:layout": "python data/quran/generer_layout_moushaf.py",
     "verifier:layout": "python data/quran/generer_layout_moushaf.py --verifier",
     "falsifier:layout": "python scripts/falsifier_layout.py",
+    "verifier:polices": "python scripts/verifier_codes_polices.py",
+    "engendrer:polices-ts": "node scripts/generer_polices_pages_ts.mjs",
+    "verifier:polices-ts": "node scripts/generer_polices_pages_ts.mjs --verifier",
+    "falsifier:polices": "python scripts/falsifier_codes_polices.py",
+    "falsifier:moushaf": "python scripts/falsifier_moushaf.py",
     "falsifier:acces-texte": "python scripts/falsifier_acces_texte.py",
     "verifier:rapport": "python data/quran/rapport_divisions_estimees.py --verifier",
     "engendrer:rapport": "python data/quran/rapport_divisions_estimees.py",

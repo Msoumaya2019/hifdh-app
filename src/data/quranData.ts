@@ -6,6 +6,7 @@ import divisionsData from '@data/quran/divisions.json';
 import thumnData from '@data/quran/thumn_hafs.json';
 import quranTextData from '@data/quran/quran_text_uthmani.json';
 import moushafLayoutData from '@data/quran/moushaf_layout.json';
+import largeursPagesData from '@data/quran/largeurs_pages.json';
 import type { Surah, Juz, Hizb, Rub, Thumn, Ayah, AyahRef } from '@/types';
 
 // Cache du texte coranique
@@ -428,4 +429,195 @@ export function getTexteJetons(
   if (jetons === null) return null;
   if (premier < 0 || dernier < premier || dernier >= jetons.length) return null;
   return jetons.slice(premier, dernier + 1).join(' ');
+}
+
+// === Les codes de police, et la géométrie de la page ===
+//
+// Une police de page ne compose pas des lettres : elle dessine des **mots**.
+// Chaque mot du moushaf y est un seul point de code, et le tracé est celui du
+// calligraphe. Rendre la page, c'est donc écrire ces points de code avec la
+// police de la page — pas composer du texte.
+//
+// Ce qui rend la page fidèle tient en deux nombres, mesurés sur les polices et
+// recoupés sur les pages imprimées, et rangés dans `largeurs_pages.json` :
+//
+//   - **une seule taille pour toute la page**, celle qui fait tenir la largeur
+//     de référence. Les avances de la police sont celles de l'imprimeur à
+//     1 % près, si bien que les quinze lignes tombent d'elles-mêmes au bord,
+//     sans justification à faire ;
+//   - **la hauteur du bloc des quinze lignes**, rapportée à sa largeur : elle
+//     fixe le pas des lignes.
+//
+// La page ne se met donc ni à l'échelle ni en forme : elle se dessine.
+
+/** La page dont la police est la seule à dessiner la basmala. */
+export const PAGE_DE_LA_BASMALA = 1;
+
+/** Un élément d'une ligne, avec les mots que sa police dessine. */
+export type ElementCodes =
+  | { type: 'entete'; surah: number }
+  | { type: 'basmala'; surah: number; mots: string[] }
+  | { type: 'verset'; surah: number; ayah: number; mots: string[] }
+  | { type: 'medaillon'; surah: number; ayah: number; mot: string };
+
+const codesDuMoushaf = miseEnPage as unknown as { glyphes?: Record<string, unknown> };
+
+/** Les largeurs mesurées, et les constantes de la géométrie de la page. */
+const geometrie = largeursPagesData as unknown as {
+  unitesParEm?: number;
+  partDeLaBasmala?: number;
+  hauteurDuBloc?: number;
+  hauteurDeLaBasmala?: number;
+  unitesDeLaBasmala?: number;
+  pages?: Record<string, { lignes?: (number | null)[]; reference?: number; justifiee?: boolean }>;
+};
+
+export interface GeometrieMoushaf {
+  /** Unités de police par cadratin : 2048 pour les 604 polices. */
+  unitesParEm: number;
+  /** Part d'une ligne pleine qu'occupe la basmala : 0,572. */
+  partDeLaBasmala: number;
+  /** Hauteur du bloc des quinze lignes, rapportée à sa largeur : 1,664. */
+  hauteurDuBloc: number;
+  /** Hauteur de l'encre de la basmala, rapportée à une ligne pleine. */
+  hauteurDeLaBasmala: number;
+  /** Largeur de la basmala dans la police de la page 1, en unités. */
+  unitesDeLaBasmala: number;
+}
+
+/**
+ * La géométrie de la page du moushaf, telle qu'elle a été mesurée.
+ *
+ * Rend `null` si le fichier de mesure n'est pas celui attendu : mieux vaut
+ * refuser la page que la dessiner à des proportions inventées.
+ */
+export function getGeometrieMoushaf(): GeometrieMoushaf | null {
+  const {
+    unitesParEm,
+    partDeLaBasmala,
+    hauteurDuBloc,
+    hauteurDeLaBasmala,
+    unitesDeLaBasmala,
+  } = geometrie;
+  if (
+    typeof unitesParEm !== 'number' ||
+    typeof partDeLaBasmala !== 'number' ||
+    typeof hauteurDuBloc !== 'number' ||
+    typeof hauteurDeLaBasmala !== 'number' ||
+    typeof unitesDeLaBasmala !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    unitesParEm,
+    partDeLaBasmala,
+    hauteurDuBloc,
+    hauteurDeLaBasmala,
+    unitesDeLaBasmala,
+  };
+}
+
+/**
+ * La largeur naturelle des quinze lignes d'une page, et sa largeur de référence.
+ *
+ * `lignes[i]` vaut `null` pour une ligne d'en-tête de sourate : le bandeau qui
+ * porte le nom de la sourate n'est pas dessiné par la police de page, il est
+ * composé en police de texte.
+ */
+export function getLargeursPage(
+  page: number
+): { lignes: (number | null)[]; reference: number; justifiee: boolean } | null {
+  const brute = geometrie.pages?.[String(page)];
+  if (brute === undefined) return null;
+  if (!Array.isArray(brute.lignes) || typeof brute.reference !== 'number') return null;
+  return {
+    lignes: brute.lignes,
+    reference: brute.reference,
+    justifiee: brute.justifiee === true,
+  };
+}
+
+/**
+ * Les quinze lignes d'une page, avec les mots que la police dessine.
+ *
+ * Même exigence que `getLignesDuMoushaf` : un élément illisible fait rendre
+ * `null` pour toute la page. Un mot qui manque ne se voit pas sur un écran ; il
+ * se voit sur le moushaf, à côté.
+ */
+export function getCodesDuMoushaf(page: number): ElementCodes[][] | null {
+  const brute = codesDuMoushaf.glyphes?.[String(page)];
+  if (!Array.isArray(brute)) return null;
+
+  const lignes: ElementCodes[][] = [];
+  for (const ligneBrute of brute) {
+    if (!Array.isArray(ligneBrute)) return null;
+    const ligne: ElementCodes[] = [];
+    for (const elementBrut of ligneBrute) {
+      const element = lireElementCodes(elementBrut);
+      if (element === null) return null;
+      ligne.push(element);
+    }
+    lignes.push(ligne);
+  }
+  return lignes;
+}
+
+function lireElementCodes(brut: unknown): ElementCodes | null {
+  if (!Array.isArray(brut) || brut.length < 2) return null;
+  const genre = brut[0];
+  const surah = brut[1];
+  if (typeof surah !== 'number') return null;
+
+  switch (genre) {
+    case 'e':
+      return { type: 'entete', surah };
+    case 'b': {
+      const mots = motsDeCodes(brut[3]);
+      return mots === null ? null : { type: 'basmala', surah, mots };
+    }
+    case 'v': {
+      const ayah = brut[2];
+      const mots = motsDeCodes(brut[3]);
+      if (typeof ayah !== 'number' || mots === null) return null;
+      return { type: 'verset', surah, ayah, mots };
+    }
+    case 'm': {
+      const ayah = brut[2];
+      const mot = brut[3];
+      if (typeof ayah !== 'number' || typeof mot !== 'string') return null;
+      return { type: 'medaillon', surah, ayah, mot };
+    }
+    default:
+      return null;
+  }
+}
+
+function motsDeCodes(brut: unknown): string[] | null {
+  if (!Array.isArray(brut)) return null;
+  for (const mot of brut) {
+    if (typeof mot !== 'string' || mot.length === 0) return null;
+  }
+  return brut as string[];
+}
+
+/**
+ * Les mots d'une ligne, dans l'ordre de lecture — de droite à gauche.
+ *
+ * **À coller sans aucun séparateur.** Le calligraphe a dessiné chaque mot de
+ * sorte que son avance comprenne son blanc de fin : les blancs de 5 à 7 px
+ * entre les mots apparaissent d'eux-mêmes. Mesuré sur la page 177, au corps
+ * que donne sa référence (45,08 px) : les neuf mots de la ligne 2, collés,
+ * donnent 638 px d'encre — l'imprimé en donne 638 à 642 ; les mêmes mots
+ * joints par une espace donnent 654 px, soit 2 % de trop.
+ *
+ * Ni espace, donc, ni `letterSpacing`, ni marge : la largeur d'une ligne est
+ * la somme des seules avances, et c'est elle qui a été mesurée.
+ */
+export function getMotsDeLigne(ligne: ElementCodes[]): string[] {
+  const mots: string[] = [];
+  for (const element of ligne) {
+    if (element.type === 'basmala' || element.type === 'verset') mots.push(...element.mots);
+    else if (element.type === 'medaillon') mots.push(element.mot);
+  }
+  return mots;
 }

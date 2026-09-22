@@ -131,3 +131,32 @@ la justification de l'édition imprimée. L'écran le dit à l'utilisateur.
 - **Notice intégrale** : `assets/fonts/OFL.txt`
 - **Fichiers** : `assets/fonts/Amiri-Regular.ttf`, `Amiri-Bold.ttf`,
   `AmiriQuran.ttf`
+
+---
+
+## 3 bis. Polices de page du moushaf (QCF v1)
+
+- **Œuvre** : polices de page du moushaf de Madine, version 1 (QCF v1, édition
+  1405H) — 604 polices TrueType, une par page.
+- **Auteur** : Complexe Roi Fahd pour l'impression du Saint Coran (KFGQPC),
+  Médine.
+- **Source** : <https://static.qurancdn.com/fonts/quran/hafs/v1/ttf> —
+  distribuées par quran.com, le service dont proviennent aussi les numéros de
+  ligne du moushaf (voir `## 2 bis`).
+- **Licence** : conditions du Complexe Roi Fahd — usage libre, y compris dans
+  les sites et les logiciels ; attribution au Complexe Roi Fahd seule ; fichiers
+  non modifiés ; polices non vendues.
+- **Fichiers** : `assets/polices-pages/p001.ttf` … `p604.ttf`
+  (604 fichiers, 95 051 108 octets).
+- **Manifeste** : `data/quran/polices_pages.json` — la taille et l'empreinte
+  SHA-256 de chacun des 604 fichiers, avec la provenance ci-dessus. C'est lui
+  qui rend la copie vérifiable, et non une déclaration.
+- **Aucune modification** : les fichiers sont recopiés octet pour octet, sans
+  sous-ensemble ni réencodage.
+
+Ces polices ne dessinent pas des lettres mais **des mots** : chaque mot imprimé
+y est un seul point de code, et son avance est celle du calligraphe. C'est ce
+qui permet à l'écran de page de l'application d'être la page imprimée — les
+mêmes coupures, les mêmes places — plutôt qu'une composition qui lui ressemble.
+Aucun texte coranique n'y est stocké : le texte reste celui de Tanzil, et la
+police ne fait que le dessiner.

@@ -89,6 +89,27 @@ jobs:
       - name: Vérifier la mise en page du moushaf
         run: npm run verifier:layout
 
+      # La mise en page ne range pas du texte : elle range, pour chaque mot, le
+      # point de code que la police de sa page dessine. Une seule erreur et le
+      # mot s'imprime en pavé — un rectangle de remplissage — la page paraissant
+      # complète tout en étant fausse. Le piège est que la table des caractères
+      # ne le dit pas : les 604 polices portent les mêmes 720 points de code et
+      # les mêmes 608 emplacements. Ce qui change, c'est le dessin. Le contrôle
+      # lit donc la forme des glyphes, et exige en plus que chaque police
+      # dessine exactement ses mots plus les seize ornements de page — un témoin
+      # qui attrape aussi le mot que la mise en page aurait oublié de placer.
+      - name: Vérifier les codes de police du moushaf
+        run: npm run verifier:polices
+
+      # Le contrôle ci-dessus ouvre les polices, mais il ne dit rien de la table
+      # qui les fait trouver par Metro : `src/data/policesPages.ts` porte les 604
+      # chemins, écrits **en clair**. Metro ne suit pas un `require` calculé — un
+      # chemin construit dans une boucle ne serait pas résolu, et les pages
+      # s'afficheraient sans leur police. Ce fichier est engendré ; ce contrôle
+      # refuse qu'il dérive de son manifeste.
+      - name: Vérifier la table des polices de page
+        run: npm run verifier:polices-ts
+
       # Le pavage dit que les divisions s'emboîtent ; il ne dit rien de leur
       # origine. 151 des 480 toumoun ont une borne déduite par report depuis les
       # données Qaloun, donc estimée à un verset près — et l'application les
@@ -122,6 +143,29 @@ jobs:
       # tomber, et tomber sur le contrôle qui la vise.
       - name: Falsifier les contrôles de mise en page
         run: npm run falsifier:layout
+
+      # Et pour les codes de police : quatre mutations, dont un mot qui prend un
+      # code que sa police dessine en pavé, un mot qui prend un ornement, et un
+      # octet retourné dans un fichier de police. Cette dernière éprouve le
+      # contrôle d'identité, qui confronte chaque police au manifeste par sa
+      # taille et son empreinte SHA-256.
+      #
+      # C'est ce falsificateur qui a montré qu'une première version du contrôle
+      # ne pouvait rien voir : elle filtrait la liste des codes attendus au lieu
+      # de demander à la police ce qu'elle trace, si bien que la branche des
+      # dessins orphelins était vide par construction.
+      - name: Falsifier les contrôles de codes de police
+        run: npm run falsifier:polices
+
+      # Et pour la page du moushaf telle qu'elle se dessine : huit mutations des
+      # deux fichiers qui portent sa géométrie et ses codes, chacune devant
+      # tomber sur le test nommé pour elle. Le témoin de ce script exige en plus
+      # que le fichier de tests ait été réellement joué — `node --test` sort en 0
+      # quand aucun test ne s'exécute, et un banc qui se contenterait du code de
+      # sortie annoncerait « mutation détectée » pour une raison qui n'a rien à
+      # voir avec le code muté.
+      - name: Falsifier les contrôles de la page du moushaf
+        run: npm run falsifier:moushaf
 
       # Et pour l'accès au texte : trois mutations du code de `quranData.ts`,
       # dont le rang du verset qui cesse d'être vérifié. Ce défaut-là a vécu
