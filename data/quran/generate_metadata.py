@@ -271,12 +271,19 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     surahs = generate_surahs_json()
-    with open(os.path.join(script_dir, "surahs.json"), "w", encoding="utf-8") as f:
+    # `newline="\n"` n'est pas cosmetique. Sans lui, Python traduit les fins de
+    # ligne a l'ecriture : le fichier sort en CRLF sous Windows contre LF
+    # ailleurs, et le meme script, sur la meme donnee, produit deux fichiers de
+    # tailles differentes selon la machine. Le tableau de bord en garde une copie
+    # a l'octet et une empreinte SHA-256 : une regeneration sous Windows suivie
+    # d'un commit ferait echouer `npm run donnees:verifier` sur un autre poste,
+    # sans que personne n'ait rien change.
+    with open(os.path.join(script_dir, "surahs.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(surahs, f, ensure_ascii=False, indent=2)
     print(f"surahs.json: {len(surahs)} sourates")
     
     divisions = generate_divisions_json()
-    with open(os.path.join(script_dir, "divisions.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(script_dir, "divisions.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(divisions, f, ensure_ascii=False, indent=2)
     print(f"divisions.json: {len(divisions['juz'])} juz, {len(divisions['hizb'])} hizb, {len(divisions['rub'])} rub'")
     

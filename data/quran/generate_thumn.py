@@ -615,7 +615,11 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_path = os.path.join(script_dir, output_path)
     
-    with open(output_path, "w", encoding="utf-8") as f:
+    # `newline="\n"` : sans lui, le fichier sort en CRLF sous Windows contre LF
+    # ailleurs. Ce fichier est copie a l'octet dans le tableau de bord, qui en
+    # garde une empreinte SHA-256 : deux fins de ligne suffiraient a faire
+    # echouer `npm run donnees:verifier` sur un autre poste.
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     
     meta = output["metadata"]
