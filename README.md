@@ -34,13 +34,20 @@ hifdh-app/
 
 ## Données coraniques
 
-- **Texte**: Tanzil / AlQuran Cloud (Uthmani, Hafs an Asim, 6236 versets)
-- **Divisions**: 30 juz, 60 hizb, 240 rub' al-hizb (quran-meta, source KFGQPC)
-- **480 toumoun**: générés depuis les données Qaloun de quran-meta, mappés vers Hafs
-  - 240 limites de rub' (verified_hafs) - directement depuis les données Hafs
-  - 89 limites intermédiaires (verified) - sourates au nombre de versets identique
-  - 151 limites intermédiaires (estimated_offset) - à vérifier manuellement
-- **Licence**: MIT (quran-meta), Tanzil Terms of Use (texte)
+- **Texte** : Tanzil Quran Text (Uthmani, Version 1.1, Hafs 'an Asim, 6 236 versets),
+  téléchargé depuis la source officielle. Licence CC-BY 3.0, notice reproduite
+  dans `data/quran/TANZIL_LICENSE.txt`.
+- **Divisions** : 30 juz', 60 hizb, 240 rub' al-hizb (quran-meta, source KFGQPC)
+- **480 toumoun** : dérivés, chaque entrée portant son propre statut de vérification
+  - 240 limites de rub' (`verified_hafs`) — lues directement dans les données Hafs
+  - 89 limites intermédiaires (`verified`) — sourates au nombre de versets identique
+  - 151 limites intermédiaires (`estimated_offset`) — **à vérifier manuellement**
+- **Licences et provenance** : voir `NOTICE.md`
+
+Le texte coranique n'est jamais modifié ni généré : il est recopié de la source
+officielle par `data/quran/import_tanzil_text.py`, qui n'altère que le champ
+`text`. Les champs `juz`, `page` et `hizbQuarter` portent la structure des
+divisions et ne dépendent pas du texte.
 
 ## Installation
 

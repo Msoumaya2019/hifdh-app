@@ -23,9 +23,11 @@ expo-env.d.ts
 .env.local
 .env.*.local
 
-# Supabase (ne jamais publier)
-supabase/
-.env
+# Supabase — ne jamais publier les fichiers locaux ni les secrets.
+# En revanche supabase/schema.sql fait partie du code source (aucun secret,
+# uniquement des tables et des politiques RLS) : il doit rester versionné.
+supabase/.temp/
+supabase/.branches/
 
 # GitHub Actions secrets - les clés vont dans les secrets GitHub, pas ici
 # Voir la documentation dans docs/SECRETS.md
@@ -45,3 +47,6 @@ coverage/
 
 # Temporary
 *.log
+
+# Dossier de travail (telechargements et verifications ponctuelles)
+.tmp-dl/

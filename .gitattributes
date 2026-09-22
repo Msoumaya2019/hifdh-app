@@ -1,0 +1,17 @@
+# Normaliser les fins de ligne : LF dans le depot, quelle que soit la machine.
+# Sans cela, un clone sous Linux (GitHub Actions) ou macOS produit des
+# differences artificielles sur tous les fichiers texte.
+* text=auto eol=lf
+
+# Fichiers binaires : ne jamais les convertir, cela les corromprait.
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+
+# Les donnees coraniques sont des fichiers texte : pas de conversion.
+*.json text eol=lf

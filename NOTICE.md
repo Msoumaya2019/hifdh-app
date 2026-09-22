@@ -1,0 +1,83 @@
+# Attributions et licences
+
+Ce dépôt redistribue des données et des polices produites par des tiers. Chacune
+est utilisée sous sa licence d'origine, rappelée ici. Toute réutilisation de ce
+dépôt doit conserver ces mentions.
+
+---
+
+## 1. Texte coranique
+
+- **Œuvre** : Tanzil Quran Text (Uthmani, Version 1.1), graphie uthmani,
+  narration Hafs 'an Asim, 6 236 versets.
+- **Source** : Tanzil Project — <https://tanzil.net>
+- **Licence** : Creative Commons Attribution 3.0
+- **Fichier** : `data/quran/quran_text_uthmani.json`
+- **Notice intégrale** : `data/quran/TANZIL_LICENSE.txt`, reproduite telle quelle
+  comme la licence l'exige.
+
+Le texte n'est **jamais** modifié, ni corrigé, ni généré par un modèle de
+langage. Le script `data/quran/import_tanzil_text.py` se contente de recopier les
+versets de la source officielle ; il ne touche qu'au champ `text` et laisse
+intacts `juz`, `page` et `hizbQuarter`, qui portent la structure des divisions.
+
+Paramètres exacts du téléchargement, pour que la provenance soit reproductible :
+
+```
+https://tanzil.net/pub/download/index.php
+    ?quranType=uthmani    # graphie uthmani, Hafs 'an Asim
+    &marks=true           # marques de pause (ۖ ۗ ۚ ۛ)
+    &sajdah=true          # signes de prosternation
+    &rub=true             # marqueurs de rub' al-hizb (۞)
+    &outType=txt-2        # format « sourate|verset|texte »
+    &agree=true
+```
+
+Empreinte du fichier source utilisé :
+
+```
+sha256  4b91f9e6e8ac645d039e4ed85b3be492e795232a31cd22d668ac58238722e26f
+```
+
+> Note de provenance. Le texte initialement intégré provenait de l'édition
+> `quran-uthmani` de l'API AlQuran Cloud. La comparaison verset par verset a
+> montré qu'il ne s'agissait pas du texte de Tanzil (3 617 versets sur 6 236
+> différaient, principalement par les marques d'ikhfā et d'iqlāb et par
+> l'écriture du hamza) et qu'il contenait un BOM parasite en tête de 1:1. Le
+> dépôt a donc été basculé sur la source Tanzil officielle, dont la licence est
+> explicite et vérifiable.
+
+---
+
+## 2. Métadonnées de division
+
+- **Œuvre** : quran-meta — <https://github.com/quran-center/quran-meta>
+- **Licence** : MIT
+- **Usage** : limites des 30 juz', 60 hizb et 240 rub' al-hizb, dérivées de la
+  source KFGQPC.
+
+Les 480 toumoun (thumn al-hizb) ne sont **pas** fournis par quran-meta pour la
+narration Hafs. Ils sont donc *dérivés*, et chaque entrée porte son statut de
+vérification dans `data/quran/thumn_hafs.json` :
+
+| Statut | Nombre | Signification |
+| --- | --- | --- |
+| `verified_hafs` | 240 | limite lue directement dans les données Hafs |
+| `verified` | 89 | limite intermédiaire, sourate au nombre de versets identique |
+| `estimated_offset` | 151 | limite intermédiaire estimée, **à confirmer** sur un mushaf imprimé |
+
+Les entrées `estimated_offset` ne doivent pas être présentées comme
+authentifiées. L'architecture les isole dans un fichier unique, de sorte qu'une
+correction n'exige aucune modification du reste de l'application.
+
+---
+
+## 3. Polices de caractères
+
+- **Œuvre** : Amiri — Amiri Regular, Amiri Bold, Amiri Quran
+- **Auteurs** : Copyright 2010-2022 The Amiri Project Authors
+  — <https://github.com/aliftype/amiri>
+- **Licence** : SIL Open Font License 1.1
+- **Notice intégrale** : `assets/fonts/OFL.txt`
+- **Fichiers** : `assets/fonts/Amiri-Regular.ttf`, `Amiri-Bold.ttf`,
+  `AmiriQuran.ttf`
