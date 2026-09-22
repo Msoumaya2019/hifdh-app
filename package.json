@@ -10,9 +10,12 @@
     "test": "node --import ./scripts/register-alias.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "verifier:donnees": "python data/quran/verifier_divisions.py",
+    "verifier:rapport": "python data/quran/rapport_divisions_estimees.py --verifier",
+    "engendrer:rapport": "python data/quran/rapport_divisions_estimees.py",
     "verifier:supabase": "node scripts/banc_supabase.mjs",
     "verifier:flux": "node scripts/analyser-flux.mjs",
     "falsifier:tests": "python scripts/falsifier_tests_sync.py",
+    "falsifier:rapport": "python scripts/falsifier_rapport.py",
     "build:apk": "gh workflow run android-apk.yml",
     "build:ipa": "gh workflow run ios-unsigned.yml"
   },

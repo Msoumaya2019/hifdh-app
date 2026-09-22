@@ -64,9 +64,23 @@ jobs:
       - name: Vérifier le pavage des divisions coraniques
         run: python3 data/quran/verifier_divisions.py
 
+      # Le pavage dit que les divisions s'emboîtent ; il ne dit rien de leur
+      # origine. 151 des 480 toumoun ont une borne déduite par report depuis les
+      # données Qaloun, donc estimée à un verset près — et l'application les
+      # présente exactement comme les autres. `docs/divisions-estimees.md` les
+      # liste une par une. Il est engendré : ce contrôle refuse qu'il dérive des
+      # données sans que personne ne le voie.
+      - name: Vérifier le rapport des bornes estimées
+        run: npm run verifier:rapport
+
       # Réintroduit volontairement chaque défaut que les tests de sauvegarde
       # prétendent couvrir, et exige que le test échoue. Un test qu'on n'a jamais
       # vu échouer ne prouve rien. Le script restaure les fichiers à l'octet près
       # et le vérifie par empreinte SHA-256.
       - name: Falsifier les tests de sauvegarde
         run: python3 scripts/falsifier_tests_sync.py
+
+      # Même exigence pour le rapport : un document engendré qu'on n'a jamais vu
+      # refuser une dérive ne prouve pas qu'il la détecte.
+      - name: Falsifier le rapport des bornes estimées
+        run: npm run falsifier:rapport

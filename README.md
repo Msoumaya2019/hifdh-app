@@ -33,6 +33,8 @@ hifdh-app/
 ├── tests/                  # Tests (node:test)
 ├── .github/workflows/      # CI/CD GitHub Actions
 └── docs/                   # Documentation
+    ├── SECRETS.md              # Configuration, compilation, installation
+    └── divisions-estimees.md   # Les 151 bornes non vérifiées (engendré)
 ```
 
 ## Données coraniques
@@ -44,7 +46,12 @@ hifdh-app/
 - **480 toumoun** : dérivés, chaque entrée portant son propre statut de vérification
   - 240 limites de rub' (`verified_hafs`) — lues directement dans les données Hafs
   - 89 limites intermédiaires (`verified`) — sourates au nombre de versets identique
-  - 151 limites intermédiaires (`estimated_offset`) — **à vérifier manuellement**
+  - 151 limites intermédiaires (`estimated_offset`) — **à vérifier manuellement**.
+    La liste précise, sourate par sourate, avec la référence Qaloun dont chaque
+    borne est issue, est dans **`docs/divisions-estimees.md`**. Ce document est
+    **engendré** par `data/quran/rapport_divisions_estimees.py` ; le contrôle
+    `npm run verifier:rapport` refuse qu'il dérive des données sans que personne
+    ne le voie.
 - **Licences et provenance** : voir `NOTICE.md`
 
 Le texte coranique n'est jamais modifié ni généré : il est recopié de la source
