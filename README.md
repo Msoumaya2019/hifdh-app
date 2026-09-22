@@ -8,7 +8,7 @@ Application mobile iOS/Android permettant aux adultes de mémoriser progressivem
 - **expo-router** pour la navigation par onglets
 - **expo-sqlite** pour le stockage local hors ligne
 - **Supabase** pour l'authentification et la synchronisation
-- **EAS Build** + **GitHub Actions** pour la compilation
+- **GitHub Actions** pour la compilation, par la chaîne d'outils native (sans EAS)
 
 ## Structure du projet
 
@@ -106,8 +106,12 @@ gh workflow run android-apk.yml
 gh workflow run ios-unsigned.yml
 
 # … ou publier une version : les deux flux se déclenchent sur une étiquette
-git tag -a v1.0.1 -m "Description" && git push origin v1.0.1
+git tag -a v1.0.3 -m "Description" && git push origin v1.0.3
 ```
+
+Le nom du fichier produit vient de `app.json` (`hifdh-1.0.3.apk`), celui de la version publiée de
+l'étiquette : **gardez les deux alignés**, sinon le binaire et sa version portent deux numéros
+différents.
 
 Les binaires sont attachés à la *release* GitHub, dont le téléchargement est
 anonyme — contrairement à un artefact de flux, qui exige une connexion.
