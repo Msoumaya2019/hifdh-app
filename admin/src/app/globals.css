@@ -1,0 +1,599 @@
+/* ==========================================================================
+   Charte du tableau de bord.
+   
+   Les valeurs sont celles de `src/theme/colors.ts` de l'application mobile :
+   vert profond, blanc casse, beige, dore discret. Un tableau de bord qui
+   parlerait une autre langue que l'application qu'il administre donnerait
+   l'impression d'etre un autre produit.
+   ========================================================================== */
+
+:root {
+  --primary: #0b4d3b;
+  --primary-light: #1a6b52;
+  --primary-dark: #063026;
+  --primary-surface: #e8f0ec;
+
+  --background: #faf8f4;
+  --surface: #ffffff;
+  --surface-variant: #f5f2ec;
+
+  --beige: #e8dfd0;
+  --beige-light: #f0ebe0;
+  --beige-dark: #d4c9b5;
+
+  --gold: #c4a35a;
+  --gold-light: #d4b876;
+  --gold-dark: #a88842;
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #5c5c5c;
+  --text-tertiary: #8e8e8e;
+  --text-on-primary: #ffffff;
+
+  --success: #2e7d32;
+  --success-light: #e8f5e9;
+  --warning: #ed6c02;
+  --warning-light: #fff3e0;
+  --error: #c62828;
+  --error-light: #ffebee;
+  --info: #0277bd;
+  --info-light: #e1f5fe;
+
+  --border: #e0ddd7;
+  --border-light: #efece6;
+
+  --rayon: 10px;
+  --rayon-petit: 6px;
+  --ombre: 0 1px 2px rgba(26, 26, 26, 0.05), 0 2px 8px rgba(26, 26, 26, 0.04);
+
+  --police: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  --police-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--police);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+}
+
+/* --------------------------------------------------------------------------
+   Structure
+   -------------------------------------------------------------------------- */
+
+.entete {
+  background: var(--primary);
+  color: var(--text-on-primary);
+  border-bottom: 3px solid var(--gold);
+}
+
+.entete__interieur {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.entete__marque {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-decoration: none;
+  color: var(--text-on-primary);
+}
+
+.entete__marque span {
+  color: var(--gold-light);
+}
+
+.entete__nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.entete__lien {
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: var(--rayon-petit);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.entete__lien:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.entete__lien--actif {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-weight: 500;
+}
+
+.entete__session {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.contenu {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 24px 72px;
+}
+
+.titre-page {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+.sous-titre-page {
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  max-width: 78ch;
+}
+
+/* --------------------------------------------------------------------------
+   Cartes et blocs
+   -------------------------------------------------------------------------- */
+
+.carte {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--rayon);
+  padding: 20px;
+  box-shadow: var(--ombre);
+}
+
+.carte + .carte {
+  margin-top: 16px;
+}
+
+.carte__titre {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+.grille-chiffres {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.chiffre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--rayon);
+  padding: 16px;
+}
+
+.chiffre__valeur {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--primary);
+  line-height: 1.2;
+}
+
+.chiffre__libelle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.chiffre--accent {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, #fffdf8 0%, var(--surface) 100%);
+}
+
+.chiffre--accent .chiffre__valeur {
+  color: var(--gold-dark);
+}
+
+/* --------------------------------------------------------------------------
+   Tableaux
+   -------------------------------------------------------------------------- */
+
+.tableau-enveloppe {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--rayon);
+  background: var(--surface);
+}
+
+table.tableau {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.tableau th,
+table.tableau td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+
+table.tableau thead th {
+  background: var(--surface-variant);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+table.tableau tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table.tableau tbody tr:hover {
+  background: var(--beige-light);
+}
+
+table.tableau tbody tr.ligne--relue {
+  background: var(--success-light);
+}
+
+table.tableau tbody tr.ligne--relue:hover {
+  background: #dcefdd;
+}
+
+.colonne-nombre {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--police-mono);
+  font-size: 13px;
+}
+
+.colonne-etroite {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.groupe-sourate {
+  margin-bottom: 24px;
+}
+
+.groupe-sourate__titre {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.groupe-sourate__compte {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+/* --------------------------------------------------------------------------
+   Badges
+   -------------------------------------------------------------------------- */
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge--estimee {
+  background: var(--warning-light);
+  color: #8a4700;
+}
+
+.badge--confirmee {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.badge--corrigee {
+  background: var(--info-light);
+  color: var(--info);
+}
+
+.badge--ecart {
+  background: var(--error-light);
+  color: var(--error);
+}
+
+.badge--neutre {
+  background: var(--surface-variant);
+  color: var(--text-secondary);
+}
+
+.badge--or {
+  background: #fbf5e6;
+  color: var(--gold-dark);
+}
+
+/* --------------------------------------------------------------------------
+   Formulaires et boutons
+   -------------------------------------------------------------------------- */
+
+.bouton {
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 14px;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bouton:hover:not(:disabled) {
+  background: var(--beige-light);
+}
+
+.bouton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bouton--principal {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--text-on-primary);
+}
+
+.bouton--principal:hover:not(:disabled) {
+  background: var(--primary-light);
+}
+
+.bouton--discret {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.bouton--discret:hover:not(:disabled) {
+  background: var(--surface-variant);
+}
+
+.champ {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 9px;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.champ:focus {
+  outline: 2px solid var(--primary-light);
+  outline-offset: -1px;
+}
+
+.champ--nombre {
+  width: 68px;
+  text-align: right;
+  font-family: var(--police-mono);
+}
+
+.champ--large {
+  width: 100%;
+}
+
+.champ-libelle {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.groupe-champs {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Alertes et etats
+   -------------------------------------------------------------------------- */
+
+.alerte {
+  border-radius: var(--rayon);
+  padding: 14px 16px;
+  border: 1px solid;
+  margin-bottom: 20px;
+}
+
+.alerte__titre {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.alerte p {
+  margin: 0;
+}
+
+.alerte p + p {
+  margin-top: 8px;
+}
+
+.alerte--erreur {
+  background: var(--error-light);
+  border-color: #f0c4c4;
+  color: #7d1b1b;
+}
+
+.alerte--avertissement {
+  background: var(--warning-light);
+  border-color: #f3d3a8;
+  color: #8a4700;
+}
+
+.alerte--info {
+  background: var(--info-light);
+  border-color: #b9dcf0;
+  color: #015a8c;
+}
+
+.alerte--succes {
+  background: var(--success-light);
+  border-color: #bcdcbd;
+  color: #1b5e20;
+}
+
+.etat-vide {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px dashed var(--beige-dark);
+  border-radius: var(--rayon);
+}
+
+.etat-vide__titre {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.chargement {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.barre-outils {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.barre-outils__espace {
+  flex: 1;
+}
+
+.texte-petit {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.texte-tres-petit {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.mono {
+  font-family: var(--police-mono);
+  font-size: 12px;
+}
+
+.retour-ligne {
+  white-space: normal;
+}
+
+.separateur {
+  height: 1px;
+  background: var(--border);
+  margin: 20px 0;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Connexion
+   -------------------------------------------------------------------------- */
+
+.page-connexion {
+  max-width: 420px;
+  margin: 60px auto;
+}
+
+.page-connexion .carte {
+  padding: 28px;
+}
+
+.page-connexion .champ {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.page-connexion .bouton {
+  width: 100%;
+  padding: 10px;
+  font-size: 15px;
+}
+
+.champ-message {
+  margin-top: 14px;
+}
+
+/* --------------------------------------------------------------------------
+   Divers
+   -------------------------------------------------------------------------- */
+
+.liste-simple {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.liste-simple li + li {
+  margin-top: 6px;
+}
+
+.pastille-statut {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.pastille-statut--ok {
+  background: var(--success);
+}
+
+.pastille-statut--attention {
+  background: var(--warning);
+}

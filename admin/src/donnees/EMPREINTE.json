@@ -1,0 +1,21 @@
+{
+  "avertissement": "Fichier engendre par admin/scripts/synchroniser-donnees.mjs. Ne pas le modifier a la main : le script le reecrit, et « npm run donnees:verifier » refuse toute divergence.",
+  "fichiers": [
+    {
+      "cle": "thumn_hafs",
+      "source": "data/quran/thumn_hafs.json",
+      "copie": "thumn_hafs.json",
+      "role": "Les 480 toumoun et leur statut de verification.",
+      "empreinteSource": "dfd6a68810b1d85009e27b840c5ed1a6320f0464d5db80ccaa6e8c974c7bea10",
+      "octets": 285041
+    },
+    {
+      "cle": "surahs",
+      "source": "data/quran/surahs.json",
+      "copie": "surahs.json",
+      "role": "Les 114 sourates : nom, nombre de versets, premier verset global.",
+      "empreinteSource": "4c62b7f4746ec44101855156ac80933dc38b9c50cbbb51d64eb4a37e384c850d",
+      "octets": 22921
+    }
+  ]
+}

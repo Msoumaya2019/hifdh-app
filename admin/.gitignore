@@ -1,0 +1,24 @@
+# Dependances
+node_modules/
+
+# Build Next
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Env — le tableau de bord ne detient aucun secret, mais un fichier local
+# peut contenir l'URL d'un projet de developpement : il ne se versionne pas.
+.env
+.env.local
+.env.*.local
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
+
+# Travail temporaire
+.tmp-*
