@@ -5,8 +5,8 @@ cliquer**.
 
 ## 0. Ce qui vous revient, dans l'ordre
 
-Cinq gestes, et aucun ne peut être fait à votre place : ils demandent votre compte Supabase, votre
-identifiant Apple, vos réglages GitHub ou votre hébergeur.
+Six gestes, et aucun ne peut être fait à votre place : ils demandent votre compte Supabase, votre
+identifiant Apple, vos réglages GitHub, votre hébergeur ou votre compte de courriel.
 
 | # | À faire | Pourquoi vous seul | Section |
 | --- | --- | --- | --- |
@@ -14,11 +14,16 @@ identifiant Apple, vos réglages GitHub ou votre hébergeur.
 | 2 | Nommer le premier administrateur | la politique interdit à un apprenant de s'élever tout seul | §3 |
 | 3 | Déployer le tableau de bord | demande votre compte d'hébergement | §7 |
 | 4 | Installer l'application (Android ou iPhone) | se fait sur votre téléphone | §5 et §6 |
-| 5 | Retirer le secret `EXPO_TOKEN` | réglages du dépôt | §8 |
+| 5 | **Configurer l'envoi des courriels** | demande votre compte Brevo et votre projet Supabase | **§9** |
+| 6 | Retirer le secret `EXPO_TOKEN` | réglages du dépôt | §8 |
 
 **L'ordre compte pour 1 → 2 → 3** : le tableau de bord lit `resume_apprenants` et
 `division_verifications`, que le point 1 crée, et il refuse d'entrer pour un compte qui n'est pas
 administrateur — ce que le point 2 règle. Le point 4 est indépendant.
+
+**Le point 5 est le plus urgent** : tant qu'il n'est pas fait, aucun compte ne devient utilisable —
+le service de courriel intégré de Supabase refuse les adresses ordinaires — et « mot de passe
+oublié » ne peut servir à personne. Voir §9.
 
 ## 1. Ce qui est déjà en place
 
@@ -30,7 +35,7 @@ administrateur — ce que le point 2 règle. Le point 4 est indépendant.
 | Administration Supabase | `supabase/administration.sql`, écrit — **pas encore appliqué** (§3) |
 | Flux de vérification | `ci.yml` : types, tests, données, bornes, falsificateurs, et la construction du tableau de bord |
 | Flux de compilation | `android-apk.yml`, `ios-unsigned.yml` |
-| Version publiée | `v1.2.0` — `hifdh-1.2.0.apk` et `hifdh-1.2.0-non-signe.ipa` |
+| Version publiée | `v1.6.5` — `hifdh-1.6.5.apk` et `hifdh-1.6.5-non-signe.ipa` |
 
 ## 2. Les deux valeurs publiques du projet Supabase
 
@@ -287,6 +292,160 @@ Un secret `EXPO_TOKEN` subsiste dans les secrets du dépôt, hérité de la cha�
 
 Pour le supprimer : `Settings > Secrets and variables > Actions > EXPO_TOKEN > Remove`. À conserver
 uniquement si vous prévoyez de revenir à EAS.
+
+## 9. Les courriels : Brevo, puis Supabase
+
+### 9.0 Pourquoi c'est indispensable
+
+Deux fonctions de l'application dépendent d'un courriel qui **arrive** : la confirmation
+d'inscription et la réinitialisation du mot de passe.
+
+Le service de courriel **intégré** de Supabase ne peut pas les assurer. Ce n'est pas une question de
+dossier indésirable : la documentation officielle est explicite — sans SMTP dédié, Supabase Auth
+**refuse** de livrer à toute adresse qui n'est pas membre de l'organisation du projet, en répondant
+`Email address not authorized`, et le plafond est de **2 messages par heure**.
+
+Autrement dit : pour une association dont les membres s'inscrivent avec leur adresse personnelle,
+**aucun courriel n'arrive, jamais**. Il faut un service d'envoi. Brevo en offre un gratuitement, sans
+carte bancaire.
+
+### 9.1 Créer le compte Brevo
+
+1. Allez sur [brevo.com](https://www.brevo.com) et cliquez **Sign up free**.
+2. Renseignez une adresse, un mot de passe, et validez le courriel de confirmation.
+3. **Aucune carte bancaire n'est demandée.** Le plan gratuit autorise **300 envois par jour**,
+   partagés entre les campagnes et les courriels transactionnels — largement au-delà du besoin d'une
+   association.
+
+### 9.2 Vérifier un expéditeur
+
+Un expéditeur, c'est le couple « nom affiché + adresse d'envoi ». Brevo refuse d'envoyer depuis une
+adresse qu'il n'a pas vérifiée. Deux chemins, et le second est celui qu'il faut viser.
+
+**Chemin A — une seule adresse, tout de suite.** Pour essayer.
+
+1. Menu du compte → **Settings > Senders, Domains, IPs > Senders**.
+2. Onglet **Senders**, bouton **Add a sender**.
+3. **From name** : par exemple `Hifdh`.
+4. **From email** : l'adresse depuis laquelle vous enverrez.
+5. **Save**. Brevo envoie un **code à 6 chiffres** à cette adresse : recopiez-le et cliquez
+   **Verify sender**.
+
+> **La limite de ce chemin, et elle compte.** Une adresse gratuite (`gmail.com`, `yahoo.com`…) **ne
+> peut pas être authentifiée** : Brevo affiche un avertissement à côté de DKIM et DMARC, et Gmail
+> comme Yahoo exigent depuis 2024 une authentification pour accepter des envois en nombre. Les
+> courriels partiront, mais beaucoup finiront en indésirable ou seront refusés. C'est bon pour
+> vérifier que la chaîne fonctionne, pas pour servir les familles.
+
+**Chemin B — un domaine, et c'est le bon.** À faire dès que possible.
+
+1. **Settings > Senders, Domains, IPs > Domains**, bouton pour ajouter un domaine.
+2. Brevo affiche **des enregistrements DNS** à recopier chez votre hébergeur de domaine : un code
+   Brevo, un enregistrement DKIM, et un enregistrement DMARC.
+3. Recopiez-les, puis revenez dans Brevo et cliquez **Verify** (la propagation DNS prend de quelques
+   minutes à quelques heures).
+4. Une fois le domaine authentifié, **tous les expéditeurs de ce domaine sont vérifiés
+   automatiquement** — plus besoin du code à 6 chiffres.
+
+Si vous n'avez pas de domaine, l'adresse de l'école ou de la FCPE peut convenir, avec l'accord de
+qui la gère. Un domaine coûte une dizaine d'euros par an, et c'est la seule dépense de toute cette
+chaîne.
+
+### 9.3 Créer une clé SMTP
+
+1. Ouvrez **[app.brevo.com/settings/keys/smtp](https://app.brevo.com/settings/keys/smtp)**.
+2. Cliquez pour générer une nouvelle clé, et nommez-la `Hifdh Supabase` — ce nom vous dira plus tard
+   à quoi elle sert.
+3. **Copiez la clé tout de suite** : Brevo ne la réaffiche pas.
+4. Sur la même page, notez le **SMTP login** affiché. Attention, ce n'est pas forcément l'adresse de
+   votre compte : selon la date de création du compte, c'est votre adresse de connexion Brevo **ou**
+   une adresse de la forme `1234567@smtp-brevo.com`. **C'est la valeur affichée qui compte**, pas
+   celle que vous supposez.
+
+> **Une clé SMTP n'est pas une clé d'API.** Brevo propose les deux, et elles ne sont pas
+> interchangeables : une clé d'API dans ce champ donne un échec d'authentification, sans autre
+> explication. La bonne clé se trouve sur la page `/settings/keys/smtp`.
+
+**Cette clé est un secret.** Elle ne va ni dans le dépôt, ni dans un fichier, ni dans un message :
+uniquement dans le formulaire Supabase de l'étape suivante. Si elle fuite, révoquez-la dans Brevo et
+créez-en une autre — c'est immédiat et sans conséquence.
+
+### 9.4 Entrer les valeurs dans Supabase
+
+Le projet est `ebyjqlujcvhoopguxkaw`. Lien direct :
+**[supabase.com/dashboard/project/ebyjqlujcvhoopguxkaw/auth/smtp](https://supabase.com/dashboard/project/ebyjqlujcvhoopguxkaw/auth/smtp)**
+
+À la main : **Authentication** → section *NOTIFICATIONS* → **Emails** → onglet **SMTP Settings**.
+
+1. Activez le bouton **Enable Custom SMTP**.
+2. **Sender email** : l'adresse vérifiée en §9.2. Si vous avez fait le chemin B, elle doit
+   appartenir au domaine authentifié.
+3. **Sender name** : `Hifdh — FCPE Frères Lumières` (ce que verront les destinataires).
+4. **Host** : `smtp-relay.brevo.com`
+5. **Port number** : `587`
+6. **Username** : le **SMTP login** noté en §9.3 — pas votre adresse de connexion si Brevo vous a
+   donné une adresse `…@smtp-brevo.com`.
+7. **Password** : la **clé SMTP** créée en §9.3.
+8. **Minimum interval** : laissez la valeur par défaut.
+9. Cliquez **Save**, et attendez le message de confirmation.
+
+### 9.5 Autoriser le retour dans l'application
+
+Sans cette étape, un utilisateur qui suit son lien atterrit sur une **page blanche** : Supabase
+refuse de rediriger vers une adresse qu'il ne connaît pas.
+
+**Authentication** → **URL Configuration** — lien direct :
+**[…/auth/url-configuration](https://supabase.com/dashboard/project/ebyjqlujcvhoopguxkaw/auth/url-configuration)**
+
+Dans **Redirect URLs**, ajoutez exactement :
+
+```
+hifdh://lien
+```
+
+Renseignez aussi **Site URL** (l'adresse du tableau de bord déployé, ou `https://supabase.com` à
+défaut). Cliquez **Save**.
+
+### 9.6 Faut-il garder la confirmation par courriel ?
+
+**Authentication** → **Sign In / Providers** → **Email** — lien direct :
+**[…/auth/providers](https://supabase.com/dashboard/project/ebyjqlujcvhoopguxkaw/auth/providers)**
+
+Deux choix, et ils ne s'excluent pas du SMTP :
+
+| Réglage | Effet | Quand le choisir |
+| --- | --- | --- |
+| **Confirm email** coché | le compte existe mais reste inactif jusqu'au clic sur le lien | dès que le SMTP fonctionne — c'est le réglage correct |
+| **Confirm email** décoché | l'inscription ouvre la session immédiatement, sans courriel | pour débloquer tout de suite, avant que le SMTP soit prêt |
+
+Décocher **ne remplace pas** le SMTP : « mot de passe oublié » continue d'avoir besoin d'un
+courriel pour fonctionner. Le réglage débloque les inscriptions, pas les réinitialisations.
+
+### 9.7 Relever le plafond d'envoi
+
+**Authentication** → **Rate Limits**. Activer un SMTP dédié porte la limite par défaut à **30
+courriels par heure**, ajustable ici. Le plafond réel reste celui de Brevo : 300 par jour.
+
+### 9.8 Éprouver la chaîne
+
+1. Dans l'application, sur le formulaire de connexion, appuyez sur **« Mot de passe oublié ? »** et
+   saisissez une adresse réelle.
+2. Le courriel doit arriver en une à deux minutes.
+3. Ouvrez-le sur le téléphone : il doit ramener dans l'application, sur l'écran de choix du nouveau
+   mot de passe.
+
+### 9.9 Quand ça ne marche pas : trois lectures, dans cet ordre
+
+| Ce que vous voyez | Où regarder | Ce que ça veut dire |
+| --- | --- | --- |
+| Rien du tout | **Brevo → Transactional → Logs** ([app-smtp.brevo.com/log](https://app-smtp.brevo.com/log)) | Supabase n'a rien envoyé : les réglages §9.4 n'ont pas été enregistrés, ou l'adresse tapée n'existe pas |
+| Une ligne `blocked` ou `bounced` | le motif affiché à côté de la ligne | l'expéditeur n'est pas vérifié (§9.2), ou le domaine n'est pas authentifié |
+| Une erreur côté Supabase | **Authentication → Logs** | identifiant refusé : presque toujours une clé d'API à la place de la clé SMTP, ou le mauvais **SMTP login** (§9.3) |
+| Le courriel arrive, mais le lien ouvre une page blanche | §9.5 | `hifdh://lien` n'est pas dans les *Redirect URLs* |
+
+**Les journaux Brevo sont le premier endroit où regarder**, et ils disent la vérité : un courriel
+refusé par Brevo n'apparaît nulle part côté Supabase, et un courriel jamais demandé n'apparaît nulle
+part côté Brevo. C'est ce qui distingue « parti mais perdu » de « jamais parti ».
 
 ## Pourquoi pas EAS
 
