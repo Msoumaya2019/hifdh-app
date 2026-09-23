@@ -35,7 +35,7 @@ oublié » ne peut servir à personne. Voir §9.
 | Administration Supabase | `supabase/administration.sql`, écrit — **pas encore appliqué** (§3) |
 | Flux de vérification | `ci.yml` : types, tests, données, bornes, falsificateurs, et la construction du tableau de bord |
 | Flux de compilation | `android-apk.yml`, `ios-unsigned.yml` |
-| Version publiée | `v1.6.5` — `hifdh-1.6.5.apk` et `hifdh-1.6.5-non-signe.ipa` |
+| Version publiée | `v1.6.7` — `hifdh-1.6.7.apk` et `hifdh-1.6.7-non-signe.ipa` |
 
 ## 2. Les deux valeurs publiques du projet Supabase
 
@@ -181,6 +181,15 @@ numéros différents, et l'on ne sait plus quel binaire correspond à quelle ét
    source : acceptez.
 3. Si une version précédente est installée avec une **autre** signature, désinstallez-la d'abord —
    et **exportez une sauvegarde avant**, la désinstallation efface les données locales.
+
+**Mesuré : la signature ne change pas d'une version à l'autre.** Les APK des versions 1.6.4 et 1.6.6
+portent le **même certificat** (`sha256 fac61745…`), parce que la clé de débogage vient du modèle de
+projet embarqué dans `expo prebuild`, et non de la machine qui compile. Une mise à jour s'installe
+donc **par-dessus**, en conservant la progression locale — le point 3 ne vaudrait que si ce modèle
+changeait un jour de clé. Pour s'en assurer sur un APK reçu : `apksigner verify --print-certs
+hifdh-<version>.apk`. Sans cet outil, le certificat se lit dans le bloc « APK Sig Block 42 », placé
+juste avant le répertoire central — ces APK n'ont pas de `META-INF/*.RSA`, car ils sont signés par le
+schéma v2.
 
 **Cet APK est signé avec la clé de débogage**, pas avec une clé de publication. Cela suffit pour
 essayer l'application ; cela ne suffit pas pour la publier. Le jour où elle irait sur le Play Store,
