@@ -4,7 +4,10 @@
 // --------------------------
 // Un rond qui tourne sans s'arrêter a été signalé TROIS fois depuis un
 // téléphone : après la création d'un compte, à la place du code d'invitation,
-// et sur « Mes amis ». Les trois ont la même cause de forme, et elle n'est pas
+// et sur « Mes amis ». Une QUATRIÈME fois, la même famille de défaut s'est
+// présentée sans indicateur du tout : l'écran du lien de courriel restait sur
+// « Ouverture du lien… » pour toujours. Les quatre ont la même cause de forme,
+// et elle n'est pas
 // dans la logique métier : c'est un `await` dont la promesse peut ne jamais se
 // résoudre — ou qui REJETTE — sur un écran qui n'affiche « en cours » que tant
 // qu'il attend.
@@ -25,8 +28,9 @@
 //   - la **forme** des écrans concernés : l'indicateur qui peut tourner doit
 //     avoir une sortie dans tous les cas, l'état « en cours » doit être retiré
 //     dans un `finally` et non après le dernier `await`, un REJET doit être
-//     rattrapé — une borne ne l'arrête pas — et un état qui attend doit avoir
-//     une échéance.
+//     rattrapé — une borne ne l'arrête pas —, un état qui attend doit avoir
+//     une échéance, et une adresse reçue doit PARVENIR à l'écran qui la traite,
+//     depuis les deux sources possibles.
 //
 // Un test de comportement seul ne suffirait pas : on peut écrire une attente
 // bornée parfaite et ne jamais l'appeler. Un test de forme seul ne suffirait
@@ -493,5 +497,70 @@ test('l’écran du lien de courriel ne reste pas dans un état d’attente sans
     source,
     /etat\.nom === 'probleme'[\s\S]{0,500}Retour au profil/,
     'l’état d’échec doit offrir une action'
+  );
+});
+
+test('l’adresse qui a ouvert l’application parvient à l’écran, depuis ses deux sources', () => {
+  // Le défaut mesuré sur un téléphone, et sous une quatrième forme : le lien
+  // ouvre bien l'application, l'écran s'affiche, et « Ouverture du lien… »
+  // reste là — sans indicateur, sans bouton, sans fin.
+  //
+  // La cause n'était PAS l'échange des jetons : il n'était jamais atteint. Elle
+  // est dans la RÉCEPTION de l'adresse, et l'adresse ne se lit pas dans une
+  // seule source. Mesuré dans le paquet installé, `expo-linking/ios/` :
+  //
+  //   • `Linking.useURL()` s'appuie sur React Native, dont `getInitialURL()`
+  //     ne rend l'adresse que si l'application a été LANCÉE par le lien, et
+  //     dont l'événement `url` ne touche que les écouteurs DÉJÀ posés. Or le
+  //     routeur monte l'écran `/lien` APRÈS l'arrivée de l'adresse ;
+  //   • `Linking.useLinkingURL()` lit `ExpoLinking.getLinkingURL()`, et le
+  //     délégué d'application renseigne ce registre à chaque ouverture
+  //     (`ExpoLinkingRegistry.shared.initialURL = url`), donc l'adresse y
+  //     survit à l'événement.
+  //
+  // Sur une ouverture à chaud — l'application tournait, ce qui est le cas
+  // quand on vient de demander le lien depuis l'écran Profil — la première rend
+  // `null`, et l'écran n'avait donc rien à traiter. Sur un lancement à froid,
+  // c'est la seconde qui est vide, parce qu'iOS n'appelle pas le délégué
+  // `open url` quand l'application démarre. Il faut donc LES DEUX.
+  const source = lire('app/lien.tsx');
+
+  assert.match(
+    source,
+    /const urlNative = Linking\.useURL\(\);/,
+    'la source de React Native doit être lue'
+  );
+  assert.match(
+    source,
+    /const urlExpo = Linking\.useLinkingURL\(\);/,
+    'la source du registre natif doit être lue : sans elle, une ouverture à chaud ne donne rien'
+  );
+
+  // Les deux alimentent le MÊME traitement, et non deux chemins séparés :
+  // deux chemins oublieraient l'une des deux dans l'un des cas, et c'est
+  // exactement le défaut que ce test garde.
+  assert.match(
+    source,
+    /const candidates = \[urlNative, urlExpo\]\.filter\(/,
+    'les deux adresses doivent être réunies avant d’être traitées'
+  );
+
+  // Et une adresse déjà traitée ne l'est pas deux fois : les deux sources
+  // annoncent la même ouverture, et un second `setSession` consommerait deux
+  // fois le même jeton de rafraîchissement — l'écran annoncerait alors un échec
+  // sur une réussite.
+  assert.match(
+    source,
+    /if \(dejaTraitees\.current\.has\(adresse\)\) continue;/,
+    'une adresse déjà traitée ne doit pas être traitée deux fois'
+  );
+
+  // Le garde porte sur un ENSEMBLE, pas sur une seule adresse : avec une
+  // comparaison à l'adresse précédente, la seconde source — qui annonce la même
+  // ouverture — serait traitée une fois de plus.
+  assert.match(
+    source,
+    /const dejaTraitees = useRef<Set<string>>\(new Set\(\)\);/,
+    'le garde doit retenir toutes les adresses déjà traitées'
   );
 });

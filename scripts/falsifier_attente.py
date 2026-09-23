@@ -233,6 +233,40 @@ MUTATIONS = [
         "        true",
         "l'échéance écrase un état déjà avancé : une session ouverte serait effacée",
     ),
+    # --- La RÉCEPTION de l'adresse ------------------------------------------
+    #
+    # Le même symptôme — « Ouverture du lien… » sans fin —, mais une autre
+    # cause, mesurée sur un téléphone : l'échange des jetons n'était jamais
+    # atteint, parce qu'AUCUNE adresse ne parvenait à l'écran. Les deux lectures
+    # d'adresse ne couvrent pas les mêmes cas (`expo-linking/ios/`) : celle de
+    # React Native ne rend rien à l'ouverture à chaud — l'application tournait
+    # déjà —, et celle du registre natif d'Expo est vide au lancement à froid.
+    # Les quatre mutations ci-dessous font chacune disparaître l'une des deux,
+    # ou les confondent.
+    (
+        "app/lien.tsx",
+        "  const urlExpo = Linking.useLinkingURL();",
+        "  const urlExpo = Linking.useURL();",
+        "les deux lectures interrogent la même source : une ouverture à chaud ne donne rien",
+    ),
+    (
+        "app/lien.tsx",
+        "  const urlNative = Linking.useURL();",
+        "  const urlNative = Linking.useLinkingURL();",
+        "les deux lectures interrogent le registre natif : un lancement à froid ne donne rien",
+    ),
+    (
+        "app/lien.tsx",
+        "    const candidates = [urlNative, urlExpo].filter(",
+        "    const candidates = [urlNative].filter(",
+        "une seule source alimente le traitement : l'autre est lue et jamais utilisée",
+    ),
+    (
+        "app/lien.tsx",
+        "      if (dejaTraitees.current.has(adresse)) continue;",
+        "      if (false) continue;",
+        "la même adresse est traitée deux fois : les jetons sont consommés deux fois",
+    ),
     # === La couche des amis ================================================
     (
         "src/lib/sync/amis.ts",

@@ -19,9 +19,10 @@
 //
 // UN POINT QUI COMPTE
 // -------------------
-// Le lien arrive avec les jetons dans le FRAGMENT de l'adresse. `useURL()` les
-// rend tels quels, mais il ne faut PAS les journaliser : ce sont des
-// identifiants de session. Rien ici ne les affiche ni ne les écrit.
+// Le lien arrive avec les jetons dans le FRAGMENT de l'adresse. Les deux
+// lectures d'adresse de l'écran les rendent tels quels, mais il ne faut PAS
+// les journaliser : ce sont des identifiants de session. Rien ici ne les
+// affiche ni ne les écrit.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -45,6 +46,7 @@ import {
   ouvrirSessionDepuisLien,
   verifierNouveauMotDePasse,
 } from '@/lib/auth';
+import type { LienAuth } from '@/lib/lienAuth';
 import {
   lienDemandeUnNouveauMotDePasse,
   lienPorteDesJetons,
@@ -85,31 +87,59 @@ const MESSAGE_SANS_SORTIE: Record<'attente' | 'ouverture', string> = {
 };
 
 export default function LienScreen() {
-  // `useURL` rend l'adresse qui a ouvert l'application, et la met à jour quand
-  // une nouvelle arrive. Elle couvre donc les deux cas : application fermée
-  // (démarrage à froid) et application déjà ouverte (lien suivi depuis la
-  // messagerie). Un `getInitialURL()` seul raterait le second.
-  const url = Linking.useURL();
-  const lien = lireLienAuth(url);
+  // DEUX SOURCES, ET IL FAUT LES DEUX.
+  //
+  // Le commentaire qui tenait ici affirmait que `useURL` couvrait « application
+  // fermée » et « application déjà ouverte ». C'est faux, et c'est ce qui a été
+  // signalé depuis un téléphone : le lien ouvre bien l'application, et l'écran
+  // reste sur « Ouverture du lien… » pour toujours. L'origine est dans le
+  // paquet installé, `expo-linking/ios/` :
+  //
+  //   • `Linking.useURL()` s'appuie sur React Native. Son `getInitialURL()` ne
+  //     rend l'adresse que si l'application a été LANCÉE par le lien, et son
+  //     événement `url` ne touche que les écouteurs DÉJÀ posés. Or l'écran
+  //     `/lien` est monté par le routeur APRÈS l'arrivée de l'adresse : à
+  //     l'ouverture à chaud — l'application tournait, ce qui est le cas quand
+  //     on vient de demander le lien depuis l'écran Profil — les deux
+  //     manquent, et `useURL` rend `null` sans fin.
+  //   • `Linking.useLinkingURL()` lit `ExpoLinking.getLinkingURL()`, et le
+  //     délégué d'application renseigne ce registre à CHAQUE ouverture par
+  //     lien (`LinkingAppDelegateSubscriber` →
+  //     `ExpoLinkingRegistry.shared.initialURL = url`). L'adresse y SURVIT à
+  //     l'événement, et la lecture est synchrone au premier rendu.
+  //
+  // Aucune des deux ne suffit seule : sur un lancement à froid, le registre
+  // d'Expo reste vide, parce qu'iOS n'appelle pas le délégué `open url` quand
+  // l'application démarre — c'est React Native qui a l'adresse. On lit donc les
+  // deux, et l'on traite la première adresse qui n'a pas encore été traitée.
+  const urlNative = Linking.useURL();
+  const urlExpo = Linking.useLinkingURL();
 
   const [etat, setEtat] = useState<Etat>({ nom: 'attente' });
+  // Le lien lu, gardé pour l'affichage : le message de confirmation dépend de
+  // son type, et le relire à chaque rendu depuis une adresse qui peut changer
+  // afficherait le message d'une autre ouverture.
+  const [lien, setLien] = useState<LienAuth>(() => lireLienAuth(null));
   const [motDePasse, setMotDePasse] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
   // Un lien ne doit être traité QU'UNE FOIS.
   //
-  // `useURL` peut rendre la même adresse à plusieurs rendus — un changement
-  // d'état suffit. Sans ce garde, l'échange des jetons serait relancé, et
-  // `setSession` consommerait deux fois le même jeton de rafraîchissement : la
-  // seconde tentative échouerait, et l'écran afficherait une erreur alors que
-  // tout s'était bien passé.
-  const dejaTraite = useRef<string | null>(null);
+  // Les deux sources peuvent annoncer la même ouverture — un changement d'état
+  // suffit à faire rendre la même adresse à plusieurs rendus. Sans ce garde,
+  // l'échange des jetons serait relancé, et `setSession` consommerait deux fois
+  // le même jeton de rafraîchissement : la seconde tentative échouerait, et
+  // l'écran afficherait une erreur alors que tout s'était bien passé.
+  const dejaTraitees = useRef<Set<string>>(new Set());
 
   const traiter = useCallback(async (adresse: string) => {
-    try {
-      const lu = lireLienAuth(adresse);
+    // `lireLienAuth` ne lève jamais — c'est écrit dans son contrat. La lecture
+    // reste donc hors du rattrapage, qui ne vise que le réseau et le stockage.
+    const lu = lireLienAuth(adresse);
+    setLien(lu);
 
+    try {
       if (lu.erreur !== null) {
         setEtat({ nom: 'probleme', message: lu.erreur });
         return;
@@ -175,11 +205,20 @@ export default function LienScreen() {
   }, []);
 
   useEffect(() => {
-    if (url === null || url === '') return;
-    if (dejaTraite.current === url) return;
-    dejaTraite.current = url;
-    void traiter(url);
-  }, [url, traiter]);
+    const candidates = [urlNative, urlExpo].filter(
+      (adresse): adresse is string => typeof adresse === 'string' && adresse !== ''
+    );
+
+    for (const adresse of candidates) {
+      if (dejaTraitees.current.has(adresse)) continue;
+      dejaTraitees.current.add(adresse);
+      void traiter(adresse);
+      // UNE SEULE adresse par passage : les deux sources annoncent la même
+      // ouverture, et traiter la seconde relancerait l'échange des jetons que
+      // la première vient de consommer.
+      return;
+    }
+  }, [urlNative, urlExpo, traiter]);
 
   // AUCUN ÉTAT D'ATTENTE NE DOIT DURER SANS SORTIE.
   //
