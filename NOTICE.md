@@ -216,6 +216,37 @@ d'application — expose le texte, les traductions, l'audio et la recherche, mai
 404 ou 403). Quran.com n'est donc pas exploitable pour les images, et c'est la
 solution de repli qui a été mise en place.
 
+## 3 quater. Lecture de la page, et surlignage de la séance
+
+Depuis la version 1.6.4, le lecteur n'affiche plus qu'un mode : la **page du
+moushaf**, telle qu'elle est imprimée. Le mode « verset par verset » n'a pas été
+supprimé — le code est là — mais aucun onglet n'y mène plus. Une configuration
+enregistrée avant ce changement est ramenée au mode page : l'ignorer afficherait
+un écran dont le seul contrôle de sortie n'existe plus.
+
+**Le surlignage suit la ligne, pas le mot.** La page affichée est l'image de
+l'imprimé : rien ne permet d'y colorier un mot. Ce qui se sait, en revanche,
+c'est quelles **lignes** portent quels versets — c'est ce que décrit la mise en
+page. Une plage de versets marque donc toutes les lignes qu'elle touche, et rien
+d'autre. Un verset qui commence au milieu d'une ligne marque la ligne entière :
+c'est exact, et c'est la seule chose qui puisse l'être sans mesurer la police de
+l'imprimé.
+
+**La bande est dessinée derrière l'image**, jamais devant : posée au-dessus, elle
+voilerait les signes de vocalisation, qui sont précisément ce qu'on vient lire.
+Elle porte `pointerEvents="none"`, sans quoi elle intercepterait le geste de
+tourne-page là où l'on pose le doigt.
+
+**Placement en fraction, et pourquoi c'est légitime.** Chaque page du moushaf
+fait exactement quinze lignes ; c'est la mise en page qui le dit, et un test
+l'exige de toutes les pages. Les bandes se placent donc en pourcentage, et
+suivent la page à toute taille d'écran.
+
+**Code** : `src/lib/surlignagePassage.ts` (les lignes d'une plage, testé sans
+appareil), `src/components/LecteurPageMoushaf.tsx` (le rendu). Éprouvé par
+`tests/surlignage.test.mjs` et `tests/lecteur.test.mjs`, et tenu par
+`npm run falsifier:surlignage`.
+
 ## 4. Données partagées entre comptes (suivi entre amis)
 
 Depuis la version 1.6.3, deux personnes peuvent se relier par un **code
