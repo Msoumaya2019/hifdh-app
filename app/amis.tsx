@@ -52,11 +52,18 @@ export default function AmisScreen() {
 
   const charger = useCallback(async () => {
     setChargement(true);
-    // `setChargement(false)` est dans un `finally` : quelle que soit l'issue —
-    // les deux appels réussissent, l'un échoue, l'une des promesses ne rend
-    // jamais — l'indicateur s'arrête. Sans lui, l'écran des amis est le seul
-    // endroit de l'application où un rond peut tourner sans fin, parce que
-    // `chargement` n'y était retiré qu'après le dernier `await`.
+    // `setChargement(false)` est dans un `finally`, et c'est lui qui ferme les
+    // trois issues ordinaires : les deux appels réussissent, l'un rend une
+    // erreur, l'un REJETTE.
+    //
+    // Ce qu'il ne fait PAS, contrairement à ce qu'annonçait le commentaire
+    // précédent : couvrir une promesse qui ne se règle jamais. Un `finally`
+    // s'exécute quand la promesse s'achève, pas avant. Cette éventualité n'est
+    // donc pas traitée ici, et c'est délibéré : elle est bornée dans la couche
+    // de données, qui accorde dix secondes à chaque appel
+    // (`src/lib/sync/amis.ts`). La borner une seconde fois ici donnerait deux
+    // délais à tenir d'accord, et un résultat arrivé après coup écraserait un
+    // état d'échec déjà affiché.
     try {
       const resultatCode = await monCodeAmi();
       if (resultatCode.statut === 'ok') setCode(resultatCode.code);
@@ -65,6 +72,14 @@ export default function AmisScreen() {
       const resultat = await mesAmis();
       if (resultat.statut === 'ok') setAmis(resultat.amis);
       else if (resultat.statut === 'erreur') setErreur(resultat.message);
+    } catch {
+      // Un REJET, lui, n'était rattrapé par rien : il partait en rejet non
+      // traité, aucune phrase n'était posée, et l'écran se refermait sans rien
+      // dire. C'est le canal d'erreur de cet écran qui parle — le même que
+      // celui des erreurs de lecture rendues par la base.
+      setErreur(
+        "La progression n'a pas pu être lue. Vérifiez votre connexion, puis réessayez."
+      );
     } finally {
       setChargement(false);
     }
@@ -279,6 +294,17 @@ export default function AmisScreen() {
           {chargement && amis === null && (
             <Card>
               <ActivityIndicator color={colors.primary} />
+            </Card>
+          )}
+
+          {!chargement && amis === null && (
+            // Le chargement s'est arrêté sans liste. Sans cette branche, la
+            // section restait vide sous son titre, sans rien dire : ni liste,
+            // ni phrase, ni rond. Le silence est le pire des trois états.
+            <Card>
+              <Text style={styles.aide}>
+                La liste n’a pas pu être affichée. Appuyez sur « Réessayer » ci-dessus.
+              </Text>
             </Card>
           )}
 

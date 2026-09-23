@@ -135,9 +135,25 @@ MUTATIONS = [
     ),
     (
         "src/components/AmisSection.tsx",
-        "    if (oui === DELAI_DEPASSE) {\n      setConnecte(false);\n      return;\n    }\n",
+        "      if (oui === DELAI_DEPASSE) {\n        setConnecte(false);\n        return;\n      }\n",
         "",
         "le délai dépassé n'est plus traité : l'état reste inconnu, donc un rond",
+    ),
+    # La borne ne couvre pas le rejet : `Promise.race` rend la première promesse
+    # qui s'achève, et un rejet est un achèvement. Mesuré : `getSession()`
+    # rejette quand le stockage refuse une clé — d'où un rond sans fin sur
+    # « Mes amis », alors que le délai, lui, était bien posé.
+    (
+        "src/components/AmisSection.tsx",
+        "    } catch {\n",
+        "    } finally {\n",
+        "le rejet de la lecture n'est plus rattrapé : « connecte » reste null, donc un rond",
+    ),
+    (
+        "src/components/AmisSection.tsx",
+        "  if (panne !== null) {",
+        "  if (false) {",
+        "l'état de panne n'est plus rendu : le rejet n'a plus de sortie affichable",
     ),
     # === L'écran des amis ==================================================
     (
@@ -161,6 +177,61 @@ MUTATIONS = [
         "                  accessibilityLabel=\"Réessayer d’obtenir le code\"",
         "                  accessibilityLabel=\"\"",
         "l'échec n'offre plus de moyen d'agir",
+    ),
+    # Le `finally` ferme les trois issues, mais il ne les NOMME pas : un rejet
+    # qui remonte part en rejet non traité, et l'écran se referme sans rien dire.
+    (
+        "app/amis.tsx",
+        "    } catch {\n"
+        "      // Un REJET, lui, n'était rattrapé par rien : il partait en rejet non\n"
+        "      // traité, aucune phrase n'était posée, et l'écran se refermait sans rien\n"
+        "      // dire. C'est le canal d'erreur de cet écran qui parle — le même que\n"
+        "      // celui des erreurs de lecture rendues par la base.\n"
+        "      setErreur(\n"
+        "        \"La progression n'a pas pu être lue. Vérifiez votre connexion, puis réessayez.\"\n"
+        "      );\n"
+        "    } finally {",
+        "    } finally {",
+        "le rejet de la lecture n'est plus rattrapé sur l'écran des amis",
+    ),
+    (
+        "app/amis.tsx",
+        "          {!chargement && amis === null && (",
+        "          {false && (",
+        "la liste n'a plus de sortie quand elle n'a pas pu être lue",
+    ),
+    # === L'écran du lien de courriel =======================================
+    #
+    # Signalé depuis un téléphone, et sous une troisième forme : le lien ouvre
+    # l'application, l'écran s'affiche, et « Ouverture du lien… » reste là —
+    # sans bouton, sans erreur, sans fin. Deux causes, deux garde-fous.
+    (
+        "app/lien.tsx",
+        "    } catch (erreur) {\n      // `ouvrirSessionDepuisLien` peut REJETER",
+        "    } finally {\n      // Mutation : le rejet n'est plus rattrapé.",
+        "le rejet de l'échange n'est plus rattrapé : l'écran reste sur « Vérification du lien… »",
+    ),
+    (
+        "app/lien.tsx",
+        "      setEtat((precedent) =>\n"
+        "        precedent.nom === attendu\n"
+        "          ? { nom: 'probleme', message: MESSAGE_SANS_SORTIE[attendu] }\n"
+        "          : precedent\n"
+        "      );",
+        "      // Mutation : l'échéance ne mène nulle part.",
+        "l'échéance ne mène plus à un état affichable : l'attente redevient sans fin",
+    ),
+    (
+        "app/lien.tsx",
+        "    const attendu = etat.nom;",
+        "    const attendu = 'attente';",
+        "l'état observé n'est plus figé : l'échéance ne compare plus rien",
+    ),
+    (
+        "app/lien.tsx",
+        "        precedent.nom === attendu",
+        "        true",
+        "l'échéance écrase un état déjà avancé : une session ouverte serait effacée",
     ),
     # === La couche des amis ================================================
     (

@@ -20,6 +20,12 @@
 //   - une lecture incomplète rend `null`, jamais une valeur tronquée. Un jeton
 //     à moitié relu serait traité comme une session valide et échouerait
 //     ailleurs, plus loin de la cause.
+//
+// Il y a une SECONDE contrainte, et celle-là ne pardonne pas : `expo-secure-store`
+// refuse toute clé hors de `[A-Za-z0-9._-]`, en levant. Elle est traitée plus
+// bas, avec les clés composées. Elle a coûté une session entière — la connexion
+// échouait alors que les identifiants étaient bons — et un rond qui tournait
+// sans fin sur « Mes amis ».
 
 /** Le dépôt de clés sous-jacent, tel que `expo-secure-store`. */
 export interface DepotCles {
@@ -85,14 +91,54 @@ export function decouper(valeur: string, limite: number = LIMITE_MORCEAU): strin
   return morceaux;
 }
 
-const suffixeNombre = (cle: string) => `${cle}::nb`;
-const suffixeMorceau = (cle: string, index: number) => `${cle}::${index}`;
+/**
+ * Rend une clé acceptable pour la plateforme.
+ *
+ * `expo-secure-store` REFUSE toute clé hors de `[A-Za-z0-9._-]`, et il refuse
+ * en LEVANT : `getItemAsync`, `setItemAsync` et `deleteItemAsync` appellent
+ * toutes les trois `ensureValidKey`, dont la règle est — mesurée dans le paquet
+ * livré, `node_modules/expo-secure-store/build/SecureStore.js` :
+ *
+ *     function isValidKey(key) {
+ *       return typeof key === 'string' && /^[\w.-]+$/.test(key);
+ *     }
+ *
+ * Le suffixe ne suffit pas à garantir la propriété : la clé de base vient de
+ * l'appelant — ici `supabase-js`, qui emploie `sb-<référence>-auth-token`. Une
+ * version future pourrait y mettre un caractère refusé, et le défaut
+ * reviendrait par une autre porte. On remplace donc tout caractère hors de
+ * `[A-Za-z0-9._-]` par `_` : quelle que soit la clé reçue, celle confiée à la
+ * plateforme est acceptable.
+ *
+ * La transformation n'est pas injective, et c'est sans conséquence : les clés
+ * que ce projet reçoit ne diffèrent jamais par un caractère remplacé.
+ */
+export function clePlateforme(cle: string): string {
+  return cle.replace(/[^\w.-]/g, '_');
+}
+
+/**
+ * Les clés composées, et pourquoi elles ne contiennent PAS de deux-points.
+ *
+ * Le séparateur était `::`. Or `:` est hors de la règle ci-dessus, donc
+ * `ensureValidKey` levait à CHAQUE lecture et à CHAQUE écriture de session. La
+ * session ne pouvait donc être ni enregistrée ni relue : la connexion échouait
+ * alors que les identifiants étaient bons, et `getSession()` REJETAIT au lieu
+ * de rendre `null` — ce qui laissait « Mes amis » sur un rond sans fin, faute
+ * de `connecte` jamais posé.
+ *
+ * Aucune donnée n'est à reprendre sous l'ancienne forme : `setItem` lit le
+ * compteur avant d'écrire le premier morceau, et cette lecture levait déjà.
+ * Rien n'a donc jamais pu être écrit.
+ */
+const suffixeNombre = (cle: string) => `${cle}_nb`;
+const suffixeMorceau = (cle: string, index: number) => `${cle}_${index}`;
 
 /**
  * Enveloppe un dépôt de clés pour lui faire accepter des valeurs longues.
  *
- * Le format est autoportant : `<clé>::nb` porte le nombre de morceaux, et
- * `<clé>::<i>` chaque morceau. Une clé sans compteur est considérée absente,
+ * Le format est autoportant : `<clé>_nb` porte le nombre de morceaux, et
+ * `<clé>_<i>` chaque morceau. Une clé sans compteur est considérée absente,
  * ce qui rend une écriture interrompue inoffensive — mieux vaut pas de session
  * qu'une session à moitié écrite.
  */
@@ -102,7 +148,8 @@ export function creerStockageMorceaux(
 ): StockageAsynchrone {
   return {
     async getItem(cle: string): Promise<string | null> {
-      const brut = await depot.getItem(suffixeNombre(cle));
+      const base = clePlateforme(cle);
+      const brut = await depot.getItem(suffixeNombre(base));
       if (brut === null) return null;
 
       const nombre = Number(brut);
@@ -110,7 +157,7 @@ export function creerStockageMorceaux(
 
       const morceaux: string[] = [];
       for (let index = 0; index < nombre; index += 1) {
-        const morceau = await depot.getItem(suffixeMorceau(cle, index));
+        const morceau = await depot.getItem(suffixeMorceau(base, index));
         // Un morceau manquant signifie une écriture interrompue. Rendre ce
         // qu'on a donnerait un jeton tronqué, donc une panne plus loin.
         if (morceau === null) return null;
@@ -120,36 +167,38 @@ export function creerStockageMorceaux(
     },
 
     async setItem(cle: string, valeur: string): Promise<void> {
+      const base = clePlateforme(cle);
       const morceaux = decouper(valeur, limite);
 
       // On retire d'abord l'ancien contenu : sans cela, écrire une valeur
       // courte après une longue laisserait des morceaux orphelins, qui
       // occuperaient le stockage sans jamais être relus.
-      const ancien = await depot.getItem(suffixeNombre(cle));
+      const ancien = await depot.getItem(suffixeNombre(base));
       const ancienNombre = ancien === null ? 0 : Number(ancien);
       if (Number.isInteger(ancienNombre) && ancienNombre > morceaux.length) {
         for (let index = morceaux.length; index < ancienNombre; index += 1) {
-          await depot.removeItem(suffixeMorceau(cle, index));
+          await depot.removeItem(suffixeMorceau(base, index));
         }
       }
 
       for (let index = 0; index < morceaux.length; index += 1) {
-        await depot.setItem(suffixeMorceau(cle, index), morceaux[index]);
+        await depot.setItem(suffixeMorceau(base, index), morceaux[index]);
       }
       // Le compteur est écrit en dernier : tant qu'il manque, la clé est
       // considérée absente, et aucun morceau partiel n'est relu.
-      await depot.setItem(suffixeNombre(cle), String(morceaux.length));
+      await depot.setItem(suffixeNombre(base), String(morceaux.length));
     },
 
     async removeItem(cle: string): Promise<void> {
-      const ancien = await depot.getItem(suffixeNombre(cle));
+      const base = clePlateforme(cle);
+      const ancien = await depot.getItem(suffixeNombre(base));
       const ancienNombre = ancien === null ? 0 : Number(ancien);
       if (Number.isInteger(ancienNombre) && ancienNombre > 0) {
         for (let index = 0; index < ancienNombre; index += 1) {
-          await depot.removeItem(suffixeMorceau(cle, index));
+          await depot.removeItem(suffixeMorceau(base, index));
         }
       }
-      await depot.removeItem(suffixeNombre(cle));
+      await depot.removeItem(suffixeNombre(base));
     },
   };
 }

@@ -1,28 +1,32 @@
-// L'attente bornée, et les trois écrans qui ne doivent plus tourner sans fin.
+// L'attente bornée, et les écrans qui ne doivent plus tourner sans fin.
 //
 // POURQUOI CE FICHIER EXISTE
 // --------------------------
-// Un rond qui tourne sans s'arrêter a été signalé deux fois depuis un
-// téléphone : après la création d'un compte, et à la place du code d'invitation.
-// Les deux ont la même cause de forme, et elle n'est pas dans la logique
-// métier : c'est un `await` dont la promesse peut ne jamais se résoudre, sur un
-// écran qui n'affiche « en cours » que tant qu'il attend.
+// Un rond qui tourne sans s'arrêter a été signalé TROIS fois depuis un
+// téléphone : après la création d'un compte, à la place du code d'invitation,
+// et sur « Mes amis ». Les trois ont la même cause de forme, et elle n'est pas
+// dans la logique métier : c'est un `await` dont la promesse peut ne jamais se
+// résoudre — ou qui REJETTE — sur un écran qui n'affiche « en cours » que tant
+// qu'il attend.
 //
 // La cause est réelle et connue : le client Supabase sérialise la lecture de
 // session derrière un verrou de stockage, et un verrou jamais relâché laisse la
 // promesse en attente indéfiniment. Mais la correction ne dépend pas de cette
-// cause : elle consiste à ne jamais attendre sans borne, ce qui rend le défaut
-// impossible **quelle que soit** la raison pour laquelle une promesse ne rend
-// pas — réseau, verrou, récursion, bibliothèque.
+// cause : elle consiste à ne jamais attendre sans borne, et à ne jamais laisser
+// un état d'attente sans sortie — ce qui rend le défaut impossible **quelle que
+// soit** la raison pour laquelle une promesse ne rend pas : réseau, verrou,
+// récursion, bibliothèque.
 //
 // CE QUI SE VÉRIFIE ICI
 // ---------------------
 // Deux choses, et il faut les deux :
 //
 //   - le **comportement** de l'attente bornée, qui se calcule donc se teste ;
-//   - la **forme** des trois écrans : l'indicateur qui peut tourner doit avoir
-//     une sortie dans tous les cas, et l'état « en cours » doit être retiré
-//     dans un `finally` et non après le dernier `await`.
+//   - la **forme** des écrans concernés : l'indicateur qui peut tourner doit
+//     avoir une sortie dans tous les cas, l'état « en cours » doit être retiré
+//     dans un `finally` et non après le dernier `await`, un REJET doit être
+//     rattrapé — une borne ne l'arrête pas — et un état qui attend doit avoir
+//     une échéance.
 //
 // Un test de comportement seul ne suffirait pas : on peut écrire une attente
 // bornée parfaite et ne jamais l'appeler. Un test de forme seul ne suffirait
@@ -261,6 +265,38 @@ test('la section des amis ne laisse pas « connecte » à null quand la session 
   // est le seul qui affiche un indicateur, et il doit être atteignable par un
   // chemin borné.
   assert.match(source, /if \(connecte === null\)/, 'l’état inconnu existe toujours');
+
+  // LA BORNE NE COUVRE PAS LE REJET, et c'est la moitié du défaut qui manquait.
+  // `Promise.race` rend la première promesse qui s'achève — un rejet est un
+  // achèvement, il remonte donc tel quel. Mesuré : `getSession()` rejette quand
+  // le stockage refuse une clé. Sans rattrapage, `setConnecte` n'est jamais
+  // atteint et `connecte` reste `null` : le rond, indéfiniment.
+  assert.match(
+    source,
+    /\n    \} catch \{\n/,
+    'un rejet doit être rattrapé : la borne ne l’arrête pas'
+  );
+
+  // Et l'état de panne doit être rendu AVANT l'état inconnu. Placé après, il ne
+  // servirait à rien : `connecte === null` gagnerait et l'indicateur
+  // reviendrait exactement là où la panne vient d'être constatée.
+  assert.match(
+    source,
+    /if \(panne !== null\) \{/,
+    'le rejet doit mener à un état affichable'
+  );
+  assert.ok(
+    source.indexOf('if (panne !== null) {') < source.indexOf('if (connecte === null) {'),
+    'l’état de panne doit être rendu avant l’état inconnu, sinon le rond gagne'
+  );
+
+  // Et l'état de panne offre un moyen d'agir : un échec sans recours vaut un
+  // échec qu'on subit.
+  assert.match(
+    source,
+    /accessibilityLabel="Réessayer de lire la progression des amis"/,
+    'la panne doit offrir un moyen d’agir'
+  );
 });
 
 test('l’écran des amis arrête son indicateur dans un finally et offre un réessai', () => {
@@ -295,6 +331,23 @@ test('l’écran des amis arrête son indicateur dans un finally et offre un ré
     source,
     /accessibilityLabel="Réessayer d’obtenir le code"/,
     'l’échec doit offrir un moyen d’agir'
+  );
+
+  // Un rejet doit être rattrapé, ici aussi : `finally` ferme les trois issues
+  // ordinaires, mais il ne les NOMME pas. Sans `catch`, un rejet part en rejet
+  // non traité et l'écran se referme sans rien dire.
+  assert.match(
+    source,
+    /\n    \} catch \{\n/,
+    'un rejet doit être rattrapé sur l’écran des amis'
+  );
+
+  // Et la liste a une sortie quand elle n'a pas pu être lue. Sans elle, la
+  // section restait vide sous son titre : ni liste, ni phrase, ni rond.
+  assert.match(
+    source,
+    /\{!chargement && amis === null && \(/,
+    'la liste doit dire quelque chose quand elle n’a pas pu être lue'
   );
 });
 
@@ -380,4 +433,65 @@ test('aucun écran n’attend la session sans borne', () => {
       );
     });
   }
+});
+
+test('l’écran du lien de courriel ne reste pas dans un état d’attente sans sortie', () => {
+  // Signalé depuis un téléphone, et sous une troisième forme : le lien ouvre
+  // bien l'application, l'écran s'affiche, et « Ouverture du lien… » reste là
+  // — sans bouton, sans erreur, sans fin. Deux causes distinctes, et il faut
+  // les deux garde-fous.
+  const source = lire('app/lien.tsx');
+
+  // (1) L'échange des jetons peut REJETER, pas seulement rendre `{ ok: false }`.
+  // Mesuré : `client.auth.setSession` rejette quand le stockage refuse une clé,
+  // parce qu'il écrit la session. Sans rattrapage, l'écran ne dit rien.
+  //
+  // L'ancre porte le commentaire qui suit le `catch`, et c'est nécessaire :
+  // l'écran a DEUX `catch (erreur)`, et chercher le mot seul passerait encore
+  // si l'on retirait celui-ci.
+  assert.match(
+    source,
+    /\} catch \(erreur\) \{\n      \/\/ `ouvrirSessionDepuisLien` peut REJETER/,
+    'un rejet de l’échange doit être rattrapé'
+  );
+
+  // (2) Les deux états d'attente — aucune adresse reçue, et échange en cours —
+  // doivent avoir une échéance. Un état qui attend sans échéance est un rond
+  // qui tourne, même sans indicateur.
+  assert.match(
+    source,
+    /if \(etat\.nom !== 'attente' && etat\.nom !== 'ouverture'\) return;/,
+    'les deux états d’attente doivent être reconnus'
+  );
+  assert.match(
+    source,
+    /nom: 'probleme', message: MESSAGE_SANS_SORTIE\[attendu\]/,
+    'l’échéance doit mener à un état affichable'
+  );
+
+  // (3) Et elle ne rétrograde QUE l'état observé : écraser un état déjà avancé
+  // effacerait une réussite — une session ouverte, un lien reconnu.
+  assert.match(
+    source,
+    /precedent\.nom === attendu/,
+    'l’échéance ne doit pas écraser un état déjà avancé'
+  );
+
+  // (4) L'état observé est figé AVANT la pose de l'échéance : sans cette copie,
+  // la comparaison porterait sur l'état courant au moment où la minuterie se
+  // déclenche, et ne comparerait plus rien.
+  assert.match(
+    source,
+    /if \(etat\.nom !== 'attente' && etat\.nom !== 'ouverture'\) return;\n    const attendu = etat\.nom;/,
+    'l’état observé doit être figé avant la pose de l’échéance'
+  );
+
+  // (5) Et l'état d'échec offre une action, sinon l'échec est subi. C'est le
+  // seul état de cet écran qui propose un bouton : sans lui, l'échéance
+  // remplacerait un rond qui tourne par une impasse.
+  assert.match(
+    source,
+    /etat\.nom === 'probleme'[\s\S]{0,500}Retour au profil/,
+    'l’état d’échec doit offrir une action'
+  );
 });

@@ -1,6 +1,6 @@
 {
   "name": "hifdh-app",
-  "version": "1.6.5",
+  "version": "1.6.6",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -36,6 +36,7 @@
     "falsifier:geste-page": "python scripts/falsifier_geste_page.py",
     "falsifier:amis": "python scripts/falsifier_amis.py",
     "falsifier:attente": "python scripts/falsifier_attente.py",
+    "falsifier:stockage": "python scripts/falsifier_stockage.py",
     "falsifier:surlignage": "python scripts/falsifier_surlignage.py",
     "falsifier:discussion": "python scripts/falsifier_discussion.py",
     "falsifier:lien": "python scripts/falsifier_lien.py",

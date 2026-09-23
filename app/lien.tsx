@@ -60,6 +60,30 @@ type Etat =
   | { nom: 'confirme' }
   | { nom: 'probleme'; message: string };
 
+/**
+ * Le délai au-delà duquel un état d'attente devient un problème à dire.
+ *
+ * `attente` — aucune adresse reçue — et `ouverture` — échange des jetons — sont
+ * les deux seuls états où l'écran ne fait qu'attendre, et ni l'un ni l'autre
+ * n'offre d'action. Un lien qui n'atteint pas l'écran, ou un échange qui ne
+ * rend pas, les laissait donc affichés POUR TOUJOURS : signalé depuis un
+ * téléphone, et impossible à distinguer d'un traitement en cours.
+ *
+ * Huit secondes : au-delà, l'utilisateur n'attend plus rien d'utile, et la
+ * seule action qui compte — demander un nouveau lien depuis le Profil — doit
+ * lui être proposée.
+ */
+const DELAI_SANS_SORTIE_MS = 8000;
+
+/** Ce qu'on dit quand l'attente n'a pas abouti. Une action, à chaque fois. */
+const MESSAGE_SANS_SORTIE: Record<'attente' | 'ouverture', string> = {
+  attente:
+    'Aucun lien n’a été reçu. Demandez-en un nouveau depuis l’écran Profil, puis ouvrez-le ' +
+    'depuis la messagerie de ce téléphone.',
+  ouverture:
+    'Le lien n’a pas pu être ouvert. Demandez-en un nouveau depuis l’écran Profil.',
+};
+
 export default function LienScreen() {
   // `useURL` rend l'adresse qui a ouvert l'application, et la met à jour quand
   // une nouvelle arrive. Elle couvre donc les deux cas : application fermée
@@ -83,56 +107,71 @@ export default function LienScreen() {
   const dejaTraite = useRef<string | null>(null);
 
   const traiter = useCallback(async (adresse: string) => {
-    const lu = lireLienAuth(adresse);
+    try {
+      const lu = lireLienAuth(adresse);
 
-    if (lu.erreur !== null) {
-      setEtat({ nom: 'probleme', message: lu.erreur });
-      return;
-    }
-
-    if (lu.type === 'confirmation') {
-      // Le lien de confirmation a déjà validé l'adresse côté Supabase : il n'y
-      // a rien à échanger. Si des jetons sont là, on ouvre la session, ce qui
-      // évite une reconnexion — mais ce n'est pas indispensable.
-      if (lienPorteDesJetons(lu) && lu.refreshToken !== null) {
-        await ouvrirSessionDepuisLien(lu.accessToken ?? '', lu.refreshToken);
-      }
-      setEtat({ nom: 'confirme' });
-      return;
-    }
-
-    if (lienDemandeUnNouveauMotDePasse(lu)) {
-      if (!lienPorteDesJetons(lu) || lu.refreshToken === null) {
-        // Sans jetons, il n'y a rien à ouvrir. C'est le cas d'un lien PKCE
-        // (`?code=…`) : l'échange exigerait le vérificateur déposé par
-        // l'appareil qui a DEMANDÉ le lien. Suivre le lien sur un autre
-        // appareil ne peut donc pas marcher, et le dire vaut mieux qu'un
-        // échec muet.
-        setEtat({
-          nom: 'probleme',
-          message:
-            'Ce lien doit être ouvert sur le téléphone qui a demandé la ' +
-            'réinitialisation. Demandez-en un nouveau depuis l’application.',
-        });
+      if (lu.erreur !== null) {
+        setEtat({ nom: 'probleme', message: lu.erreur });
         return;
       }
 
-      setEtat({ nom: 'ouverture' });
-      const resultat = await ouvrirSessionDepuisLien(lu.accessToken ?? '', lu.refreshToken);
-      if (!resultat.ok) {
-        setEtat({ nom: 'probleme', message: resultat.message });
+      if (lu.type === 'confirmation') {
+        // Le lien de confirmation a déjà validé l'adresse côté Supabase : il n'y
+        // a rien à échanger. Si des jetons sont là, on ouvre la session, ce qui
+        // évite une reconnexion — mais ce n'est pas indispensable.
+        if (lienPorteDesJetons(lu) && lu.refreshToken !== null) {
+          await ouvrirSessionDepuisLien(lu.accessToken ?? '', lu.refreshToken);
+        }
+        setEtat({ nom: 'confirme' });
         return;
       }
-      setEtat({ nom: 'motDePasse' });
-      return;
-    }
 
-    setEtat({
-      nom: 'probleme',
-      message:
-        'Ce lien n’a pas pu être reconnu. Demandez-en un nouveau depuis ' +
-        'l’application, dans l’écran Profil.',
-    });
+      if (lienDemandeUnNouveauMotDePasse(lu)) {
+        if (!lienPorteDesJetons(lu) || lu.refreshToken === null) {
+          // Sans jetons, il n'y a rien à ouvrir. C'est le cas d'un lien PKCE
+          // (`?code=…`) : l'échange exigerait le vérificateur déposé par
+          // l'appareil qui a DEMANDÉ le lien. Suivre le lien sur un autre
+          // appareil ne peut donc pas marcher, et le dire vaut mieux qu'un
+          // échec muet.
+          setEtat({
+            nom: 'probleme',
+            message:
+              'Ce lien doit être ouvert sur le téléphone qui a demandé la ' +
+              'réinitialisation. Demandez-en un nouveau depuis l’application.',
+          });
+          return;
+        }
+
+        setEtat({ nom: 'ouverture' });
+        const resultat = await ouvrirSessionDepuisLien(lu.accessToken ?? '', lu.refreshToken);
+        if (!resultat.ok) {
+          setEtat({ nom: 'probleme', message: resultat.message });
+          return;
+        }
+        setEtat({ nom: 'motDePasse' });
+        return;
+      }
+
+      setEtat({
+        nom: 'probleme',
+        message:
+          'Ce lien n’a pas pu être reconnu. Demandez-en un nouveau depuis ' +
+          'l’application, dans l’écran Profil.',
+      });
+    } catch (erreur) {
+      // `ouvrirSessionDepuisLien` peut REJETER, et pas seulement rendre
+      // `{ ok: false }`. Mesuré : `client.auth.setSession` rejette quand le
+      // stockage refuse une clé, parce qu'il écrit la session. Sans ce
+      // rattrapage, l'écran restait sur « Vérification du lien… » sans jamais
+      // rien dire — et le rejet partait en rejet non traité.
+      setEtat({
+        nom: 'probleme',
+        message:
+          erreur instanceof Error
+            ? `Le lien n’a pas pu être traité : ${erreur.message}`
+            : 'Le lien n’a pas pu être traité. Demandez-en un nouveau depuis l’écran Profil.',
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -141,6 +180,31 @@ export default function LienScreen() {
     dejaTraite.current = url;
     void traiter(url);
   }, [url, traiter]);
+
+  // AUCUN ÉTAT D'ATTENTE NE DOIT DURER SANS SORTIE.
+  //
+  // C'est la garantie que cet écran n'avait pas, et c'est ce qui a été signalé
+  // depuis un téléphone : le lien ouvre bien l'application, l'écran s'affiche,
+  // et « Ouverture du lien… » reste là — sans bouton, sans erreur, sans fin.
+  // Un état qui attend doit avoir une échéance, et son échéance doit proposer
+  // l'action utile.
+  //
+  // On ne rétrograde QUE l'état observé : si `traiter` a entre-temps avancé —
+  // la session s'est ouverte, le lien a été reconnu — on ne l'écrase pas.
+  useEffect(() => {
+    if (etat.nom !== 'attente' && etat.nom !== 'ouverture') return;
+    const attendu = etat.nom;
+
+    const minuterie = setTimeout(() => {
+      setEtat((precedent) =>
+        precedent.nom === attendu
+          ? { nom: 'probleme', message: MESSAGE_SANS_SORTIE[attendu] }
+          : precedent
+      );
+    }, DELAI_SANS_SORTIE_MS);
+
+    return () => clearTimeout(minuterie);
+  }, [etat.nom]);
 
   const enregistrer = async () => {
     const probleme = verifierNouveauMotDePasse(motDePasse);

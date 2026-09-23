@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hifdh - Memorisation du Coran",
     "slug": "hifdh-app",
-    "version": "1.6.5",
+    "version": "1.6.6",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hifdh",
@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "11",
+      "buildNumber": "12",
       "bundleIdentifier": "com.hifdh.app",
       "infoPlist": {
         "UIAppFonts": [
@@ -21,7 +21,7 @@
       }
     },
     "android": {
-      "versionCode": 11,
+      "versionCode": 12,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#04361F"

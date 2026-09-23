@@ -52,41 +52,61 @@ export function AmisSection() {
   const [code, setCode] = useState<string | null>(null);
   const [amis, setAmis] = useState<PointAmi[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  // Une PANNE de lecture, distincte de `erreur` : celle-ci vient d'une réponse
+  // de la base, celle-là d'un appel qui a échoué avant d'en obtenir une.
+  const [panne, setPanne] = useState<string | null>(null);
 
   const charger = useCallback(async () => {
     if (!configure) {
       setConnecte(false);
       return;
     }
-    // `utilisateurCourant()` peut ne jamais rendre : la lecture de session se
-    // sérialise derrière un verrou de stockage, et un verrou jamais relâché
-    // laisse la promesse en attente indéfiniment. Ici, ce n'est pas un détail :
-    // `connecte` reste `null` — et `null` affiche un rond qui tourne. On borne
-    // donc l'attente, et un délai dépassé vaut « pas connecté », qui est un
-    // état que l'écran sait déjà montrer.
-    const oui = await repondreDans(utilisateurCourant(), DELAI_SESSION_MS);
-    if (oui === DELAI_DEPASSE) {
-      setConnecte(false);
-      return;
-    }
-    const connecte = oui !== null;
-    setConnecte(connecte);
-    if (!connecte) return;
+    setPanne(null);
+    try {
+      // `utilisateurCourant()` peut ne jamais rendre : la lecture de session se
+      // sérialise derrière un verrou de stockage, et un verrou jamais relâché
+      // laisse la promesse en attente indéfiniment. Ici, ce n'est pas un détail :
+      // `connecte` reste `null` — et `null` affiche un rond qui tourne. On borne
+      // donc l'attente, et un délai dépassé vaut « pas connecté », qui est un
+      // état que l'écran sait déjà montrer.
+      const oui = await repondreDans(utilisateurCourant(), DELAI_SESSION_MS);
+      if (oui === DELAI_DEPASSE) {
+        setConnecte(false);
+        return;
+      }
+      const connecte = oui !== null;
+      setConnecte(connecte);
+      if (!connecte) return;
 
-    const resultatCode = await monCodeAmi();
-    if (resultatCode.statut === 'ok') {
-      setCode(resultatCode.code);
-      setErreur(null);
-    } else if (resultatCode.statut === 'erreur') {
-      setErreur(resultatCode.message);
-    }
+      const resultatCode = await monCodeAmi();
+      if (resultatCode.statut === 'ok') {
+        setCode(resultatCode.code);
+        setErreur(null);
+      } else if (resultatCode.statut === 'erreur') {
+        setErreur(resultatCode.message);
+      }
 
-    const resultat = await mesAmis();
-    if (resultat.statut === 'ok') {
-      setAmis(resultat.amis);
-      setErreur(null);
-    } else if (resultat.statut === 'erreur') {
-      setErreur(resultat.message);
+      const resultat = await mesAmis();
+      if (resultat.statut === 'ok') {
+        setAmis(resultat.amis);
+        setErreur(null);
+      } else if (resultat.statut === 'erreur') {
+        setErreur(resultat.message);
+      }
+    } catch {
+      // LA BORNE NE COUVRE PAS LE REJET, et c'est ce qui a coûté un rond sans
+      // fin. `Promise.race` rend la première promesse qui s'achève — or un rejet
+      // est un achèvement : il remonte donc tel quel, sans être confondu avec un
+      // délai. Mesuré : `getSession()` rejette quand le stockage refuse une clé.
+      // Sans ce rattrapage, `setConnecte` n'était jamais atteint, `connecte`
+      // restait `null`, et `null` affiche un indicateur — indéfiniment.
+      //
+      // On ne rétrograde que l'état INCONNU : si la session avait déjà été lue,
+      // la dire « pas connecté » serait un mensonge. C'est `panne` qui parle.
+      setConnecte((etat) => (etat === null ? false : etat));
+      setPanne(
+        "La progression des amis n'a pas pu être lue. Vérifiez votre connexion, puis réessayez."
+      );
     }
   }, [configure]);
 
@@ -108,6 +128,28 @@ export function AmisSection() {
             Le suivi entre amis nécessite la sauvegarde en ligne, qui n’est pas configurée sur
             cette version de l’application.
           </Text>
+        </Card>
+      </>
+    );
+  }
+
+  if (panne !== null) {
+    // Rendue AVANT l'état inconnu : sinon `connecte === null` gagnerait, et
+    // l'indicateur reviendrait là même où la panne vient d'être constatée.
+    return (
+      <>
+        <Text style={styles.sectionTitle}>Mes amis</Text>
+        <Card>
+          <Text style={styles.texte}>{panne}</Text>
+          <Pressable
+            style={[styles.bouton, styles.boutonApres]}
+            onPress={charger}
+            accessibilityRole="button"
+            accessibilityLabel="Réessayer de lire la progression des amis"
+          >
+            <Ionicons name="refresh-outline" size={20} color={colors.textOnPrimary} />
+            <Text style={styles.texteBouton}>Réessayer</Text>
+          </Pressable>
         </Card>
       </>
     );
@@ -290,6 +332,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     paddingVertical: spacing.md,
     gap: spacing.sm,
+  },
+  boutonApres: {
+    marginTop: spacing.lg,
   },
   texteBouton: {
     color: colors.textOnPrimary,

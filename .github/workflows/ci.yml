@@ -234,6 +234,23 @@ jobs:
       - name: Falsifier les contrôles de l'attente bornée
         run: npm run falsifier:attente
 
+      # Et le stockage morcelé de la session — parce que c'est LUI qui faisait
+      # tourner le rond. `expo-secure-store` refuse toute clé hors de
+      # `[A-Za-z0-9._-]`, et il refuse en LEVANT ; or les clés composées
+      # portaient un `::`. Chaque lecture et chaque écriture de session levait
+      # donc. Deux symptômes signalés depuis un téléphone, une seule cause : la
+      # connexion échouait alors que les identifiants étaient bons, et
+      # `getSession()` rejetait au lieu de rendre `null`, ce qui laissait
+      # « Mes amis » sur un rond sans fin — `connecte` n'étant jamais posé.
+      #
+      # Le banc ne pouvait pas le voir : il employait un dépôt EN MÉMOIRE qui
+      # acceptait n'importe quelle clé, et il écrivait `'session::nb'` en toutes
+      # lettres. Il confronte maintenant chaque clé à la règle RÉELLE, lue dans
+      # le paquet installé. La mutation qui remet le `::` est détectée, et elle
+      # ne l'aurait pas été avant.
+      - name: Falsifier les contrôles du stockage morcelé
+        run: npm run falsifier:stockage
+
       # Et le surlignage de la séance avec la forme du lecteur. Le calcul est
       # éprouvé ; ce qui ne se calcule pas — la place d'une bande, sa hauteur,
       # l'ordre avec l'image — est tenu par des contrôles qui réintroduisent
