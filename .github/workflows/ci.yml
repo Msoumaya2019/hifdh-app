@@ -77,6 +77,15 @@ jobs:
       - name: Vérifier la pagination du moushaf
         run: npm run verifier:pages
 
+      # La pagination dit quels versets une page porte ; elle ne dit pas d'où
+      # vient son IMAGE. Or cette source doit rester unique et bornée : recopier
+      # l'adresse ailleurs, ou laisser le lecteur recomposer la page, remettrait
+      # deux vérités en circulation. Le second cas est le plus coûteux, parce
+      # qu'il ne se signale pas — une page recomposée s'affiche, et elle ne
+      # ressemble pas à la page imprimée sans qu'aucun test ne le dise.
+      - name: Vérifier la source des images de page
+        run: npm run verifier:pages-moushaf
+
       # La pagination dit quels versets une page porte ; elle ne dit pas où
       # chaque mot tombe. `moushaf_layout.json` porte les coupures de ligne du
       # moushaf imprimé — quinze lignes par page, chaque élément désignant un
@@ -171,6 +180,18 @@ jobs:
       - name: Falsifier les contrôles de la page du moushaf
         run: npm run falsifier:moushaf
 
+      # Et pour la SOURCE des images de page : dix mutations, du nombre de pages
+      # annoncé faux à l'URL recopiée hors de son module, en passant par le
+      # `resizeMode` retiré — l'image serait alors déformée — et par le repli sur
+      # l'URL distante supprimé, qui laisserait une page vide sans le dire.
+      #
+      # Il complète le précédent : celui-ci garde la page telle qu'elle se
+      # dessine, celui-là garde d'où vient ce qui est dessiné. Le second garde en
+      # particulier `LecteurPageMoushaf.tsx` — le fichier que l'on touche dès
+      # qu'on change les commandes de lecture.
+      - name: Falsifier les contrôles de la source des images de page
+        run: npm run falsifier:pages-moushaf
+
       # Et pour l'accès au texte : trois mutations du code de `quranData.ts`,
       # dont le rang du verset qui cesse d'être vérifié. Ce défaut-là a vécu
       # sans être vu — `getAyahText(29, 70)` rendait 30:1, basmala comprise,
@@ -261,6 +282,20 @@ jobs:
       # séance était seulement transmise à la page.
       - name: Falsifier les contrôles du surlignage et du lecteur
         run: npm run falsifier:surlignage
+
+      # Et pour les objectifs et les rythmes de l'inscription : quinze mutations.
+      #
+      # Le défaut visé est MUET. Le rendu parcourt `ORDRE_NIVEAUX`, puis filtre
+      # `RYTHMES` par niveau ; un rythme rangé sous un niveau absent de cette
+      # liste n'apparaîtrait donc NULLE PART — ni erreur, ni écran vide, ni
+      # journal : une proposition en moins, que personne ne réclame. Deux
+      # mutations portent précisément là-dessus.
+      #
+      # Le questionnaire est aussi le seul endroit où une quantité fausse se
+      # propage sans bruit dans tout l'algorithme de progression : un rythme dont
+      # la quantité dérive ne casse rien, il fait travailler trop ou trop peu.
+      - name: Falsifier les objectifs et les rythmes
+        run: npm run falsifier:objectifs
 
       # L'espace de discussion entre deux amis : un fil de mots, modéré.
       #

@@ -28,7 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { Card } from '@/components/Card';
-import { colors, fontSizes, spacing, radii } from '@/theme';
+import { colors, fontSizes, spacing, radii, useStyles, type Palette } from '@/theme';
 import type { PointAmi } from '@/lib/amis';
 import {
   codePlausible,
@@ -42,6 +42,7 @@ import {
 import { ajouterAmiParCode, mesAmis, monCodeAmi, regenererMonCodeAmi, retirerAmi } from '@/lib/sync/amis';
 
 export default function AmisScreen() {
+  const styles = useStyles(creerStyles);
   const [code, setCode] = useState<string | null>(null);
   const [saisie, setSaisie] = useState('');
   const [amis, setAmis] = useState<PointAmi[] | null>(null);
@@ -397,7 +398,7 @@ export default function AmisScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   ecran: {
     flex: 1,
     backgroundColor: colors.background,

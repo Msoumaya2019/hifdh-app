@@ -1,19 +1,49 @@
 // Écran Profil - Configuration et réglages
 
-import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, RefreshControl } from 'react-native';
+import { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Alert,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { SauvegardeSection } from '@/components/SauvegardeSection';
 import { AmisSection } from '@/components/AmisSection';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import {
+  colors,
+  fontSizes,
+  fonts,
+  spacing,
+  radii,
+  fontWeights,
+  useStyles,
+  useTheme,
+  LIBELLES_PALETTES,
+  ORDRE_PALETTES,
+  PALETTES,
+  PALETTE_PAR_DEFAUT,
+  type NomPalette,
+  type Palette,
+} from '@/theme';
 import { getUserConfig, saveUserConfig, getMemorizedPassages, getReviewItemCount } from '@/lib/database';
+import { EFFACEURS_APPAREIL } from '@/lib/effaceursAppareil';
+import {
+  messageDeSucces,
+  messageEnCasDEchec,
+  reinitialiserTout,
+} from '@/lib/reinitialisation';
 import { getCompteLimitesEstimees } from '@/data/quranData';
 import { formatDate, getDayName } from '@/lib/progress';
 import { libelleObjectif, libelleRythme } from '@/lib/libelles';
 import type { UserConfig, MemorizedPassage } from '@/types';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Constants from 'expo-constants';
 
 // Le compte des limites estimees se lit dans les donnees, pour la meme raison
@@ -23,7 +53,9 @@ import Constants from 'expo-constants';
 const compteToumoun = getCompteLimitesEstimees();
 
 export default function ProfilScreen() {
+  const styles = useStyles(creerStyles);
   const router = useRouter();
+  const { nom: nomTheme, changerTheme } = useTheme();
   // La version se lit dans `app.json`, par `expo-constants`. La recopier ici en
   // dur l'a fait mentir dès la première montée de version : l'écran annonçait
   // 1.0.0 alors que le paquet était estampillé 1.0.2.
@@ -32,6 +64,7 @@ export default function ProfilScreen() {
   const [memorized, setMemorized] = useState<MemorizedPassage[]>([]);
   const [reviewCount, setReviewCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [remiseAZero, setRemiseAZero] = useState(false);
 
   const loadData = useCallback(async () => {
     const cfg = await getUserConfig();
@@ -42,9 +75,19 @@ export default function ProfilScreen() {
     setReviewCount(rc);
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // `useFocusEffect` et non `useEffect` : cet écran doit se relire en revenant.
+  //
+  // Un écran d'onglet reste monté. Au retour du questionnaire — et donc après
+  // une remise à zéro, qui y renvoie — un `useEffect` ne se rejouerait pas, et
+  // l'écran continuerait d'annoncer les versets mémorisés d'avant. C'est
+  // exactement le symptôme qui a fait demander un bouton de remise à zéro : il
+  // ne suffit pas que les données partent, il faut aussi que l'écran cesse de
+  // les montrer.
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -64,6 +107,74 @@ export default function ProfilScreen() {
         },
       ]
     );
+  };
+
+  /**
+   * La remise à zéro, en deux temps.
+   *
+   * Deux confirmations, et non une seule : la première annonce ce qui va être
+   * perdu, la seconde demande de le confirmer une fois que c'est lu. Un
+   * effacement définitif de la progression ne se déclenche pas sur un appui
+   * mal placé.
+   */
+  const handleReinitialiser = () => {
+    Alert.alert(
+      'Tout réinitialiser ?',
+      'Cette action efface définitivement ta progression : passages mémorisés, séances, révisions espacées, pages gardées hors ligne, et ta connexion. Elle est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Continuer', style: 'destructive', onPress: confirmerReinitialisation },
+      ]
+    );
+  };
+
+  const confirmerReinitialisation = () => {
+    Alert.alert(
+      'Confirmer définitivement',
+      'Dernière vérification : tout sera effacé, et l’application repartira comme à l’installation. Confirmer ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Tout effacer', style: 'destructive', onPress: executerReinitialisation },
+      ]
+    );
+  };
+
+  const executerReinitialisation = async () => {
+    setRemiseAZero(true);
+    try {
+      const resultat = await reinitialiserTout(EFFACEURS_APPAREIL);
+
+      // Le magasin clé-valeur vient d'être vidé : la préférence de thème est
+      // partie avec lui. Le fournisseur, lui, garde la palette en mémoire —
+      // il faut donc la lui redire, sans quoi l'écran resterait rose après une
+      // remise à zéro, alors que l'ouverture suivante afficherait du vert :
+      // deux affichages différents de la même application.
+      changerTheme(PALETTE_PAR_DEFAUT);
+
+      if (resultat.echecs.length === 0) {
+        Alert.alert('Remise à zéro', messageDeSucces(), [
+          { text: 'Recommencer', onPress: () => router.replace('/onboarding') },
+        ]);
+        return;
+      }
+
+      // Une partie seulement a été effacée. On ne renvoie PAS au questionnaire :
+      // y aller alors que la progression est restée ferait recalculer le
+      // programme sur les anciennes données, et l'utilisateur croirait avoir
+      // tout perdu sans que rien n'ait changé.
+      Alert.alert('Remise à zéro incomplète', messageEnCasDEchec(resultat));
+    } catch (erreur) {
+      // `reinitialiserTout` rapporte ses échecs au lieu de les lever ; ce
+      // `catch` ne doit donc jamais servir. Il est là pour qu'une panne
+      // inattendue soit DITE, plutôt que de laisser l'écran sans réponse.
+      Alert.alert(
+        'Remise à zéro',
+        "La remise à zéro n'a pas pu être menée à son terme. Ferme puis rouvre l'application, et réessaie."
+      );
+      void erreur;
+    } finally {
+      setRemiseAZero(false);
+    }
   };
 
   const memorizedCount = memorized.filter((m) => m.level !== 'unknown')
@@ -115,6 +226,26 @@ export default function ProfilScreen() {
             label="Jours d'apprentissage"
             value={config ? config.schedule.days.map(getDayName).join(', ') : 'Non défini'}
           />
+        </Card>
+
+        {/* Apparence */}
+        <Text style={styles.sectionTitle}>Apparence</Text>
+
+        <Card>
+          <Text style={styles.aide}>
+            Choisis la couleur de l’application. Le changement est immédiat, et
+            conservé à la prochaine ouverture.
+          </Text>
+          <View style={styles.themeRow}>
+            {ORDRE_PALETTES.map((nom) => (
+              <ChoixTheme
+                key={nom}
+                nom={nom}
+                actif={nom === nomTheme}
+                onChoisir={changerTheme}
+              />
+            ))}
+          </View>
         </Card>
 
         {/* Connaissances */}
@@ -173,13 +304,90 @@ export default function ProfilScreen() {
           </Text>
         </Card>
 
+        {/* La remise à zéro. En dernier, et sous un titre qui prévient : c'est
+            la seule commande de l'écran qui détruise quelque chose. */}
+        <Text style={styles.sectionTitle}>Repartir de zéro</Text>
+
+        <Pressable
+          style={[styles.actionRow, styles.actionDanger]}
+          onPress={handleReinitialiser}
+          disabled={remiseAZero}
+          accessibilityRole="button"
+          accessibilityLabel="Tout réinitialiser"
+          accessibilityState={{ disabled: remiseAZero }}
+        >
+          {remiseAZero ? (
+            <ActivityIndicator size="small" color={colors.error} />
+          ) : (
+            <Ionicons name="trash-outline" size={20} color={colors.error} />
+          )}
+          <Text style={[styles.actionText, styles.actionTextDanger]}>
+            {remiseAZero ? 'Effacement en cours…' : 'Tout réinitialiser'}
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
+
+        <Text style={styles.avertissement}>
+          Efface la progression, les séances, les révisions, les pages gardées
+          hors ligne et la connexion. L’application redevient comme au premier
+          lancement.
+        </Text>
+
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+/**
+ * Une pastille de thème.
+ *
+ * L'aperçu montre les DEUX jetons qui font un thème : le fond de l'écran et la
+ * couleur principale. Une pastille qui n'en montrerait qu'un — la principale,
+ * par exemple — ne dirait rien du thème noir, dont le fond est l'essentiel.
+ */
+function ChoixTheme({
+  nom,
+  actif,
+  onChoisir,
+}: {
+  nom: NomPalette;
+  actif: boolean;
+  onChoisir: (nom: NomPalette) => void;
+}) {
+  const styles = useStyles(creerStyles);
+  const palette = PALETTES[nom];
+
+  return (
+    <Pressable
+      style={styles.themeChoix}
+      onPress={() => onChoisir(nom)}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: actif }}
+      accessibilityLabel={`Thème ${LIBELLES_PALETTES[nom]}`}
+    >
+      <View
+        style={[
+          styles.themeApercu,
+          { backgroundColor: palette.background },
+          actif && { borderColor: colors.primary, borderWidth: 2 },
+        ]}
+      >
+        <View style={[styles.themePastille, { backgroundColor: palette.primary }]}>
+          {actif && (
+            <Ionicons name="checkmark" size={14} color={palette.textOnPrimary} />
+          )}
+        </View>
+      </View>
+      <Text style={[styles.themeNom, actif && styles.themeNomActif]}>
+        {LIBELLES_PALETTES[nom]}
+      </Text>
+    </Pressable>
+  );
+}
+
 function ConfigRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  const styles = useStyles(creerStyles);
   return (
     <View style={styles.configRow}>
       <Ionicons name={icon as any} size={20} color={colors.primary} />
@@ -199,7 +407,7 @@ function getScheduleLabel(config: UserConfig): string {
   return libelleRythme(config.schedule.unit);
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -252,6 +460,46 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: spacing.sm,
   },
+  aide: {
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  themeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  themeChoix: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  themeApercu: {
+    width: 52,
+    height: 52,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themePastille: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeNom: {
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+  },
+  themeNomActif: {
+    color: colors.textPrimary,
+    fontWeight: fontWeights.semibold,
+  },
   configRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,6 +550,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSizes.md,
     color: colors.textPrimary,
+  },
+  actionDanger: {
+    borderColor: colors.error,
+  },
+  actionTextDanger: {
+    color: colors.error,
+  },
+  avertissement: {
+    fontSize: fontSizes.xs,
+    color: colors.textTertiary,
+    lineHeight: 18,
+    paddingHorizontal: spacing.xs,
   },
   aboutText: {
     fontSize: fontSizes.sm,

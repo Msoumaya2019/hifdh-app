@@ -50,7 +50,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
 import {
   getSurah,
   loadQuranText,
@@ -72,6 +72,7 @@ import {
 import type { Surah, UserConfig } from '@/types';
 
 export default function LecteurScreen() {
+  const styles = useStyles(creerStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{
     surah: string;
@@ -211,28 +212,47 @@ export default function LecteurScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* La sortie de plein écran, portée par l'écran lui-même.
-          Elle est ici, et non seulement dans le composant de page, pour une
+      {/* Les commandes flottantes du plein écran, portées par l'écran lui-même.
+          Elles sont ici, et non seulement dans le composant de page, pour une
           raison précise : un mode plein écran dont la sortie dépend d'un
           composant enfant disparaît avec lui. Si la page échoue à charger, si
-          l'image ne s'affiche pas, le bouton doit rester — sans quoi l'écran
-          devient un cul-de-sac. */}
+          l'image ne s'affiche pas, les boutons doivent rester — sans quoi
+          l'écran devient un cul-de-sac.
+
+          Deux commandes, et non une : REVENIR EN ARRIÈRE — quitter le lecteur —
+          et QUITTER LE PLEIN ÉCRAN sont deux gestes différents. Le lecteur en
+          plein écran n'en offrait aucun des deux, et les confondre obligerait à
+          sortir du plein écran avant de pouvoir revenir : un détour pour une
+          chose qu'on veut faire en un geste. */}
       {pleinEcran && (
-        <Pressable
-          style={styles.sortiePleinEcran}
-          onPress={() => setPleinEcran(false)}
-          accessibilityLabel="Quitter le plein écran"
-          accessibilityRole="button"
-          hitSlop={12}
-        >
-          <Ionicons name="contract-outline" size={22} color={colors.textOnPrimary} />
-        </Pressable>
+        <View style={styles.barreHautePleinEcran}>
+          <Pressable
+            style={styles.boutonFlottant}
+            onPress={() => router.back()}
+            accessibilityLabel="Revenir en arrière"
+            accessibilityRole="button"
+            hitSlop={12}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.textOnPrimary} />
+          </Pressable>
+          <Pressable
+            style={styles.boutonFlottant}
+            onPress={() => setPleinEcran(false)}
+            accessibilityLabel="Quitter le plein écran"
+            accessibilityRole="button"
+            hitSlop={12}
+          >
+            <Ionicons name="contract-outline" size={22} color={colors.textOnPrimary} />
+          </Pressable>
+        </View>
       )}
 
       {/* L'en-tête. Masqué en plein écran, qui est désormais l'état par défaut :
           pendant la récitation, le nom de la sourate et les boutons de zoom ne
-          servent à rien. Le bouton de sortie, lui, vit au-dessus de la page —
-          voir `lecteur.tsx` plus haut et `LecteurPageMoushaf`.
+          servent à rien. Les commandes du plein écran — revenir en arrière,
+          quitter le plein écran — vivent au-dessus de la page, juste plus haut ;
+          les flèches de page, elles, sont dans `LecteurPageMoushaf`, qui les
+          garde désormais visibles dans les deux modes.
 
           L'onglet « Verset par verset » qui vivait ici a été retiré : il menait
           à un affichage qu'on ne veut plus montrer. Le mode existe toujours
@@ -289,9 +309,13 @@ export default function LecteurScreen() {
           depuis « À renforcer » se solde (« renforcé / pas encore »). Les deux
           écrivent la même chose au même endroit.
 
-          Elle disparaît en plein écran : c'est un mode de lecture, et juger sa
-          séance ne se fait pas sur une page qu'on feuillette. */}
-      {(sessionId || depuisRenforcement) && !pleinEcran && (
+          Elle reste visible EN PLEIN ÉCRAN. Elle y disparaissait au motif que
+          « juger sa séance ne se fait pas sur une page qu'on feuillette » — un
+          raisonnement tenable, mais qui laissait l'utilisateur réciter sa page
+          sans aucun moyen de dire qu'il l'avait mémorisée. Il devait sortir du
+          plein écran pour cela, c'est-à-dire faire un geste qui n'a rien à voir
+          avec ce qu'il venait faire. */}
+      {(sessionId || depuisRenforcement) && (
         <View style={styles.validationBar}>
           {sessionId ? (
             <>
@@ -351,7 +375,7 @@ function toArabicNumber(num: number): string {
     .join('');
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -372,19 +396,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  // La sortie de plein écran : flottante, au-dessus de la page, dans le coin.
-  // Elle reste visible même si la page ne charge pas.
-  sortiePleinEcran: {
+  // Les commandes flottantes du plein écran : au-dessus de la page, dans le
+  // coin. Elles restent visibles même si la page ne charge pas.
+  barreHautePleinEcran: {
     position: 'absolute',
     top: spacing.xs,
     right: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    zIndex: 10,
+  },
+  boutonFlottant: {
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-    zIndex: 10,
   },
   backButton: {
     padding: spacing.sm,

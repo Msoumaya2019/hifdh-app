@@ -35,7 +35,7 @@ oublié » ne peut servir à personne. Voir §9.
 | Administration Supabase | `supabase/administration.sql`, écrit — **pas encore appliqué** (§3) |
 | Flux de vérification | `ci.yml` : types, tests, données, bornes, falsificateurs, et la construction du tableau de bord |
 | Flux de compilation | `android-apk.yml`, `ios-unsigned.yml` |
-| Version publiée | `v1.6.7` — `hifdh-1.6.7.apk` et `hifdh-1.6.7-non-signe.ipa` |
+| Version publiée | `v1.7.0` — `hifdh-1.7.0.apk` et `hifdh-1.7.0-non-signe.ipa` |
 
 ## 2. Les deux valeurs publiques du projet Supabase
 

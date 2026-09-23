@@ -47,8 +47,16 @@ const DOUBLURES = new Map([
  * Un état partagé entre deux contextes doit donc passer par le DISQUE. Le
  * fichier est relu à chaque `load` : c'est ce qui rend la doublure visible dès
  * qu'elle est posée, sans dépendre de l'ordre des imports.
+ *
+ * Le nom porte le PID DU PROCESSUS. `node --test` ouvre un processus par
+ * fichier de test, et deux fichiers qui écriraient le même dépôt se feraient
+ * perdre mutuellement leurs entrées — un lecteur peut même tomber sur un
+ * fichier à moitié réécrit. La raison complète, et la mesure, sont dans
+ * `scripts/doublures.mjs`. Le chargeur étant évalué dans le MÊME processus que
+ * le test, les deux côtés calculent le même nom.
  */
-const DEPOT_DOUBLURES = new URL('./doublures-deposees.json', import.meta.url);
+const NOM_DEPOT = `doublures-deposees.${process.pid}.json`;
+const DEPOT_DOUBLURES = new URL(`./${NOM_DEPOT}`, import.meta.url);
 
 /** Le registre des doublures, lu du disque. `{}` si rien n'a été déposé. */
 function lireDepot() {

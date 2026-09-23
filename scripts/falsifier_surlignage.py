@@ -161,6 +161,24 @@ MUTATIONS = [
         "    height: '6%',",
         "la bande n'a plus la hauteur d'une ligne : le surlignage serait plus court que le texte",
     ),
+    # === Ce que le plein écran doit LAISSER VISIBLE =========================
+    #
+    # Ces deux mutations REMETTENT ce qui a été retiré : le masquage des
+    # commandes en plein écran. C'est la seule façon d'éprouver un contrôle de
+    # forme qui exige l'ABSENCE d'une condition — on remet la condition, et le
+    # contrôle doit tomber.
+    (
+        C,
+        "<View style={[styles.navigation, pleinEcran && styles.navigationCompacte]}>",
+        "{!pleinEcran && (\n        <View style={styles.navigation}>",
+        "les flèches de page sont remasquées en plein écran",
+    ),
+    (
+        E,
+        "{(sessionId || depuisRenforcement) && (",
+        "{(sessionId || depuisRenforcement) && !pleinEcran && (",
+        "les boutons de mémorisation sont remasqués en plein écran",
+    ),
 ]
 
 # === Les mutations de FORME par réintroduction ==============================

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
 import { getAllSurahs, getAllJuz, getAllHizb, getCompteLimitesEstimees } from '@/data/quranData';
 import { getObjectiveVerseCount, getTotalQuranVerses } from '@/lib/progress';
 import { saveUserConfig, synchroniserPassagesDeclares, getAllSessions, getMemorizedPassages, appliquerRecalcul, getUserConfig } from '@/lib/database';
@@ -38,6 +38,7 @@ const DAY_NAMES = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'
 const compteToumoun = getCompteLimitesEstimees();
 
 export default function OnboardingScreen() {
+  const styles = useStyles(creerStyles);
   const router = useRouter();
   const [step, setStep] = useState(0);
 
@@ -213,6 +214,7 @@ function StepKnowledge({
   memorized: MemorizedPassage[];
   setMemorized: (m: MemorizedPassage[]) => void;
 }) {
+  const styles = useStyles(creerStyles);
   const surahs = getAllSurahs();
   const [ouverte, setOuverte] = useState<number | null>(null);
   const [debut, setDebut] = useState('1');
@@ -496,6 +498,7 @@ function StepObjective({
   objective: Objective;
   setObjective: (o: Objective) => void;
 }) {
+  const styles = useStyles(creerStyles);
   // Le nombre de versets de chaque objectif se mesure, il ne s'écrit pas. Un
   // objectif dont les données ne rendraient aucune plage affiche « à définir »
   // plutôt qu'un « 0 verset » qui ferait croire à un objectif vide.
@@ -652,6 +655,25 @@ function StepObjective({
 
 // === Étape 3: Quel rythme souhaites-tu ? ===
 
+/** Les trois niveaux, du plus léger au plus lourd. */
+const ORDRE_NIVEAUX = ['debutant', 'intermediaire', 'intensif'] as const;
+
+type NiveauRythme = (typeof ORDRE_NIVEAUX)[number];
+
+/**
+ * Ce que chaque niveau demande, en une phrase.
+ *
+ * Écrit ici, dans un `Record` complet : ajouter un niveau oblige à lui donner
+ * un nom et un résumé, sinon le fichier ne compile pas. Un niveau sans libellé
+ * afficherait un titre vide, au-dessus de ses choix — l'apprenant verrait trois
+ * groupes dont l'un n'a pas de nom.
+ */
+const LIBELLES_NIVEAUX: Record<NiveauRythme, { nom: string; resume: string }> = {
+  debutant: { nom: 'Débutant', resume: '1 ou 3 versets par jour' },
+  intermediaire: { nom: 'Intermédiaire', resume: 'Une demi-page par jour' },
+  intensif: { nom: 'Intensif', resume: '1 page, 1 toumoun ou 1 rub’ par jour' },
+};
+
 /**
  * Les six rythmes proposés, du plus léger au plus lourd.
  *
@@ -663,14 +685,20 @@ function StepObjective({
  *
  * « Une demi-page » ne porte pas de `count` : c'est le type `half_page`, dont la
  * quantité est définie par la page, pas par un multiplicateur.
+ *
+ * Le champ `niveau` ne remplace rien : il range. La liste reste la source
+ * unique de ce que le questionnaire propose — un rythme qui n'y serait pas
+ * n'existerait pas — et les niveaux ne font que la présenter par groupes. Un
+ * rythme dont le niveau n'est pas dans `ORDRE_NIVEAUX` n'apparaîtrait nulle
+ * part, et c'est `tests/objectifs_ordre.test.mjs` qui le dit.
  */
-const RYTHMES: { unit: LearningUnit; label: string; icon: string }[] = [
-  { unit: { type: 'verses', count: 1 }, label: '1 verset par jour', icon: 'ellipse-outline' },
-  { unit: { type: 'verses', count: 3 }, label: '3 versets par jour', icon: 'text' },
-  { unit: { type: 'half_page' }, label: 'Une demi-page par jour', icon: 'document-outline' },
-  { unit: { type: 'page', count: 1 }, label: '1 page par jour', icon: 'document' },
-  { unit: { type: 'thumn', count: 1 }, label: '1 toumoun par jour', icon: 'square-outline' },
-  { unit: { type: 'rub', count: 1 }, label: "1 rub' par jour", icon: 'square' },
+const RYTHMES: { unit: LearningUnit; label: string; icon: string; niveau: NiveauRythme }[] = [
+  { unit: { type: 'verses', count: 1 }, label: '1 verset par jour', icon: 'ellipse-outline', niveau: 'debutant' },
+  { unit: { type: 'verses', count: 3 }, label: '3 versets par jour', icon: 'text', niveau: 'debutant' },
+  { unit: { type: 'half_page' }, label: 'Une demi-page par jour', icon: 'document-outline', niveau: 'intermediaire' },
+  { unit: { type: 'page', count: 1 }, label: '1 page par jour', icon: 'document', niveau: 'intensif' },
+  { unit: { type: 'thumn', count: 1 }, label: '1 toumoun par jour', icon: 'square-outline', niveau: 'intensif' },
+  { unit: { type: 'rub', count: 1 }, label: "1 rub' par jour", icon: 'square', niveau: 'intensif' },
 ];
 
 function StepRhythm({
@@ -680,6 +708,7 @@ function StepRhythm({
   unit: LearningUnit;
   setUnit: (u: LearningUnit) => void;
 }) {
+  const styles = useStyles(creerStyles);
   const isSameUnit = (a: LearningUnit, b: LearningUnit) => {
     if (a.type !== b.type) return false;
     if ('count' in a && 'count' in b) return a.count === b.count;
@@ -690,33 +719,45 @@ function StepRhythm({
     <View>
       <Text style={styles.stepTitle}>Quel rythme souhaites-tu ?</Text>
       <Text style={styles.stepSubtitle}>
-        Choisis la quantité à apprendre par séance, du plus léger au plus lourd.
+        Trois niveaux, du plus léger au plus lourd. Choisis la quantité à
+        apprendre par séance.
       </Text>
 
-      {RYTHMES.map((r, i) => (
-        <Pressable
-          key={i}
-          onPress={() => setUnit(r.unit)}
-          style={({ pressed }) => [
-            styles.objectiveCard,
-            isSameUnit(unit, r.unit) && styles.objectiveCardActive,
-            pressed && { opacity: 0.8 },
-          ]}
-        >
-          <Ionicons
-            name={r.icon as any}
-            size={24}
-            color={isSameUnit(unit, r.unit) ? colors.textOnPrimary : colors.primary}
-          />
-          <Text
-            style={[
-              styles.objectiveText,
-              isSameUnit(unit, r.unit) && styles.objectiveTextActive,
-            ]}
-          >
-            {r.label}
-          </Text>
-        </Pressable>
+      {ORDRE_NIVEAUX.map((niveau) => (
+        <View key={niveau} style={styles.niveau}>
+          {/* Le nom du niveau, et ce qu'il demande. Le résumé est là parce que
+              « Débutant » seul ne dit pas ce qu'on choisit : trois personnes
+              sur quatre comprendraient « je débute » là où le niveau dit
+              seulement « quelques versets par jour ». */}
+          <Text style={styles.niveauNom}>{LIBELLES_NIVEAUX[niveau].nom}</Text>
+          <Text style={styles.niveauResume}>{LIBELLES_NIVEAUX[niveau].resume}</Text>
+
+          {RYTHMES.filter((r) => r.niveau === niveau).map((r) => (
+            <Pressable
+              key={r.label}
+              onPress={() => setUnit(r.unit)}
+              style={({ pressed }) => [
+                styles.objectiveCard,
+                isSameUnit(unit, r.unit) && styles.objectiveCardActive,
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <Ionicons
+                name={r.icon as any}
+                size={24}
+                color={isSameUnit(unit, r.unit) ? colors.textOnPrimary : colors.primary}
+              />
+              <Text
+                style={[
+                  styles.objectiveText,
+                  isSameUnit(unit, r.unit) && styles.objectiveTextActive,
+                ]}
+              >
+                {r.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       ))}
 
       {/* Une borne estimee est presentee dans l'application comme n'importe
@@ -749,6 +790,7 @@ function StepDays({
   selectedDays: number[];
   setSelectedDays: (d: number[]) => void;
 }) {
+  const styles = useStyles(creerStyles);
   const toggleDay = (day: number) => {
     if (selectedDays.includes(day)) {
       setSelectedDays(selectedDays.filter((d) => d !== day));
@@ -802,7 +844,7 @@ function StepDays({
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -1021,6 +1063,27 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSizes.sm,
     color: colors.textPrimary,
+  },
+  // Le groupe d'un niveau, dans le questionnaire du rythme.
+  //
+  // `marginTop` plutôt qu'un séparateur : trois groupes de cartes se lisent
+  // déjà comme trois groupes, et une ligne de plus surchargerait un écran qui
+  // porte déjà six choix.
+  niveau: {
+    marginTop: spacing.md,
+  },
+  niveauNom: {
+    fontSize: fontSizes.md,
+    fontWeight: fontWeights.bold,
+    color: colors.primary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  niveauResume: {
+    fontSize: fontSizes.xs,
+    color: colors.textTertiary,
+    marginTop: 2,
+    marginBottom: spacing.sm,
   },
   objectiveCard: {
     flexDirection: 'row',

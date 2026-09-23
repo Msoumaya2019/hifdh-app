@@ -614,8 +614,8 @@ test('les deux côtés s’accordent sur le fichier du dépôt de doublures', ()
   const chargeur = lire('scripts/alias-loader.mjs');
   const coteTest = lire('scripts/doublures.mjs');
 
-  const dansChargeur = chargeur.match(/new URL\('\.\/([^']+)', import\.meta\.url\)/)?.[1] ?? '';
-  const dansTest = coteTest.match(/new URL\('\.\/([^']+)', import\.meta\.url\)/)?.[1] ?? '';
+  const dansChargeur = chargeur.match(/const NOM_DEPOT = `([^`]+)`/)?.[1] ?? '';
+  const dansTest = coteTest.match(/const NOM_DEPOT = `([^`]+)`/)?.[1] ?? '';
 
   assert.ok(dansChargeur.length > 0, 'le chargeur doit nommer son dépôt');
   assert.ok(
@@ -627,6 +627,27 @@ test('les deux côtés s’accordent sur le fichier du dépôt de doublures', ()
     dansChargeur,
     `les deux côtés doivent nommer le même dépôt : « ${dansTest} » contre « ${dansChargeur} »`
   );
+
+  // Et le nom doit porter le PID du processus. Sans lui, deux fichiers de test
+  // lancés en parallèle écrivent le MÊME fichier : chacun relit, modifie,
+  // réécrit, donc ils se font perdre leurs entrées — et
+  // `retirerToutesLesDoublures` en sortie de l'un SUPPRIME le fichier, donc
+  // efface les doublures de l'autre en pleine exécution.
+  //
+  // Mesuré, et c'est ce qui a fait écrire ce contrôle : les deux fichiers qui
+  // déposent des doublures, lancés ensemble, donnaient 20 échecs sur 40 avec
+  // « Unexpected non-whitespace character after JSON » ; chacun seul, 31/31 et
+  // 9/9. Le défaut ne se voyait pas fichier par fichier.
+  for (const [cote, nom] of [
+    ['chargeur', dansChargeur],
+    ['test', dansTest],
+  ]) {
+    assert.match(
+      nom,
+      /process\.pid/,
+      `le nom du dépôt vu du ${cote} doit porter le PID : « ${nom} »`
+    );
+  }
 });
 
 test('une doublure posée n’est pas un `Map` en mémoire', () => {
@@ -654,10 +675,19 @@ test('le dépôt de doublures n’est jamais livré dans le dépôt git', () => 
   // qu'une doublure posée un jour resterait en place, et toute une série de
   // tests éprouverait des faux sans le dire.
   const ignore = lire('.gitignore');
+  // Les DEUX formes sont exigées : celle d'avant le PID, et celle qui le porte.
+  // Un dépôt oublié par une exécution ancienne ne doit pas se retrouver dans un
+  // commit ; et la forme vivante doit être ignorée, sans quoi le premier test
+  // qui dépose une doublure salirait l'arbre de travail.
   assert.match(
     ignore,
-    /doublures-deposees\.json/,
-    'le dépôt de doublures doit être ignoré par git'
+    /^scripts\/doublures-deposees\.json$/m,
+    'la forme sans PID doit rester ignorée par git'
+  );
+  assert.match(
+    ignore,
+    /^scripts\/doublures-deposees\.\*\.json$/m,
+    'la forme avec PID doit être ignorée par git'
   );
 });
 

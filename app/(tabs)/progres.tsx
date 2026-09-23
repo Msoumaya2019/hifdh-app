@@ -1,12 +1,13 @@
 // Écran Progrès - Statistiques et progression
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
 import { getUserConfig, getMemorizedPassages, getSessionsByDateRange, getReviewItemCount } from '@/lib/database';
 import { computeProgressStats, computeActiviteHebdomadaire, formatDate } from '@/lib/progress';
 import { aujourdHui, ilYAjours, analyserDateLocale } from '@/lib/dates';
@@ -30,6 +31,7 @@ const NOMBRE_SEMAINES = 8;
 const HAUTEUR_BARRE = 90;
 
 export default function ProgresScreen() {
+  const styles = useStyles(creerStyles);
   const [period, setPeriod] = useState<Period>('semaine');
   const [stats, setStats] = useState<ProgressStats | null>(null);
   const [semaines, setSemaines] = useState<SemaineActivite[]>([]);
@@ -57,9 +59,14 @@ export default function ProgresScreen() {
     setSemaines(computeActiviteHebdomadaire(pourLeGraphe, NOMBRE_SEMAINES));
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // `useFocusEffect` et non `useEffect` : cet écran doit se relire en revenant.
+  // Sans quoi, après une remise à zéro, les statistiques resteraient celles de
+  // la progression effacée.
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -176,6 +183,7 @@ export default function ProgresScreen() {
 }
 
 function StatCard({ label, value, icon }: { label: string; value: number; icon: string }) {
+  const styles = useStyles(creerStyles);
   return (
     <Card style={styles.gridCard} padding="md">
       <Ionicons name={icon as any} size={22} color={colors.primary} />
@@ -186,6 +194,7 @@ function StatCard({ label, value, icon }: { label: string; value: number; icon: 
 }
 
 function WeeksChart({ semaines }: { semaines: SemaineActivite[] }) {
+  const styles = useStyles(creerStyles);
   if (semaines.length === 0) {
     return <Text style={styles.panelVide}>Pas encore d’activité à afficher.</Text>;
   }
@@ -225,7 +234,7 @@ function etiquetteSemaine(debut: string): string {
   return `${date.getDate()}/${date.getMonth() + 1}`;
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

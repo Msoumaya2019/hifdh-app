@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
-import { colors, fontSizes, radii, spacing } from '@/theme';
+import { colors, fontSizes, radii, spacing, useStyles, type Palette } from '@/theme';
 
 interface ProgressBarProps {
   value: number; // 0-100
@@ -19,6 +19,7 @@ export function ProgressBar({
   color = colors.primary,
   height = 8,
 }: ProgressBarProps) {
+  const styles = useStyles(creerStyles);
   const clampedValue = Math.min(100, Math.max(0, value));
 
   return (
@@ -49,7 +50,7 @@ export function ProgressBar({
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     gap: spacing.sm,
   },

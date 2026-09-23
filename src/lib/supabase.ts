@@ -104,6 +104,46 @@ export function getSupabase(): SupabaseClient | null {
   return client;
 }
 
+/**
+ * La clé sous laquelle `supabase-js` range la session, ou `null` sans projet.
+ *
+ * La règle n'est pas devinée : elle est **lue dans le paquet installé**. Mesuré
+ * dans `node_modules/@supabase/supabase-js/dist/index.cjs` :
+ *
+ *     const defaultStorageKey = `sb-${baseUrl.hostname.split(".")[0]}-auth-token`;
+ *
+ * C'est-à-dire la première étiquette du nom d'hôte — la référence du projet —
+ * préfixée de `sb-` et suffixée de `-auth-token`. On ne peut pas l'inventer : un
+ * effacement de session qui viserait la mauvaise clé ne ferait rien, sans le
+ * dire.
+ */
+export function cleSessionStockee(): string | null {
+  if (supabaseUrl === '') return null;
+  try {
+    const reference = new URL(supabaseUrl).hostname.split('.')[0];
+    if (reference === '') return null;
+    return `sb-${reference}-auth-token`;
+  } catch {
+    // Une URL malformée ne doit pas faire échouer l'effacement : elle signifie
+    // seulement qu'aucune session n'a jamais pu être écrite sous cette forme.
+    return null;
+  }
+}
+
+/**
+ * Efface la session du trousseau, sans passer par le réseau.
+ *
+ * `removeItem` du stockage morcelé retire le compteur **et** tous les morceaux :
+ * c'est le seul moyen d'effacer complètement, `expo-secure-store` n'offrant
+ * aucun moyen d'énumérer ses clés. Retirer la seule clé de base laisserait les
+ * morceaux, et le compteur les ferait relire.
+ */
+export async function effacerSessionStockee(): Promise<void> {
+  const cle = cleSessionStockee();
+  if (cle === null) return;
+  await creerStockageMorceaux(depotDuSysteme()).removeItem(cle);
+}
+
 // === Le client, vu par la couche de données ===
 
 export interface ReponseLignes {

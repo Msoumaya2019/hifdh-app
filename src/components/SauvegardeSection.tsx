@@ -23,7 +23,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import { Card } from '@/components/Card';
-import { colors, fontSizes, fontWeights, radii, spacing } from '@/theme';
+import { colors, fontSizes, fontWeights, radii, spacing, useStyles, type Palette } from '@/theme';
 import {
   creerCompte,
   ecouterSession,
@@ -103,6 +103,7 @@ function messageDePanique(erreur: unknown): ResultatAuth {
 }
 
 export function SauvegardeSection({ onDonneesChangees }: Props) {
+  const styles = useStyles(creerStyles);
   const configure = isSupabaseConfigured();
 
   const [utilisateur, setUtilisateur] = useState<Utilisateur | null>(null);
@@ -490,7 +491,7 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   sectionTitle: {
     fontSize: fontSizes.sm,
     color: colors.textTertiary,

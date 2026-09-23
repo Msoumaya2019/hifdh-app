@@ -314,3 +314,95 @@ test('les libellés à la troisième personne ne renvoient jamais un mot vague',
   // Les cas dégénérés disent ce qui manque au lieu d'afficher « Hizb undefined ».
   assert.equal(libelleObjectif({ type: 'specific_hizb', hizbNumbers: [] }), 'Hizb à choisir');
 });
+
+// === Le rangement en trois niveaux =========================================
+//
+// La demande : « je souhaiterais avoir un niveau débutant avec le choix entre 1
+// et 3 versets par jour, un niveau intermédiaire avec une demi-page par jour, ou
+// un niveau intensif avec le choix entre 1 page, 1 toumoun ou 1 rub' ».
+//
+// Ce n'est pas un simple habillage : chaque rythme est désormais RANGÉ dans un
+// niveau, et le rendu parcourt les niveaux pour retrouver les rythmes. Un rythme
+// dont le niveau ne serait pas dans `ORDRE_NIVEAUX` **n'apparaîtrait nulle
+// part** — ni erreur, ni message : le questionnaire proposerait cinq choix au
+// lieu de six, et personne ne s'en apercevrait avant qu'un apprenant demande
+// pourquoi « 1 rub' » a disparu. C'est ce que ce contrôle empêche.
+
+test('les six rythmes sont rangés en trois niveaux, dans l’ordre demandé', () => {
+  const chemin = fileURLToPath(new URL('../app/onboarding.tsx', import.meta.url));
+  const source = readFileSync(chemin, 'utf8');
+
+  const debut = source.indexOf('const RYTHMES');
+  assert.notEqual(debut, -1, 'RYTHMES introuvable dans app/onboarding.tsx');
+  const bloc = source.slice(debut, source.indexOf('];', debut));
+
+  // Chaque rythme, apparié à son niveau. On lit ligne par ligne plutôt que par
+  // une expression unique : c'est la correspondance RYTHME → NIVEAU qui compte,
+  // et une expression trop large laisserait passer un décalage d'une ligne.
+  const lignes = bloc.split('\n').filter((l) => l.includes('unit: {'));
+  assert.equal(lignes.length, 6, 'les six rythmes doivent être décrits');
+
+  const paires = lignes.map((ligne) => {
+    const type = ligne.match(/type: '([a-z_]+)'/);
+    const compte = ligne.match(/count: (\d+)/);
+    const niveau = ligne.match(/niveau: '([a-z]+)'/);
+    assert.ok(type !== null, `type illisible : ${ligne.trim()}`);
+    assert.ok(niveau !== null, `niveau manquant : ${ligne.trim()}`);
+    return [`${type[1]}${compte ? `:${compte[1]}` : ''}`, niveau[1]];
+  });
+
+  assert.deepEqual(paires, [
+    ['verses:1', 'debutant'],
+    ['verses:3', 'debutant'],
+    ['half_page', 'intermediaire'],
+    ['page:1', 'intensif'],
+    ['thumn:1', 'intensif'],
+    ['rub:1', 'intensif'],
+  ]);
+
+  // Les trois niveaux, dans l'ordre où ils sont offerts.
+  const ordre = source.match(/const ORDRE_NIVEAUX = \[([^\]]*)\]/);
+  assert.ok(ordre !== null, 'ORDRE_NIVEAUX introuvable');
+  const niveaux = [...ordre[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+  assert.deepEqual(niveaux, ['debutant', 'intermediaire', 'intensif']);
+
+  // Chaque niveau offert porte un nom ET un résumé. Un niveau sans libellé
+  // afficherait un titre vide au-dessus de ses choix.
+  const blocLibelles = source.slice(
+    source.indexOf('const LIBELLES_NIVEAUX'),
+    source.indexOf('};', source.indexOf('const LIBELLES_NIVEAUX'))
+  );
+  for (const niveau of niveaux) {
+    assert.match(
+      blocLibelles,
+      new RegExp(`${niveau}: \\{ nom: '[^']+', resume: '[^']+' \\}`),
+      `le niveau « ${niveau} » doit porter un nom et un résumé`
+    );
+  }
+});
+
+test('le rendu parcourt les niveaux, et non la liste à plat', () => {
+  // Le rangement peut exister dans les données sans être affiché : c'est le
+  // défaut que ce contrôle vise. Ce qui compte n'est pas que `niveau` soit
+  // écrit, mais que le rendu s'en serve.
+  const chemin = fileURLToPath(new URL('../app/onboarding.tsx', import.meta.url));
+  const source = readFileSync(chemin, 'utf8');
+
+  assert.match(
+    source,
+    /ORDRE_NIVEAUX\.map\(/,
+    'les niveaux doivent être parcourus au rendu'
+  );
+  assert.match(
+    source,
+    /RYTHMES\.filter\(\(r\) => r\.niveau === niveau\)\.map\(/,
+    'chaque niveau doit ne montrer que les rythmes qui lui appartiennent'
+  );
+  // Et le titre du niveau doit être rendu, pas seulement calculé.
+  assert.match(source, /\{LIBELLES_NIVEAUX\[niveau\]\.nom\}/, 'le nom du niveau doit être rendu');
+  assert.match(
+    source,
+    /\{LIBELLES_NIVEAUX\[niveau\]\.resume\}/,
+    'le résumé du niveau doit être rendu'
+  );
+});

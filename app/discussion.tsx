@@ -34,7 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import { colors, fontSizes, spacing, radii } from '@/theme';
+import { colors, fontSizes, spacing, radii, useStyles, type Palette } from '@/theme';
 import {
   LONGUEUR_MESSAGE_MAX,
   caracteresRestants,
@@ -64,6 +64,7 @@ function aujourdhuiLocal(): string {
 }
 
 export default function DiscussionScreen() {
+  const styles = useStyles(creerStyles);
   // Le nom de l'ami et son identifiant viennent de l'écran des amis, qui les
   // passe en paramètre. Un paramètre lu une seule fois à l'initialisation serait
   // ignoré si l'écran est déjà monté — le projet a mesuré ce comportement sur un
@@ -350,7 +351,7 @@ export default function DiscussionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   ecran: {
     flex: 1,
     backgroundColor: colors.background,

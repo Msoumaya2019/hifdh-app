@@ -1,17 +1,18 @@
 // Écran Coran - Navigation dans les sourates
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
 import { getAllSurahs } from '@/data/quranData';
 import { getMemorizedPassages } from '@/lib/database';
 import type { Surah, MemorizedPassage } from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CoranScreen() {
+  const styles = useStyles(creerStyles);
   const router = useRouter();
   const [surahs] = useState<Surah[]>(getAllSurahs());
   const [memorized, setMemorized] = useState<MemorizedPassage[]>([]);
@@ -22,9 +23,14 @@ export default function CoranScreen() {
     setMemorized(mem);
   }, []);
 
-  useEffect(() => {
-    loadMemorized();
-  }, [loadMemorized]);
+  // `useFocusEffect` et non `useEffect` : cet écran doit se relire en revenant.
+  // Sans quoi, après une remise à zéro, la liste continuerait d'afficher les
+  // sourates déclarées connues.
+  useFocusEffect(
+    useCallback(() => {
+      loadMemorized();
+    }, [loadMemorized])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -114,7 +120,7 @@ export default function CoranScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

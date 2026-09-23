@@ -296,3 +296,86 @@ test('une bande fait exactement la hauteur d’une ligne', () => {
     'une bande doit faire une ligne, pas une fraction quelconque'
   );
 });
+
+// === Ce que le plein écran doit LAISSER VISIBLE =============================
+//
+// La demande : « lors de la lecture en plein écran du Coran, que tu laisses les
+// flèches pour revenir en arrière bien visible, ainsi que les icônes j'ai
+// mémorisé, à retravailler et reporter ».
+//
+// Ces commandes existaient déjà : elles étaient simplement MASQUÉES en plein
+// écran, qui est l'état d'ouverture du lecteur. Les contrôles ci-dessous ne
+// cherchent donc pas si elles existent — elles existaient — mais si elles sont
+// RENDUES dans les deux modes. C'est la différence entre « le bouton est dans
+// le fichier » et « le bouton est à l'écran », et c'est la seconde qui compte.
+
+test('les flèches de page restent rendues en plein écran', () => {
+  const source = rendu('src/components/LecteurPageMoushaf.tsx');
+
+  assert.equal(
+    /\{!pleinEcran && \(\s*<View style=\{styles\.navigation\}/.test(source),
+    false,
+    'la barre de navigation ne doit plus être conditionnée à « hors plein écran »'
+  );
+  assert.match(
+    source,
+    /<View style=\{\[styles\.navigation, pleinEcran && styles\.navigationCompacte\]\}>/,
+    'la barre de navigation doit être rendue dans les deux modes'
+  );
+  // Et les deux flèches, nommément : une barre rendue mais vidée de ses
+  // commandes satisferait le contrôle précédent sans rien rendre utile.
+  assert.match(source, /accessibilityLabel="Page précédente"/, 'la flèche de retour doit rester');
+  assert.match(source, /accessibilityLabel="Page suivante"/, 'la flèche d’avance doit rester');
+});
+
+test('les boutons de mémorisation restent rendus en plein écran', () => {
+  const source = rendu('app/lecteur.tsx');
+
+  assert.equal(
+    /\{\(sessionId \|\| depuisRenforcement\) && !pleinEcran && \(/.test(source),
+    false,
+    'la barre de validation ne doit plus être conditionnée à « hors plein écran »'
+  );
+  assert.match(
+    source,
+    /\{\(sessionId \|\| depuisRenforcement\) && \(/,
+    'la barre de validation doit être rendue dans les deux modes'
+  );
+  for (const libelle of ["J'ai mémorisé", 'À retravailler', 'Reporter']) {
+    assert.ok(
+      source.includes(libelle),
+      `« ${libelle} » doit rester rendu en plein écran`
+    );
+  }
+});
+
+test('revenir en arrière et quitter le plein écran sont deux commandes distinctes', () => {
+  // Le lecteur en plein écran n'offrait NI l'une NI l'autre : il fallait d'abord
+  // sortir du plein écran pour pouvoir revenir. Les confondre obligerait à ce
+  // détour pour une chose qu'on veut faire en un geste.
+  const source = rendu('app/lecteur.tsx');
+
+  assert.match(source, /accessibilityLabel="Revenir en arrière"/, 'revenir doit être offert');
+  assert.match(source, /accessibilityLabel="Quitter le plein écran"/, 'sortir doit rester offert');
+  assert.match(
+    source,
+    /onPress=\{\(\) => router\.back\(\)\}/,
+    'le bouton de retour doit bien revenir'
+  );
+});
+
+test('la barre du plein écran a disparu avec sa raison d’être', () => {
+  // Elle portait le numéro de page, désormais porté par la barre de navigation
+  // qui reste visible. Un style orphelin n'est pas un défaut visible — mais il
+  // invite à remettre la barre sans réfléchir, et laisserait croire que l'écran
+  // porte deux compteurs.
+  const source = lire('src/components/LecteurPageMoushaf.tsx');
+
+  for (const style of ['barrePleinEcran', 'compteurPleinEcran']) {
+    assert.equal(
+      source.includes(style),
+      false,
+      `le style « ${style} » doit avoir disparu avec sa barre`
+    );
+  }
+});

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
-import { colors, radii, spacing } from '@/theme';
+import { colors, radii, spacing, useStyles, type Palette } from '@/theme';
 
 interface CardProps {
   children: React.ReactNode;
@@ -12,6 +12,7 @@ interface CardProps {
 }
 
 export function Card({ children, style, variant = 'default', padding = 'lg' }: CardProps) {
+  const styles = useStyles(creerStyles);
   const backgroundColor =
     variant === 'primary' ? colors.primarySurface
     : variant === 'surface' ? colors.surfaceVariant
@@ -30,7 +31,7 @@ export function Card({ children, style, variant = 'default', padding = 'lg' }: C
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   card: {
     borderRadius: radii.lg,
     borderWidth: 1,

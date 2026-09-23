@@ -1,12 +1,12 @@
 // Écran d'accueil - Tableau de bord
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
 import { getUserConfig, getTodaySessions, getMemorizedPassages, getReviewItemsDue, getReviewItemCount, getSessionsByDateRange } from '@/lib/database';
 import { computeProgressStats, formatDate } from '@/lib/progress';
 import { passagesARenforcer } from '@/lib/renforcement';
@@ -15,6 +15,7 @@ import { libelleObjectif } from '@/lib/libelles';
 import type { UserConfig, LearningSession, MemorizedPassage } from '@/types';
 
 export default function AccueilScreen() {
+  const styles = useStyles(creerStyles);
   const router = useRouter();
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [todaySessions, setTodaySessions] = useState<LearningSession[]>([]);
@@ -55,9 +56,17 @@ export default function AccueilScreen() {
     setRevisionsSuivies(await getReviewItemCount());
   }, [router]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // `useFocusEffect` et non `useEffect` : cet écran doit se relire en revenant.
+  //
+  // Un écran d'onglet reste monté, et un `useEffect` ne se rejoue donc jamais.
+  // Après une remise à zéro, l'accueil continuait d'annoncer les versets
+  // mémorisés d'avant, alors même que la base était vide — exactement le
+  // symptôme qui a fait demander un bouton de remise à zéro.
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -262,7 +271,7 @@ function getObjectiveLabel(config: UserConfig): string {
   return libelleObjectif(config.objective);
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

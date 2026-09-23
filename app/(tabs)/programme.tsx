@@ -13,10 +13,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, SectionList } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
-import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
+import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
 import {
   getUserConfig,
   getSessionsByDateRange,
@@ -38,6 +38,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 type Tab = 'apprentissage' | 'renforcer';
 
 export default function ProgrammeScreen() {
+  const styles = useStyles(creerStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{ onglet?: string; t?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>(
@@ -79,9 +80,17 @@ export default function ProgrammeScreen() {
     setARenforcer(passagesARenforcer(memorises, dues, today));
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // `useFocusEffect` et non `useEffect` : cet écran doit se relire en revenant.
+  //
+  // Un écran d'onglet reste monté, et un `useEffect` ne se rejoue donc jamais.
+  // Après une remise à zéro, l'onglet Programme continuait d'afficher les
+  // séances d'avant — alors même que la base était vide. C'est le symptôme que
+  // la remise à zéro doit faire disparaître.
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -251,6 +260,7 @@ function SessionCard({ session, onComplete, onPostpone, onPress }: {
   onPostpone: () => void;
   onPress: () => void;
 }) {
+  const styles = useStyles(creerStyles);
   const statusIcon = session.status === 'completed' ? 'checkmark-circle' : 
     session.status === 'postponed' ? 'time-outline' : 'circle-outline';
   const statusColor = session.status === 'completed' ? colors.success :
@@ -297,6 +307,7 @@ function RenforcementCard({ passage, onRenforce, onPasEncore, onPress }: {
   onPasEncore: () => void;
   onPress: () => void;
 }) {
+  const styles = useStyles(creerStyles);
   const surah = getSurah(passage.surah);
   const marque = passage.origine === 'marque';
 
@@ -334,7 +345,7 @@ function RenforcementCard({ passage, onRenforce, onPasEncore, onPress }: {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

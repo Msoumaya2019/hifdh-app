@@ -34,7 +34,23 @@ const RACINE = new URL('..', import.meta.url);
 // Le même chemin que celui lu par `alias-loader.mjs`. Les deux constantes sont
 // écrites séparément, faute d'état partagé possible — mais elles portent le
 // même nom de fichier, et le dépôt est ignoré par git.
-const DEPOT = new URL('./doublures-deposees.json', import.meta.url);
+//
+// LE NOM PORTE LE PID DU PROCESSUS, et ce n'est pas un détail. `node --test`
+// ouvre un processus par fichier de test, et deux fichiers écrivent ce dépôt :
+// chacun relit, modifie, réécrit — et `writeFileSync` tronque avant d'écrire.
+// Deux écrivains concurrents se font donc perdre leurs entrées, et un lecteur
+// peut tomber sur un fichier à moitié réécrit. Les deux défauts ont été
+// observés ensemble : « Unexpected non-whitespace character after JSON » sur
+// les vingt tests de deux fichiers lancés côte à côte, et des doublures qui
+// disparaissent — parce que `retirerToutesLesDoublures` SUPPRIME le fichier en
+// sortie de test, effaçant du même coup celles de l'autre processus.
+//
+// Mesuré : les deux fichiers ensemble donnaient 20 échecs sur 40 ; chacun seul,
+// 31/31 et 9/9. Un nom par processus sépare les écrivains sans rien changer
+// d'autre — `--import` évalue le chargeur dans le MÊME processus que le test,
+// donc les deux côtés calculent le même nom.
+const NOM_DEPOT = `doublures-deposees.${process.pid}.json`;
+const DEPOT = new URL(`./${NOM_DEPOT}`, import.meta.url);
 
 /** L'URL absolue d'un fichier du dépôt, telle que le chargeur la verra. */
 export function urlDe(cheminRelatif) {

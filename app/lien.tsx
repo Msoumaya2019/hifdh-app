@@ -39,7 +39,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 
-import { colors, fontSizes, fontWeights, radii, spacing } from '@/theme';
+import { colors, fontSizes, fontWeights, radii, spacing, useStyles, type Palette } from '@/theme';
 import {
   LONGUEUR_MOT_DE_PASSE,
   changerMotDePasse,
@@ -87,6 +87,7 @@ const MESSAGE_SANS_SORTIE: Record<'attente' | 'ouverture', string> = {
 };
 
 export default function LienScreen() {
+  const styles = useStyles(creerStyles);
   // DEUX SOURCES, ET IL FAUT LES DEUX.
   //
   // Le commentaire qui tenait ici affirmait que `useURL` couvrait « application
@@ -371,7 +372,7 @@ export default function LienScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   ecran: {
     flex: 1,
     backgroundColor: colors.background,

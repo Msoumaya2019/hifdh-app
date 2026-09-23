@@ -119,21 +119,34 @@ MUTATIONS = [
     ),
     (
         "app/onboarding.tsx",
-        "{ unit: { type: 'verses', count: 1 }, label: '1 verset par jour', icon: 'ellipse-outline' },\n",
+        "{ unit: { type: 'verses', count: 1 }, label: '1 verset par jour', icon: 'ellipse-outline', niveau: 'debutant' },\n",
         "",
         "le rythme « 1 verset » est retiré du questionnaire",
     ),
     (
         "app/onboarding.tsx",
-        "{ unit: { type: 'verses', count: 3 }, label: '3 versets par jour', icon: 'text' },",
-        "{ unit: { type: 'verses', count: 5 }, label: '3 versets par jour', icon: 'text' },",
+        "{ unit: { type: 'verses', count: 3 }, label: '3 versets par jour', icon: 'text', niveau: 'debutant' },",
+        "{ unit: { type: 'verses', count: 5 }, label: '3 versets par jour', icon: 'text', niveau: 'debutant' },",
         "la quantité du 2e rythme passe de 3 à 5",
     ),
     (
         "app/onboarding.tsx",
-        "{ unit: { type: 'rub', count: 1 }, label: \"1 rub' par jour\", icon: 'square' },\n",
-        "{ unit: { type: 'rub', count: 1 }, label: \"1 rub' par jour\", icon: 'square' },\n  { unit: { type: 'hizb', count: 1 }, label: '1 hizb par jour', icon: 'square' },\n",
+        "{ unit: { type: 'rub', count: 1 }, label: \"1 rub' par jour\", icon: 'square', niveau: 'intensif' },\n",
+        "{ unit: { type: 'rub', count: 1 }, label: \"1 rub' par jour\", icon: 'square', niveau: 'intensif' },\n  { unit: { type: 'hizb', count: 1 }, label: '1 hizb par jour', icon: 'square', niveau: 'intensif' },\n",
         "un 7e rythme est ajouté (le hizb revient)",
+    ),
+    # === Le rangement en niveaux ============================================
+    (
+        "app/onboarding.tsx",
+        "{ unit: { type: 'half_page' }, label: 'Une demi-page par jour', icon: 'document-outline', niveau: 'intermediaire' },",
+        "{ unit: { type: 'half_page' }, label: 'Une demi-page par jour', icon: 'document-outline', niveau: 'debutant' },",
+        "la demi-page quitte le niveau intermédiaire pour le niveau débutant",
+    ),
+    (
+        "app/onboarding.tsx",
+        "          {RYTHMES.filter((r) => r.niveau === niveau).map((r) => (",
+        "          {RYTHMES.map((r) => (",
+        "le rendu parcourt la liste à plat : les niveaux ne groupent plus rien",
     ),
     (
         "src/lib/programGenerator.ts",

@@ -738,3 +738,41 @@ export async function remplacerTout(parties: PartiesLocales): Promise<void> {
     }
   });
 }
+
+/**
+ * Efface la base entière : le fichier, et non son contenu.
+ *
+ * POURQUOI SUPPRIMER LE FICHIER PLUTÔT QUE VIDER LES TABLES
+ * ---------------------------------------------------------
+ * `remplacerTout` vide déjà les quatre tables, et cela suffirait à effacer les
+ * données. Mais la promesse faite à l'utilisateur est plus forte : l'application
+ * doit redevenir **telle qu'à l'installation**. Or `DELETE` laisse le fichier,
+ * son journal, ses compteurs d'auto-incrément, et les pages libérées — un état
+ * qui n'est pas celui d'une installation neuve, et qui ne se voit que le jour
+ * où quelque chose s'appuie dessus.
+ *
+ * LE SINGLETON DOIT ÊTRE ABANDONNÉ AVANT LA SUPPRESSION
+ * -----------------------------------------------------
+ * `dbInstance` garde la connexion ouverte. Supprimer le fichier sous une
+ * connexion vivante laisse cette connexion pointer sur un fichier qui n'existe
+ * plus : les lectures suivantes échoueraient, ou pire, retrouveraient l'ancien
+ * contenu par le descripteur resté ouvert. On ferme donc, on oublie la
+ * référence, puis on supprime.
+ *
+ * `deleteDatabaseAsync` ne lève pas si le fichier est absent : un appareil dont
+ * la base n'a jamais été ouverte se remet à zéro sans bruit.
+ */
+export async function effacerBase(): Promise<void> {
+  if (dbInstance !== null) {
+    const ouverte = dbInstance;
+    dbInstance = null;
+    try {
+      await ouverte.closeAsync();
+    } catch {
+      // Une connexion déjà fermée, ou fermée par la plateforme, ne doit pas
+      // empêcher la suppression : c'est elle qui compte, et le fichier part
+      // juste après.
+    }
+  }
+  await SQLite.deleteDatabaseAsync(DB_NAME);
+}

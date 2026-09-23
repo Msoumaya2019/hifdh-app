@@ -17,7 +17,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 
 import { Card } from '@/components/Card';
-import { colors, fontSizes, spacing, radii } from '@/theme';
+import { colors, fontSizes, spacing, radii, useStyles, type Palette } from '@/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { utilisateurCourant } from '@/lib/auth';
 import { formaterCodeAmi, normaliserNom, resumeActivite } from '@/lib/amis';
@@ -47,6 +47,7 @@ function repondreDans<T>(
 }
 
 export function AmisSection() {
+  const styles = useStyles(creerStyles);
   const configure = isSupabaseConfigured();
   const [connecte, setConnecte] = useState<boolean | null>(null);
   const [code, setCode] = useState<string | null>(null);
@@ -248,7 +249,7 @@ export function AmisSection() {
   );
 }
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   sectionTitle: {
     fontSize: fontSizes.lg,
     fontWeight: '600',

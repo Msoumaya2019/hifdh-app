@@ -38,7 +38,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-import { colors, fonts, radii, spacing } from '@/theme';
+import { colors, fonts, radii, spacing, useStyles, type Palette } from '@/theme';
 import { getRatioPage } from '@/lib/pagesMoushaf';
 import { getLignesParPageMoushaf } from '@/data/quranData';
 import { gesteDePage } from '@/lib/gestePageMoushaf';
@@ -86,6 +86,7 @@ export function LecteurPageMoushaf({
   pleinEcran = false,
   onBasculerPleinEcran,
 }: LecteurPageMoushafProps) {
+  const styles = useStyles(creerStyles);
   // `tentative` relance le chargement quand l'utilisateur appuie sur
   // « Réessayer » : sans elle, l'effet ne se rejouerait pas sur la même page.
   const [tentative, setTentative] = useState(0);
@@ -249,32 +250,29 @@ export function LecteurPageMoushaf({
         </Pressable>
       )}
 
-      {/* Le repère du geste, et la phrase qui disait « page hors de ta
-          séance », et la plage de versets en clair : retirés.
+      {/* Le repère du geste, la phrase « page hors de ta séance », la plage de
+          versets en clair, et la barre du plein écran : tous retirés.
 
           Ce qui a été retiré l'a été pour une seule raison : sur un écran de
           téléphone, ces phrases occupaient la place que la page réclame. La
           page, elle, dit déjà l'essentiel — le surlignage montre où est la
-          séance, et la bande du bas donne le numéro de page. */}
-      {pleinEcran ? (
-        <Pressable
-          style={styles.barrePleinEcran}
-          onPress={onBasculerPleinEcran}
-          accessibilityLabel="Quitter le plein écran"
-          accessibilityRole="button"
-        >
-          <Text style={styles.compteurPleinEcran}>
-            {page} / {total}
-          </Text>
-          <Ionicons name="contract-outline" size={16} color={colors.textSecondary} />
-        </Pressable>
-      ) : null}
+          séance, et la barre de navigation, désormais toujours visible, porte
+          le numéro de page.
+
+          La barre du plein écran faisait donc double emploi avec elle. La
+          SORTIE du plein écran, en revanche, n'est pas ici : elle est portée
+          par l'écran, qui seul survit à une page qui ne charge pas. */}
 
       {/* La navigation. Trois commandes, assez grandes pour le pouce.
-          Masquée en plein écran : le geste les remplace, et les laisser ferait
-          de « plein écran » un mot pour rien. */}
-      {!pleinEcran && (
-        <View style={styles.navigation}>
+
+          Elle reste visible EN PLEIN ÉCRAN, et c'est un changement voulu. Elle
+          y était masquée au motif que le geste de balayage la remplaçait —
+          c'était supposer que le geste se découvre tout seul. Un lecteur qui ne
+          le connaît pas se retrouvait devant une page dont il ne pouvait plus
+          reculer d'une seule, et « plein écran » voulait dire « écran bloqué ».
+          Les flèches restent donc, sous une forme plus compacte pour rendre à
+          la page la place qu'elles lui prennent. */}
+      <View style={[styles.navigation, pleinEcran && styles.navigationCompacte]}>
         <Pressable
           style={[styles.bouton, premiere && styles.boutonInactif]}
           disabled={premiere}
@@ -336,8 +334,7 @@ export function LecteurPageMoushaf({
             color={derniere ? colors.textTertiary : colors.primary}
           />
         </Pressable>
-        </View>
-      )}
+      </View>
     </View>
   );
 }
@@ -358,6 +355,7 @@ function ChampNumeroPage({
   onValider: (numero: number | null) => void;
   onAnnuler: () => void;
 }) {
+  const styles = useStyles(creerStyles);
   const [texte, setTexte] = useState(valeurInitiale);
 
   const valider = () => {
@@ -393,7 +391,7 @@ function ChampNumeroPage({
 /** Le nombre de lignes d'une page, lu dans la mise en page. */
 const LIGNES_PAR_PAGE = getLignesParPageMoushaf();
 
-const styles = StyleSheet.create({
+const creerStyles = (colors: Palette) => StyleSheet.create({
   racine: {
     flex: 1,
     alignItems: 'center',
@@ -435,25 +433,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gold,
     opacity: 0.22,
   },
-  // Le repère du geste : discret, et seulement hors plein écran.
-  // La barre du plein écran : de quoi savoir où l'on est, et de quoi sortir.
-  // Les deux ensemble, parce qu'un plein écran d'où l'on ne sait pas sortir
-  // est un piège.
-  barrePleinEcran: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surfaceVariant,
-  },
-  compteurPleinEcran: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
+  // La barre du plein écran a été retirée : elle faisait double emploi avec la
+  // barre de navigation, qui reste visible en plein écran et porte le même
+  // compteur. La sortie du plein écran, elle, est portée par l'écran.
   // La feuille : fond sobre, coins arrondis, ombre légère. C'est le seul
   // habillage — la page n'est pas décorée, elle est posée.
   feuille: {
@@ -514,6 +496,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textOnPrimary,
   },
+  // La navigation. Le plein écran la garde, mais resserrée : elle ne doit pas
+  // reprendre à la page plus de place qu'il n'en faut pour des flèches.
   navigation: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -523,6 +507,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.borderLight,
+  },
+  navigationCompacte: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
   },
   bouton: {
     flexDirection: 'row',
