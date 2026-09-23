@@ -37,6 +37,26 @@ Trois cas ne se mesurent pas dans la police de la page :
     elles ne sont pas alignees des deux bords, et leur reference vaut alors leur
     plus large ligne, pour qu'aucune ne deborde.
 
+CE QUE LA TABLE PORTE EN PLUS DES LARGEURS
+------------------------------------------
+L'empreinte SHA-256 de `moushaf_layout.json` au moment de la mesure. Les deux
+fichiers sont lus par l'application — l'un pour les coupures de ligne, l'autre
+pour la taille a laquelle la page se dessine — et ils se regenerent par des
+scripts differents. L'empreinte est ce qui rend leur accord VERIFIABLE :
+`generer_layout_moushaf.py --verifier` refuse une table qui ne decrit plus la
+mise en page courante. Ce controle est d'autant plus necessaire que les 604
+polices ne sont plus dans le depot : sans elles, on ne peut plus remesurer pour
+s'assurer que la table est a jour.
+
+LES POLICES NE SONT PLUS DANS LE DEPOT
+--------------------------------------
+Elles pesaient 92 Mo et faisaient depasser la limite de 150 Mo du CDN qui sert
+les pages du moushaf, alors qu'aucun code ne les emploie. Ce script les exige :
+il faut donc les retablir d'abord, hors du depot et sans le polluer —
+`python scripts/recuperer_polices_pages.py`, puis
+`python scripts/recuperer_polices_pages.py --verifier` pour confronter les
+fichiers obtenus au manifeste.
+
 Usage :
     python scripts/mesurer_largeurs_pages.py             # mesure et ecrit
     python scripts/mesurer_largeurs_pages.py --verifier   # controle hors ligne
@@ -45,6 +65,7 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import pathlib
@@ -150,6 +171,28 @@ def par_page(glyphes: dict) -> dict:
 CODES_DE_LA_BASMALA: list = []
 
 
+def empreinte_de_la_mise_en_page() -> str:
+    """L'empreinte SHA-256 de `moushaf_layout.json`, en hexadecimal.
+
+    C'est le seul lien MECANIQUE entre les deux fichiers que l'application lit
+    tous les deux : `moushaf_layout.json` porte les coupures de ligne — donc ou
+    tombe chaque mot — et cette table-ci porte la largeur de chaque ligne, donc
+    la taille a laquelle la page se dessine. Les deux se regenerent par des
+    scripts differents, et rien n'obligeait jusqu'ici a regenerer l'un quand
+    l'autre changeait.
+
+    Le defaut serait muet : une coupure deplacee d'un mot laisse la table
+    decrire une ligne qui n'existe plus, et la page se dessinerait a une taille
+    legerement fausse, ou une bande de surlignage tomberait a cote du mot. Ni
+    l'un ni l'autre ne leve.
+
+    Depuis que les 604 polices ne sont plus dans le depot, cette empreinte est
+    en outre le seul moyen de savoir que la table decrit bien la mise en page
+    courante : sans les polices, on ne peut plus remesurer pour s'en assurer.
+    """
+    return hashlib.sha256(MISE_EN_PAGE.read_bytes()).hexdigest()
+
+
 def mesurer() -> dict:
     if not MISE_EN_PAGE.exists():
         raise SystemExit(
@@ -168,7 +211,7 @@ def mesurer() -> dict:
     polices = glm.charger_polices()
     avances_basmala, correspondance_basmala = polices[PAGE_DE_LA_BASMALA]
     unites_basmala = largeur_de_basmala(
-        (RACINE / "assets" / "polices-pages" / "p001.ttf").read_bytes()
+        (glm.POLICES_DES_PAGES / "p001.ttf").read_bytes()
     )
 
     pages = {}
@@ -212,6 +255,19 @@ def mesurer() -> dict:
         "provenance": {
             "polices": "assets/polices-pages/pNNN.ttf (QCF v1, KFGQPC)",
             "miseEnPage": "data/quran/moushaf_layout.json",
+            "empreinteMiseEnPage": empreinte_de_la_mise_en_page(),
+            "pourquoiUneEmpreinte": (
+                "La table decrit la mise en page telle qu'elle etait au moment de "
+                "la mesure. L'empreinte de `moushaf_layout.json` est enregistree "
+                "ici pour que ce lien se VERIFIE au lieu de se supposer : "
+                "`generer_layout_moushaf.py --verifier` refuse une table qui ne "
+                "decrit plus la mise en page courante. Sans elle, une coupure "
+                "deplacee d'un mot laisserait la table decrire une ligne qui "
+                "n'existe plus — la page se dessinerait a une taille fausse, et "
+                "rien ne le dirait. Depuis que les polices ne sont plus dans le "
+                "depot, on ne peut plus remesurer sans les retablir : l'empreinte "
+                "est ce qui reste quand la mesure n'est plus rejouable."
+            ),
             "mesure": "table `hmtx` de chaque police, lue par scripts/lire_police.py",
             "pagesImprimees": (
                 "https://raw.githubusercontent.com/QuranHub/quran-pages-images/"
@@ -284,6 +340,20 @@ def verifier() -> int:
         if ecrit.get(cle) != mesure[cle]:
             problemes.append(f"{cle} : {ecrit.get(cle)} au lieu de {mesure[cle]}")
 
+    # L'empreinte de la mise en page mesuree. C'est la seule chose que ce
+    # controle-ci puisse dire de la mise en page sans rouvrir les polices : que
+    # la table decrit bien celle qui est dans le depot. Sans elle, une table
+    # laissee en arriere apres une regeneration passerait, et les largeurs
+    # decriraient des lignes qui n'existent plus.
+    ecrite = (ecrit.get("provenance") or {}).get("empreinteMiseEnPage")
+    courante = mesure["provenance"]["empreinteMiseEnPage"]
+    if ecrite != courante:
+        problemes.append(
+            "la table ne decrit plus la mise en page courante : "
+            f"empreinte {ecrite or 'absente'} au lieu de {courante} — "
+            "relancer sans --verifier, polices retablies"
+        )
+
     pages_ecrites = ecrit.get("pages") or {}
     if len(pages_ecrites) != PAGES:
         problemes.append(f"{len(pages_ecrites)} pages au lieu de {PAGES}")
@@ -347,6 +417,10 @@ def verifier() -> int:
         f"  bloc des quinze lignes : {mesure['hauteurDuBloc']:.3f} fois sa "
         f"largeur ; encre de la basmala {mesure['hauteurDeLaBasmala']:.2%} "
         "d'une ligne pleine"
+    )
+    print(
+        "  la table decrit la mise en page courante : empreinte "
+        f"{mesure['provenance']['empreinteMiseEnPage'][:16]}…"
     )
     return 0
 

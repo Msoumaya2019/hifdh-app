@@ -14,8 +14,10 @@
 // Ce fichier tient donc les invariants qui rendent ce calcul possible.
 //
 // Ce qui n'est **pas** éprouvé ici : que chaque code soit réellement dessiné par
-// la police de sa page. Cela demande d'ouvrir les 604 polices, ce que fait
-// `npm run verifier:polices` (et son falsificateur), pas un test JavaScript.
+// la police de sa page. Cela demande d'ouvrir les 604 polices, qui ne sont plus
+// dans le dépôt — voir `.gitignore` — parce qu'aucun code ne les emploie et que
+// leur poids faisait dépasser la limite du CDN qui sert les pages. Le contrôle
+// se fait donc **à la demande**, après `scripts/recuperer_polices_pages.py`.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -290,27 +292,6 @@ test('getMotsDeLigne rend les codes dans l’ordre de lecture', () => {
 
   // Une ligne d'en-tête ne porte aucun mot, et n'en invente pas.
   assert.deepEqual(getMotsDeLigne(codesDe(177)[0]), []);
-});
-
-test('la table des polices écrit les 604 chemins en clair, et ils existent', () => {
-  // Metro ne suit pas un `require` calculé : un chemin construit dans une boucle
-  // ne serait pas résolu, et la page s'afficherait sans sa police — c'est-à-dire
-  // pas du tout. La table est donc engendrée, chemin par chemin, et ce test
-  // refuse qu'un chemin manque, qu'il soit écrit autrement, ou que le fichier
-  // qu'il désigne ait disparu.
-  const source = readFileSync(join(RACINE, 'src/data/policesPages.ts'), 'utf8');
-  const trouves = [...source.matchAll(/^\s*(\d+):\s*require\('([^']+)'\),\s*$/gm)];
-  assert.equal(trouves.length, TOTAL_PAGES);
-
-  const pages = trouves.map(([, page]) => Number(page));
-  assert.deepEqual(pages, Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1));
-
-  for (const [, page, chemin] of trouves) {
-    assert.match(chemin, /^\.\.\/\.\.\/assets\/polices-pages\/p\d{3}\.ttf$/);
-    const fichier = join(RACINE, 'src/data', chemin);
-    assert.ok(existsSync(fichier), `page ${page} : ${chemin} est absent`);
-    assert.ok(statSync(fichier).size > 10_000, `page ${page} : ${chemin} est trop petit`);
-  }
 });
 
 // === Les ornements de la page ==============================================

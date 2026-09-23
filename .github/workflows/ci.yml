@@ -95,29 +95,39 @@ jobs:
       # jetons d'un verset, le placement de chaque verset une seule fois, la
       # règle des ouvertures de sourate et l'ensemble exact des en-têtes
       # renvoyés en marge.
+      #
+      # Il vérifie aussi que `largeurs_pages.json` décrit bien CETTE mise en
+      # page. Les deux fichiers se régénèrent par des scripts différents et sont
+      # lus tous les deux par l'application — l'un pour les coupures, l'autre
+      # pour la taille à laquelle la page se dessine. La table enregistre
+      # l'empreinte de la mise en page au moment de la mesure ; une coupure
+      # déplacée d'un mot rend cette empreinte périmée, et le contrôle le dit.
+      # Sans lui, la page se dessinerait à une taille légèrement fausse, et une
+      # bande de surlignage tomberait à côté de son mot — sans que rien ne le
+      # signale.
+      #
+      # Ce que ce contrôle ne dit plus, depuis que les 604 polices ne sont plus
+      # dans le dépôt : que chaque code soit dessiné par la police de sa page,
+      # et que les largeurs aient été mesurées justes. Les deux demandent
+      # d'ouvrir les polices et se vérifient à la demande, après
+      # `python scripts/recuperer_polices_pages.py` — dont le `--verifier`
+      # confronte les 604 fichiers au manifeste, puis `npm run verifier:largeurs`
+      # qui recalcule la mesure et la compare à la table.
       - name: Vérifier la mise en page du moushaf
         run: npm run verifier:layout
 
-      # La mise en page ne range pas du texte : elle range, pour chaque mot, le
-      # point de code que la police de sa page dessine. Une seule erreur et le
-      # mot s'imprime en pavé — un rectangle de remplissage — la page paraissant
-      # complète tout en étant fausse. Le piège est que la table des caractères
-      # ne le dit pas : les 604 polices portent les mêmes 720 points de code et
-      # les mêmes 608 emplacements. Ce qui change, c'est le dessin. Le contrôle
-      # lit donc la forme des glyphes, et exige en plus que chaque police
-      # dessine exactement ses mots plus les seize ornements de page — un témoin
-      # qui attrape aussi le mot que la mise en page aurait oublié de placer.
-      - name: Vérifier les codes de police du moushaf
-        run: npm run verifier:polices
-
-      # Le contrôle ci-dessus ouvre les polices, mais il ne dit rien de la table
-      # qui les fait trouver par Metro : `src/data/policesPages.ts` porte les 604
-      # chemins, écrits **en clair**. Metro ne suit pas un `require` calculé — un
-      # chemin construit dans une boucle ne serait pas résolu, et les pages
-      # s'afficheraient sans leur police. Ce fichier est engendré ; ce contrôle
-      # refuse qu'il dérive de son manifeste.
-      - name: Vérifier la table des polices de page
-        run: npm run verifier:polices-ts
+      # Les 604 polices de page ne sont plus dans le dépôt : aucun code ne les
+      # emploie — la composition par police a été retirée du lecteur — et leur
+      # poids de 92 Mo faisait dépasser la limite de 150 Mo du CDN qui sert les
+      # pages (voir `.gitignore`). Les outils qui les lisent restent pourtant
+      # versionnés, et c'est **délibéré** : `scripts/recuperer_polices_pages.py`
+      # les rétablit à l'identique — son `--verifier` confronte les 604 fichiers
+      # au manifeste `data/quran/polices_pages.json` — et
+      # `scripts/mesurer_largeurs_pages.py` regénère
+      # `data/quran/largeurs_pages.json`, que l'application emploie. Tous deux
+      # se lancent **à la demande**, sur une copie des polices
+      # (`npm run mesurer:largeurs`, `npm run verifier:largeurs`) : aucune étape
+      # ne les appelle, et ce n'est pas un oubli.
 
       # Le pavage dit que les divisions s'emboîtent ; il ne dit rien de leur
       # origine. 151 des 480 toumoun ont une borne déduite par report depuis les
@@ -147,31 +157,31 @@ jobs:
       - name: Falsifier les contrôles de pagination
         run: npm run falsifier:pages
 
-      # Et pour la mise en page : huit mutations de la donnée, dont une ligne en
-      # trop, un intervalle de jetons troué et une basmala rétrécie. Chacune doit
-      # tomber, et tomber sur le contrôle qui la vise.
+      # Et pour la mise en page : dix mutations, en deux campagnes qui ne mutent
+      # chacune que son fichier. Huit portent sur la donnée — dont une ligne en
+      # trop, un intervalle de jetons troué et une basmala rétrécie — et doivent
+      # tomber sur les contrôles 1 à 7. Les deux dernières portent sur la table
+      # des largeurs, et doivent tomber sur le contrôle 8 SEUL : l'empreinte
+      # périmée, et une ligne mesurée effacée là où la mise en page porte un
+      # mot. C'est ce qui prouve que l'accord entre les deux fichiers est
+      # réellement vérifié, et non supposé.
+      #
+      # Pendant la première campagne, l'empreinte de la table est remise à jour
+      # après chaque pose. Sans cela, le contrôle 8 tomberait à chaque fois —
+      # non parce que la mutation est vue, mais parce que la table ne décrit
+      # plus le fichier — et le journal annoncerait huit détections par
+      # ricochet.
       - name: Falsifier les contrôles de mise en page
         run: npm run falsifier:layout
 
-      # Et pour les codes de police : quatre mutations, dont un mot qui prend un
-      # code que sa police dessine en pavé, un mot qui prend un ornement, et un
-      # octet retourné dans un fichier de police. Cette dernière éprouve le
-      # contrôle d'identité, qui confronte chaque police au manifeste par sa
-      # taille et son empreinte SHA-256.
-      #
-      # C'est ce falsificateur qui a montré qu'une première version du contrôle
-      # ne pouvait rien voir : elle filtrait la liste des codes attendus au lieu
-      # de demander à la police ce qu'elle trace, si bien que la branche des
-      # dessins orphelins était vide par construction.
-      - name: Falsifier les contrôles de codes de police
-        run: npm run falsifier:polices
-
-      # Et pour la page du moushaf telle qu'elle se dessine : quatorze mutations,
-      # chacune devant tomber sur le test nommé pour elle. Huit portent sur les
-      # deux fichiers de géométrie et de codes ; six sur les ornements — une
-      # teinte inventée, le médaillon privé de son emplacement puis muet, un
-      # cartouche à taille fixe, le cadre remis dans le flux, et un caractère
-      # coranique écrit en dur. Le témoin de ce script exige en plus que le
+      # Et pour la page du moushaf telle qu'elle se dessine : quinze mutations,
+      # chacune devant tomber sur le test nommé pour elle. Quatre portent sur les
+      # largeurs, trois sur les codes, cinq sur les ornements — une teinte
+      # inventée, le médaillon privé de son emplacement puis muet, le cadre remis
+      # dans le flux, et un caractère coranique écrit en dur. Les trois dernières
+      # tiennent le lecteur : la composition qui ne doit pas revenir, la borne des
+      # pages, et l'adresse écrite à un seul endroit. Le témoin de ce script exige
+      # en plus que le
       # fichier de tests ait été réellement joué — `node --test` sort en 0 quand
       # aucun test ne s'exécute, et un banc qui se contenterait du code de sortie
       # annoncerait « mutation détectée » pour une raison qui n'a rien à voir avec

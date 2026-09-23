@@ -33,8 +33,7 @@ hifdh-app/
 │   ├── polices_pages.json            # Taille et empreinte des 604 polices de page
 │   ├── verifier_pages.py             # Contrôle des 604 pages du moushaf
 │   └── rapport_divisions_estimees.py # Engendre docs/divisions-estimees.md
-├── assets/                 # Polices (Amiri, images) — et les 604 polices de page
-│   └── polices-pages/                # p001.ttf … p604.ttf (95 Mo, QCF v1, KFGQPC)
+├── assets/                 # Polices de texte (Amiri) et images
 ├── pages-moushaf/          # Les 604 images du moushaf (112,7 Mo), copiées à l'octet
 │   └── EMPREINTES.txt                # Le SHA-256 de chaque page (`sha256sum -c`)
 ├── supabase/               # Schéma SQL Supabase
@@ -83,16 +82,23 @@ hifdh-app/
   **intervalles de jetons**, jamais une lettre. La coupure publiée est recoupée
   par les avances de la police de page : une ligne plus large que sa page de
   plus de 5 % n'a pas pu être imprimée, et deux pages ont ainsi été corrigées
-  (177 et 443), chacune vérifiée sur le moushaf imprimé. `npm run verifier:layout`
-  contrôle l'ensemble hors ligne.
+  (177 et 443), chacune vérifiée sur le moushaf imprimé. Ces avances sont
+  mesurées une fois pour toutes dans `largeurs_pages.json`, que
+  `npm run verifier:layout` confronte à la mise en page — la table enregistre
+  l'empreinte du fichier au moment de la mesure, si bien qu'une coupure déplacée
+  sans remesure est refusée.
 - **Polices de page** : les 604 polices QCF v1 du complexe KFGQPC, une par page.
   Elles ne dessinent pas des lettres mais **des mots** — chaque mot imprimé y est
-  un seul point de code, dont l'avance est celle du calligraphe. C'est ce qui
-  permet à l'écran de page d'être la page imprimée : mêmes coupures, mêmes
-  places, même justification, sans recomposition. Elles sont recopiées octet
-  pour octet, jamais modifiées ; `data/quran/polices_pages.json` en porte la
-  taille et l'empreinte SHA-256, et `npm run verifier:polices` confronte chaque
-  code employé au dessin de sa police.
+  un seul point de code, dont l'avance est celle du calligraphe. C'est ce qui a
+  permis de mesurer les coupures de ligne sur la main de l'imprimeur, et de
+  vérifier que chaque code est bien dessiné par la police de sa page.
+  **Elles ne sont plus dans le dépôt** : 92 Mo pour des fichiers qu'aucun code
+  n'emploie, alors que ce poids faisait passer le dépôt au-dessus de la limite du
+  CDN qui sert les images des pages (voir `NOTICE.md` §3 bis). Elles se
+  rétablissent hors du dépôt par `python scripts/recuperer_polices_pages.py`,
+  qui les confronte au manifeste `data/quran/polices_pages.json` — lequel reste
+  versionné, avec la taille et l'empreinte SHA-256 de chacune. La mesure des
+  largeurs se refait alors par `npm run verifier:largeurs`.
 - **Ornements de la page** : le médaillon de verset, le bandeau de sourate, le
   cartouche du numéro et les filets d'encadrement, dessinés en SVG dans
   `src/components/ornementsMoushaf.tsx`, aux teintes relevées sur la page
@@ -152,16 +158,23 @@ npm run verifier:donnees   # cohérence des divisions coraniques
 npm run verifier:pages     # cohérence de la pagination du moushaf (604 pages)
 npm run recouper:pages     # recoupement des 6 236 pages avec l'API quran.com
 npm run verifier:layout    # mise en page du moushaf : 604 pages × 15 lignes
-npm run verifier:polices   # chaque code est-il dessiné par la police de sa page ?
-npm run verifier:polices-ts # la table des 604 chemins suit son manifeste
 npm run verifier:rapport   # le rapport des bornes estimées suit les données
 npm run verifier:flux      # analyse statique des flux GitHub Actions
 npm run verifier:supabase  # schéma Supabase sous Postgres réel (PGlite)
 npm run falsifier:pages    # éprouve les contrôles de pagination
 npm run falsifier:layout   # éprouve les contrôles de mise en page
-npm run falsifier:polices  # éprouve les contrôles de codes de police
 npm run falsifier:moushaf  # éprouve les contrôles de la page du moushaf et de ses ornements
 npm run falsifier:renforcement  # éprouve les contrôles de « À renforcer »
+```
+
+Deux contrôles demandent les **604 polices de page**, qui ne sont plus dans le
+dépôt : ils se lancent à la demande, après
+`python scripts/recuperer_polices_pages.py`.
+
+```bash
+python scripts/recuperer_polices_pages.py --verifier  # les 604 fichiers contre leur manifeste
+npm run verifier:largeurs  # la table des largeurs, recalculée et comparée
+npm run mesurer:largeurs   # régénère cette table, et l'empreinte de la mise en page
 ```
 
 `falsifier:*` mute réellement le fichier pour vérifier que le contrôle **détecte**

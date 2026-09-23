@@ -86,6 +86,7 @@ Usage :
 """
 
 import argparse
+import hashlib
 import json
 import statistics
 import sys
@@ -101,6 +102,7 @@ import lire_police  # noqa: E402
 
 SOURCE_TEXTE = RACINE / "data" / "quran" / "quran_text_uthmani.json"
 SORTIE = RACINE / "data" / "quran" / "moushaf_layout.json"
+LARGEURS_DES_PAGES = RACINE / "data" / "quran" / "largeurs_pages.json"
 CACHE = RACINE / ".tmp-layout-cache"
 POLICES_DES_PAGES = RACINE / "assets" / "polices-pages"
 
@@ -1109,18 +1111,35 @@ def engendrer():
             f"  {len(ecarts_de_page)} ecart(s) de pagination avec quran.com, "
             f"consigne(s) dans les metadonnees"
         )
+    # La table des largeurs decrit la mise en page TELLE QU'ELLE ETAIT au moment
+    # de la mesure, et elle en porte l'empreinte. Le fichier vient d'etre
+    # reecrit : cette empreinte ne correspond donc plus, et `--verifier` la
+    # refusera jusqu'a ce que la table soit remesuree. Le dire ici evite de
+    # decouvrir l'ecart trois commandes plus loin, dans un controle qui parle
+    # d'empreintes et non de ce qu'on vient de faire.
+    print(
+        "  la table des largeurs decrit la mise en page precedente : la remesurer "
+        "par « npm run mesurer:largeurs », polices presentes"
+    )
     return 0
 
 
 def verifier():
     """Controle hors ligne : la mise en page est-elle coherente avec le texte ?
 
-    Sept epreuves. Les quatre premieres portent sur la structure du fichier, la
+    Huit epreuves. Les quatre premieres portent sur la structure du fichier, la
     cinquieme sur l'ouverture des sourates, la sixieme sur le renvoi des
     en-tetes en marge, la septieme sur l'accord entre les elements de texte et
-    les codes de police. Aucune ne lit le reseau : elles doivent pouvoir etre
-    rejouees sur une machine sans connexion. La huitieme, qui ouvre les polices,
-    est un script a part — `scripts/recuperer_polices_pages.py --verifier`.
+    les codes de police, la huitieme sur l'accord entre cette mise en page et la
+    table des largeurs de `largeurs_pages.json`.
+
+    Aucune ne lit le reseau, et aucune n'ouvre les 604 polices : elles doivent
+    pouvoir etre rejouees sur une machine sans connexion, et — depuis que les
+    polices ne sont plus dans le depot — sur un clone neuf. Ce que cela laisse
+    hors de portee : que chaque code soit dessine par la police de sa page, et
+    que les largeurs aient ete mesurees justes. Les deux se verifient a la
+    demande, polices retablies, par `scripts/recuperer_polices_pages.py
+    --verifier` puis `scripts/mesurer_largeurs_pages.py --verifier`.
     """
     if not SORTIE.exists():
         print(f"Absent : {SORTIE.relative_to(RACINE)} — lancer sans --verifier.")
@@ -1378,7 +1397,8 @@ def verifier():
                         f"code(s) au lieu de {BASMALA_JETONS}"
                     )
 
-    # 8. Aucune ligne ne deborde sa page.
+    # 8. La table des largeurs decrit bien CETTE mise en page, et aucune ligne
+    #    ne deborde.
     #
     #    C'est l'epreuve qui tient la page imprimee. Une page du moushaf est
     #    alignee des deux bords : sur la page 443 imprimee, l'encre des quinze
@@ -1386,30 +1406,103 @@ def verifier():
     #    reference de sa page de plus de 5 % n'a donc pas pu etre imprimee, et
     #    c'est le signe que la coupure publiee y met un mot de trop. Sans cette
     #    epreuve, la page se dessinerait avec une ligne qui sort du cadre.
-    polices = charger_polices()
-    avances_basmala, correspondance_basmala = polices[PAGE_DE_LA_BASMALA]
+    #
+    #    Elle ne rouvre plus les 604 polices : elles ne sont plus dans le depot
+    #    — 92 Mo pour des fichiers qu'aucun code n'emploie, contre la limite de
+    #    150 Mo du CDN qui sert les pages — et les largeurs mesurees sont
+    #    versionnees dans `largeurs_pages.json`, que l'application lit elle
+    #    aussi. L'epreuve porte donc sur l'ACCORD entre cette table et la mise
+    #    en page ci-dessus, et sur l'alignement des deux.
+    #
+    #    Cet accord n'est pas une formalite. Les deux fichiers se regenerent par
+    #    des scripts DIFFERENTS — `engendrer()` ecrit celui-ci,
+    #    `scripts/mesurer_largeurs_pages.py` ecrit l'autre — et rien ne les
+    #    liait. Une coupure deplacee d'un mot laissait la table decrire une ligne
+    #    qui n'existe plus : la page se dessinerait a une taille legerement
+    #    fausse, une bande de surlignage tomberait a cote de son mot, et rien ne
+    #    le dirait. La table enregistre pour cela l'empreinte de
+    #    `moushaf_layout.json` au moment de la mesure ; une empreinte qui ne
+    #    correspond plus est exactement ce defaut-la.
+    #
+    #    Ce que cette epreuve ne dit PAS : que les largeurs aient ete mesurees
+    #    justes. Cela demande d'ouvrir les polices et se verifie a la demande —
+    #    `scripts/recuperer_polices_pages.py --verifier` pour l'identite des 604
+    #    fichiers, puis `scripts/mesurer_largeurs_pages.py --verifier` pour la
+    #    mesure elle-meme.
     pages_justifiees = 0
-    for numero in sorted(glyphes, key=int):
-        page = int(numero)
-        avances, correspondance = polices[page]
-        largeurs = [
-            largeur_de_ligne(
-                ligne, avances, correspondance, avances_basmala, correspondance_basmala
+    if not LARGEURS_DES_PAGES.exists():
+        problemes.append(
+            f"{LARGEURS_DES_PAGES.relative_to(RACINE)} est absent : la coupure des "
+            "lignes ne peut pas etre verifiee. Le fichier est versionne — le "
+            "restaurer, puis relancer « npm run mesurer:largeurs »"
+        )
+    else:
+        empreinte = hashlib.sha256(SORTIE.read_bytes()).hexdigest()
+        table = json.loads(LARGEURS_DES_PAGES.read_text(encoding="utf-8"))
+        enregistree = (table.get("provenance") or {}).get("empreinteMiseEnPage")
+        if enregistree != empreinte:
+            problemes.append(
+                "la table des largeurs ne decrit plus cette mise en page : "
+                f"empreinte {enregistree or 'absente'} au lieu de {empreinte} — "
+                "une coupure a bouge depuis la mesure. Polices retablies par "
+                "« python scripts/recuperer_polices_pages.py », relancer "
+                "« npm run mesurer:largeurs »"
             )
-            for ligne in glyphes[numero]
-        ]
-        reference = reference_de_page(largeurs)
-        if not page_justifiee(largeurs, reference):
-            continue
-        pages_justifiees += 1
-        for indice, largeur in enumerate(largeurs, start=1):
-            if largeur is None:
-                continue
-            if largeur > (1 + SEUIL_DE_DEBORDEMENT) * reference:
+        else:
+            mesures = table.get("pages") or {}
+            if len(mesures) != PAGES:
                 problemes.append(
-                    f"page {page} ligne {indice} : {largeur} unites pour une "
-                    f"reference de {reference} ({(largeur / reference - 1):.1%} "
-                    "de trop) — la ligne ne peut pas avoir ete imprimee"
+                    f"la table des largeurs porte {len(mesures)} pages au lieu de {PAGES}"
+                )
+            for numero in sorted(glyphes, key=int):
+                page = int(numero)
+                entree = mesures.get(numero)
+                if entree is None:
+                    problemes.append(f"page {page} : absente de la table des largeurs")
+                    continue
+                largeurs = entree.get("lignes") or []
+                if len(largeurs) != LIGNES_PAR_PAGE:
+                    problemes.append(
+                        f"page {page} : {len(largeurs)} largeurs au lieu de "
+                        f"{LIGNES_PAR_PAGE}"
+                    )
+                    continue
+
+                # La ligne d'en-tete de sourate est composee en police de texte,
+                # pas dessinee par la police de page : elle vaut `null`, et
+                # c'est la seule. Un `null` qui ne tombe pas sur une en-tete —
+                # ou une en-tete mesuree — veut dire que la table decrit une
+                # autre page que celle-ci.
+                for indice, ligne in enumerate(glyphes[numero]):
+                    en_tete = any(element[0] == "e" for element in ligne)
+                    if (largeurs[indice] is None) != en_tete:
+                        problemes.append(
+                            f"page {page} ligne {indice + 1} : "
+                            + (
+                                "mesuree alors que c'est un en-tete de sourate"
+                                if en_tete
+                                else "sans mesure alors que ce n'est pas un en-tete"
+                            )
+                        )
+
+                if not entree.get("justifiee"):
+                    continue
+                pages_justifiees += 1
+                reference = entree.get("reference") or 0
+                for indice, largeur in enumerate(largeurs, start=1):
+                    if largeur is None:
+                        continue
+                    if largeur > (1 + SEUIL_DE_DEBORDEMENT) * reference:
+                        problemes.append(
+                            f"page {page} ligne {indice} : {largeur} unites pour une "
+                            f"reference de {reference} ({(largeur / reference - 1):.1%} "
+                            "de trop) — la ligne ne peut pas avoir ete imprimee"
+                        )
+
+            if pages_justifiees != table.get("pagesJustifiees"):
+                problemes.append(
+                    f"{pages_justifiees} page(s) alignee(s) des deux bords dans la table, "
+                    f"qui en annonce {table.get('pagesJustifiees')}"
                 )
 
     if problemes:
@@ -1432,14 +1525,20 @@ def verifier():
     print(f"  {total_elements} elements")
     print(f"  {total_codes} codes de police")
     print(
-        "  (que chaque code soit dessine par la police de sa page se verifie a part, "
-        "polices ouvertes : `scripts/recuperer_polices_pages.py --verifier`)"
+        "  (que chaque code soit dessine par la police de sa page, et que les "
+        "largeurs soient mesurees justes, demande d'ouvrir les 604 polices : cela "
+        "se verifie a la demande — `scripts/recuperer_polices_pages.py --verifier` "
+        "puis `scripts/mesurer_largeurs_pages.py --verifier`)"
     )
     print(f"  {len(places)} versets places, une fois chacun")
     print(f"  {len(entetes_en_marge)} en-tete(s) de sourate en marge")
     print(
         f"  {pages_justifiees} page(s) alignee(s) des deux bords, aucune ligne ne "
         "deborde sa reference"
+    )
+    print(
+        "  la table des largeurs decrit cette mise en page : empreinte "
+        f"{hashlib.sha256(SORTIE.read_bytes()).hexdigest()[:16]}…"
     )
     return 0
 

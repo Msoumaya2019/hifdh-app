@@ -1,8 +1,14 @@
 # Attributions et licences
 
-Ce dépôt redistribue des données et des polices produites par des tiers. Chacune
-est utilisée sous sa licence d'origine, rappelée ici. Toute réutilisation de ce
-dépôt doit conserver ces mentions.
+Ce dépôt redistribue des données produites par des tiers — texte coranique,
+divisions, images des pages du moushaf, polices de texte, et les **mesures**
+prises sur les polices de page. Chacune est utilisée sous sa licence d'origine,
+rappelée ici. Toute réutilisation de ce dépôt doit conserver ces mentions.
+
+Les **604 polices de page** elles-mêmes ne sont pas redistribuées : elles pèsent
+92 Mo, aucun code ne les emploie, et ce poids faisait dépasser la limite du CDN
+qui sert les images des pages. Leur provenance, leur licence et le moyen de les
+rétablir à l'identique sont en §3 bis.
 
 ---
 
@@ -146,20 +152,43 @@ la justification de l'édition imprimée. L'écran le dit à l'utilisateur.
 - **Licence** : conditions du Complexe Roi Fahd — usage libre, y compris dans
   les sites et les logiciels ; attribution au Complexe Roi Fahd seule ; fichiers
   non modifiés ; polices non vendues.
-- **Fichiers** : `assets/polices-pages/p001.ttf` … `p604.ttf`
-  (604 fichiers, 95 051 108 octets).
+- **Fichiers** : **absents du dépôt, et c'est délibéré** — voir ci-dessous. Ils se
+  rétablissent par `python scripts/recuperer_polices_pages.py`, qui les écrit
+  dans `assets/polices-pages/p001.ttf` … `p604.ttf` (604 fichiers,
+  95 051 108 octets), dossier écarté par `.gitignore`. Les fichiers obtenus se
+  confrontent au manifeste par `python scripts/recuperer_polices_pages.py
+  --verifier`, qui lit chaque empreinte sans réseau.
 - **Manifeste** : `data/quran/polices_pages.json` — la taille et l'empreinte
-  SHA-256 de chacun des 604 fichiers, avec la provenance ci-dessus. C'est lui
-  qui rend la copie vérifiable, et non une déclaration.
+  SHA-256 de chacun des 604 fichiers, avec la provenance ci-dessus. Il est
+  **versionné** : c'est lui qui rend la copie vérifiable — et rétablissable à
+  l'identique — plutôt qu'une déclaration.
 - **Aucune modification** : les fichiers sont recopiés octet pour octet, sans
   sous-ensemble ni réencodage.
 
+**Pourquoi les fichiers ne sont pas dans le dépôt.** Ils pèsent 92 Mo, pour des
+polices qu'aucun code n'emploie : la composition par police a été retirée du
+lecteur, et le mode « page du moushaf » affiche l'**image** de la page (§3 ter).
+Or ce poids faisait passer le dépôt au-dessus de la limite de 150 Mo par paquet
+du CDN qui sert ces images — la seule limite qui compte ici, puisque c'est elle
+qui décide si une page s'affiche. Les retirer a ramené le dépôt sous cette
+limite. Rien de ce qui est livré n'a changé : aucune version publiée n'embarquait
+ces polices, mesuré dans l'APK.
+
+**Ce qui reste versionné, et pourquoi.** Ce que ces polices portent est utile
+même sans elles : la table `data/quran/largeurs_pages.json` donne, pour chacune
+des 604 pages, la largeur naturelle de ses quinze lignes et sa largeur de
+référence. Elle est **lue par l'application**, et elle enregistre l'empreinte de
+`moushaf_layout.json` au moment de la mesure — c'est ce qui permet de vérifier,
+sans les polices, qu'elle décrit bien la mise en page courante. La mesure
+elle-même se refait à la demande, polices rétablies, par
+`python scripts/mesurer_largeurs_pages.py` ; son `--verifier` recalcule tout et
+compare à la table.
+
 Ces polices ne dessinent pas des lettres mais **des mots** : chaque mot imprimé
-y est un seul point de code, et son avance est celle du calligraphe. C'est ce
-qui permet à l'écran de page de l'application d'être la page imprimée — les
-mêmes coupures, les mêmes places — plutôt qu'une composition qui lui ressemble.
-Aucun texte coranique n'y est stocké : le texte reste celui de Tanzil, et la
-police ne fait que le dessiner.
+y est un seul point de code, et son avance est celle du calligraphe. C'est ce qui
+a permis de mesurer les coupures de ligne sur la main de l'imprimeur plutôt que
+sur une police de texte. Aucun texte coranique n'y est stocké : le texte reste
+celui de Tanzil, et la police ne fait que le dessiner.
 
 ---
 
@@ -205,6 +234,16 @@ cache local de l'appareil.
   le dépôt, le rendre privé ou renommer la branche couperait les 604 pages d'un
   coup — sans erreur de compilation. Changer de branche servie est une
   modification de `SOURCE_PAGES.base`.
+- **Le poids du dépôt est une contrainte de service, pas une coquetterie.** La
+  documentation de jsDelivr borne un paquet à **150 Mo**, et un fichier isolé à
+  **20 Mo** ; son API de liste, elle, refuse au-delà de **50 Mo**. Les trois
+  chiffres ne s'accordent pas, et c'est le dernier qui se voit — mais c'est le
+  premier qui décide si une page s'affiche. Le dépôt suivi pèse aujourd'hui
+  **121,0 Mo** (807 fichiers, mesuré sur l'index) ; il en pesait **211,7 Mo**
+  tant que les 604 polices de page y étaient, soit hors de l'enveloppe
+  documentée — les 604 pages étaient pourtant bien servies, mesuré une à une.
+  **Avant d'ajouter des fichiers lourds, mesurer** : `git ls-files` puis la somme
+  des tailles, jamais `du` sur un dossier partiel.
 - **Cache** : `src/lib/cachePagesMoushaf.ts` — une page téléchargée est écrite
   sur le disque et n'est plus retéléchargée.
 - **Repli** : si le cache disque n'est pas disponible sur l'appareil — le module
@@ -229,10 +268,12 @@ cache local de l'appareil.
   sur les bonnes lignes. Le seul écart — un mot, page 454 — est mesuré et nommé
   dans `docs/mise-en-page-moushaf.md`, avec la méthode et les deux conventions
   qu'il a fallu neutraliser pour que la comparaison ait un sens.
-- **La composition par police n'est plus une voie de repli.** `src/lib/policesMoushaf.ts`
-  n'est importé par personne : les 92 Mo de polices de page restent dans le dépôt
-  (§3 bis) mais ne sont pas embarqués. Mesuré dans l'APK publié, qui n'en
-  contient aucun fichier.
+- **La composition par police n'est plus une voie de repli.** Le module qui la
+  portait (`src/lib/policesMoushaf.ts`) et la table des 604 `require()` qui
+  l'alimentait ont été supprimés, et les 92 Mo de polices de page ne sont plus
+  dans le dépôt (§3 bis) : elles pesaient plus que la limite du CDN qui sert les
+  pages, pour des fichiers qu'aucun code n'employait. Aucune version publiée ne
+  les embarquait — mesuré dans l'APK, qui n'en contient aucun fichier.
 
 ### Pourquoi pas quran.com
 

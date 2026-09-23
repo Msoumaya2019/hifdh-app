@@ -10,10 +10,11 @@
 // Elle ne peut pas se tromper : c'est la page elle-même.
 //
 // La composition par police a été retirée du lecteur, et elle n'est plus
-// atteignable : `src/lib/policesMoushaf.ts` n'est importé par personne. Les
-// 92 Mo de polices de page restent dans le dépôt, mais ils ne sont pas
-// embarqués dans l'application — mesuré dans l'APK publié, qui n'en contient
-// aucune. Le mode « verset par verset », lui, n'a pas changé d'un caractère.
+// atteignable : le module qui la portait a été supprimé, et les 604 polices de
+// page ne sont plus dans le dépôt — aucune version publiée ne les embarquait,
+// mesuré dans l'APK. Elles se rétablissent à la demande par
+// `scripts/recuperer_polices_pages.py`. Le mode « verset par verset », lui,
+// n'a pas changé d'un caractère.
 //
 // CE QUI EST AFFICHÉ
 // ------------------

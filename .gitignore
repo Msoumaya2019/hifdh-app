@@ -74,6 +74,15 @@ __pycache__/
 .tmp-*
 .tmp-main.jsbundle
 
+# Les 604 polices de page du moushaf (92 Mo) ne sont PAS dans le depot : aucun
+# code ne les emploie — la composition par police a ete retiree du lecteur — et
+# leur poids faisait depasser la limite de 150 Mo du CDN qui sert les pages.
+# `scripts/recuperer_polices_pages.py` les retablit a l'identique, sans
+# modifier les fichiers ; les remettre dans la branche ferait repasser le depot
+# au-dessus de la limite. Le motif est ancre sur la racine, pour ne pas ecarter
+# un dossier de meme nom ailleurs.
+/assets/polices-pages/
+
 # Projets natifs : regeneres par `expo prebuild --clean`, jamais versionnes.
 # Un dossier `ios/` versionne porte ses references de signature et devient une
 # source constante de conflits a chaque mise a jour d'Expo.

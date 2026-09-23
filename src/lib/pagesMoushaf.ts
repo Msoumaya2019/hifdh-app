@@ -9,10 +9,10 @@
 // imprimée, elle, ne peut pas se tromper : c'est la page.
 //
 // La composition par police a été retirée du lecteur. Elle n'est plus
-// atteignable : `src/lib/policesMoushaf.ts` n'est importé par personne, et les
-// 92 Mo de polices de page ne sont donc pas embarqués dans l'application —
-// mesuré dans l'APK publié, qui n'en contient aucune. Les polices restent dans
-// le dépôt, mais elles ne sont plus une voie de repli.
+// atteignable : le module qui la portait a été supprimé, et les 604 polices de
+// page ne sont plus dans le dépôt — aucune version publiée ne les embarquait,
+// mesuré dans l'APK. Elles ne sont donc plus une voie de repli ; elles se
+// rétablissent à la demande par `scripts/recuperer_polices_pages.py`.
 //
 // D'OÙ VIENNENT LES IMAGES
 // ------------------------

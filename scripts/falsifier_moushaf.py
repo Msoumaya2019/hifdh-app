@@ -25,18 +25,25 @@ CE QUI EST MUTILE, ET LE CONTROLE QUI DOIT TOMBER
 -------------------------------------------------
   1. une mesure de geometrie faussee  -> « la geometrie de la page vient du fichier » ;
   2. la reference d'une page deplacee -> « la reference d'une page suit la regle annoncee » ;
-  3. une ligne d'en-tete qui prend une largeur -> « une ligne d'en-tete n'a pas de largeur » ;
-  4. une ligne qui deborde sa page    -> « aucune ligne mesuree ne depasse sa page » ;
-  5. un code remplace par du latin    -> « les codes ne portent que des formes de presentation » ;
-  6. la basmala d'une page changee    -> « la basmala est celle de la page 1 » ;
-  7. un element retire des codes      -> « les codes et le texte decrivent la meme page » ;
-  8. un chemin de police abime        -> « la table des polices ecrit les 604 chemins ».
-  9. une teinte d'ornement inventee   -> « les ornements portent les teintes relevees » ;
- 10. le medaillon sans emplacement    -> « le medaillon recoit le numero » ;
- 11. le medaillon qui n'affiche rien  -> « le medaillon recoit le numero » ;
- 12. un cartouche a taille fixe       -> « les cartouches se dimensionnent sur le pas » ;
- 13. le cadre remis dans le flux      -> « le cadre se dessine en fond » ;
- 14. un caractere arabe dans les ornements -> « aucun ornement ne dessine de texte coranique ».
+  3. une ligne d'en-tete mesuree       -> « une ligne d'en-tete n'a pas de largeur » ;
+  4. une ligne qui deborde             -> « aucune ligne mesuree ne depasse sa page » ;
+  5. un code latin a la place d'un mot -> « les codes ne portent que des formes de presentation » ;
+  6. la basmala d'une page changee     -> « la basmala est celle de la page 1 » ;
+  7. un element retire des codes       -> « les codes et le texte decrivent la meme page » ;
+  8. une teinte d'ornement inventee    -> « les ornements portent les teintes relevees » ;
+  9. le medaillon sans emplacement     -> « les cartouches se dimensionnent sur le pas des lignes » ;
+ 10. le medaillon qui n'affiche rien   -> « les cartouches se dimensionnent sur le pas des lignes » ;
+ 11. la composition revenue au lecteur -> « le mode page affiche une image » ;
+ 12. la borne des pages elargie        -> « la source des pages est centralisee et bornee » ;
+ 13. l'adresse ecrite dans le composant -> « le mode page affiche une image » ;
+ 14. le cadre remis dans le flux       -> « l'encadrement et le bandeau restent en fond » ;
+ 15. un caractere arabe dans les ornements -> « aucun ornement ne dessine de texte coranique ».
+
+Cette liste est le reflet de `mutations()` — quinze entrees. Elle etait restee a
+treize, et trois mutations ajoutees plus tard n'y figuraient pas : elle est
+remise d'aplomb le 2026-09-23, en meme temps que le retrait des 604 polices de
+page. La seizieme, « chemin de police abime », visait la table des 604
+`require()` : elle disparait avec elle, faute de controle a faire tomber.
 
 L'ANCRE DOIT ETRE UNIQUE
 ------------------------
@@ -63,7 +70,6 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 RACINE = pathlib.Path(__file__).resolve().parent.parent
 FICHIER_LAYOUT = RACINE / "data" / "quran" / "moushaf_layout.json"
 FICHIER_LARGEURS = RACINE / "data" / "quran" / "largeurs_pages.json"
-FICHIER_POLICES = RACINE / "src" / "data" / "policesPages.ts"
 FICHIER_ORNEMENTS = RACINE / "src" / "components" / "ornementsMoushaf.tsx"
 FICHIER_LECTEUR = RACINE / "app" / "lecteur.tsx"
 FICHIER_PAGES = RACINE / "src" / "lib" / "pagesMoushaf.ts"
@@ -88,7 +94,13 @@ TEST = RACINE / "tests" / "moushaf.test.mjs"
 # est celui des fichiers rangés dans le dépôt, et la place réservée avant
 # chargement est le format réel des pages. Le témoin a de nouveau refusé de
 # tourner tant que le compte n'était pas remis à jour.
-TESTS_ATTENDUS = 22
+#
+# Revenu de 22 à 21 le même jour : les 604 polices de page ne sont plus dans le
+# dépôt — aucun code ne les emploie, et leurs 92 Mo faisaient dépasser la limite
+# du CDN qui sert les pages. Le test qui tenait la table des 604 `require()`
+# disparaît donc avec elle, et avec lui la mutation « chemin de police abîmé »
+# qui n'avait plus de contrôle à faire tomber.
+TESTS_ATTENDUS = 21
 
 
 def lancer_controle():
@@ -222,16 +234,6 @@ def mutations():
                     ligne.pop()
                     return
 
-    def chemin_abime(_fichier):
-        texte = FICHIER_POLICES.read_text(encoding="utf-8")
-        FICHIER_POLICES.write_text(
-            texte.replace(
-                "require('../../assets/polices-pages/p604.ttf')",
-                "require('../../assets/polices-pages/p0604.ttf')",
-            ),
-            encoding="utf-8",
-        )
-
     # --- les ornements : mutations de texte, non de donnees ------------------
     #
     # Les controles d'ornements lisent le source pour tenir une coherence (les
@@ -359,13 +361,6 @@ def mutations():
             "les codes et le texte décrivent la même page",
         ),
         (
-            "chemin de police abime",
-            "le chemin de la page 604 ne suit plus la convention",
-            FICHIER_POLICES,
-            chemin_abime,
-            "la table des polices écrit les 604 chemins",
-        ),
-        (
             "teinte inventee",
             "le brun de l'encadrement devient un brun de charte",
             FICHIER_ORNEMENTS,
@@ -425,7 +420,7 @@ def mutations():
 
 
 def main() -> None:
-    for chemin in (FICHIER_LAYOUT, FICHIER_LARGEURS, FICHIER_POLICES, TEST):
+    for chemin in (FICHIER_LAYOUT, FICHIER_LARGEURS, TEST):
         if not chemin.exists():
             sys.exit(f"ERREUR : {chemin} est absent")
 
