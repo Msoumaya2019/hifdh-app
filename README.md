@@ -17,18 +17,22 @@ hifdh-app/
 ├── app/                    # Écrans (Expo Router)
 │   ├── (tabs)/             # 5 onglets: Accueil, Coran, Programme, Progrès, Profil
 │   ├── onboarding.tsx      # Questionnaire initial (4 questions)
-│   ├── lecteur.tsx         # Lecteur du Coran
+│   ├── lecteur.tsx         # Lecteur du Coran (page du moushaf)
+│   ├── ecouter.tsx         # Sélection manuelle d'un passage à écouter
 │   └── _layout.tsx         # Layout racine
 ├── src/
 │   ├── theme/              # Design system (couleurs, typographie)
 │   ├── types/              # Types TypeScript
 │   ├── data/               # Accès aux données coraniques
 │   ├── lib/                # Logique métier (algorithme, DB, SRS, Supabase)
+│   │   ├── audio/          # Lecteur audio : récitateurs, plan, état, moteur
 │   │   └── sync/           # Sauvegarde en ligne : instantané, validation, dépôts
 │   └── components/         # Composants réutilisables
 ├── data/quran/             # Données coraniques (texte, divisions, thumn)
 │   ├── quran_text_uthmani.json       # Texte + juz, page, hizbQuarter
 │   ├── moushaf_layout.json           # Où chaque mot tombe : 604 pages × 15 lignes
+│   ├── zones_surlignage.json         # La boîte exacte de chaque verset (13 201 zones)
+│   ├── generer_zones_surlignage.py   # Engendre les zones depuis la base des glyphes
 │   ├── largeurs_pages.json           # La largeur naturelle des 15 lignes, page par page
 │   ├── polices_pages.json            # Taille et empreinte des 604 polices de page
 │   ├── verifier_pages.py             # Contrôle des 604 pages du moushaf
@@ -110,6 +114,22 @@ hifdh-app/
   défile pas, comme une page ne se réagence pas ; le masquage y porte sur le
   **verset** (il devient transparent et garde sa place), non sur le mot, parce que
   cacher mot à mot demande de défaire le collage des codes.
+- **Zones de surlignage** : la boîte exacte de chaque verset sur chaque page,
+  13 201 zones, engendrées depuis la base des glyphes qui accompagne les images
+  (`data/quran/generer_zones_surlignage.py`). C'est ce qui permet de surligner le
+  verset **en cours de récitation** au mot près, sans deviner une seule
+  coordonnée, et sans remplacer les pages par du texte recomposé. La provenance
+  complète, les mesures et les six faits contrôlés sont dans `NOTICE.md` §3
+  quater. `npm run verifier:zones` refait le calcul et le compare au fichier
+  versionné ; il exige la base, qui se tire de l'archive par
+  `python scripts/extraire_base_ipa.py`, et ne tourne donc pas en intégration
+  continue.
+- **Récitation audio** : un fichier par verset, servi par le CDN d'Al Quran Cloud
+  (`cdn.islamic.network`), désigné par le **numéro global du verset** — celui que
+  l'application calcule déjà. Neuf récitateurs proposés, chacun avec son débit
+  mesuré ; Al-Ghamdi est omis parce que la source ne le sert pas verset par
+  verset. Le détail, les débits et les mesures sont dans `NOTICE.md` §3
+  quinquies.
 - **Licences et provenance** : voir `NOTICE.md`
 
 Le texte coranique n'est jamais modifié ni généré : il est recopié de la source
@@ -165,7 +185,46 @@ npm run falsifier:pages    # éprouve les contrôles de pagination
 npm run falsifier:layout   # éprouve les contrôles de mise en page
 npm run falsifier:moushaf  # éprouve les contrôles de la page du moushaf et de ses ornements
 npm run falsifier:renforcement  # éprouve les contrôles de « À renforcer »
+npm run falsifier:audio    # éprouve les contrôles du lecteur audio et du surlignage
+npm run engendrer:routes   # régénère les types de routes d'Expo Router (après un écran neuf)
 ```
+
+`engendrer:routes` mérite un mot : `.expo/types/router.d.ts` est écrit par le
+serveur de développement d'Expo, il est ignoré par Git, et il est **inclus dans la
+vérification de types**. Ajouter un écran puis lancer `npm run typecheck` sans
+serveur fait donc échouer la vérification sur une route qui existe. Le script
+appelle le générateur d'`expo-router` sans démarrer de serveur.
+
+Un contrôle demande la **base des glyphes** du moushaf, qui n'est pas versionnée :
+elle se tire de l'archive des pages, qui est celle dont le propriétaire détient
+les droits (voir `NOTICE.md` §3 ter).
+
+```bash
+python scripts/extraire_base_ipa.py            # extrait la base, empreinte vérifiée
+python scripts/extraire_base_ipa.py --verifier # la vérifie sans réécrire
+npm run engendrer:zones    # recalcule les 13 201 zones de surlignage
+npm run verifier:zones     # refait le calcul et le compare au fichier versionné
+```
+
+`verifier:zones` n'est **pas** dans la CI, où la base est absente. Ce que la CI
+garde est la cohérence du fichier lui-même, par `npm test`.
+
+### Rejouer le flux entier avant de pousser
+
+```bash
+python scripts/rejouer_ci_local.py    # ou : bash scripts/rejouer-ci-local.sh
+```
+
+L'ordre des étapes est **extrait** de `ci.yml`, jamais recopié : une liste écrite à
+la main dérive en silence, et finit par sauter l'étape qui garde le fichier qu'on
+vient de modifier. Le rejeu **ne s'arrête pas au premier échec**, et son journal
+complet part dans un fichier — un tube `| tail` perdrait les échecs du milieu, et
+il faudrait tout rejouer pour les nommer.
+
+Trois verdicts, et non deux : **verte**, **écartée** avec sa raison écrite,
+et **refusée par le bac à sable** — un artefact d'environnement, qui ne dit rien du
+code et doit être rejoué à part. Présenter le troisième comme un échec fait
+chercher un défaut qui n'existe pas ; le présenter comme vert serait un mensonge.
 
 Deux contrôles demandent les **604 polices de page**, qui ne sont plus dans le
 dépôt : ils se lancent à la demande, après

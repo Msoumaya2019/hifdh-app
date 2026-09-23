@@ -379,3 +379,69 @@ test('la barre du plein écran a disparu avec sa raison d’être', () => {
     );
   }
 });
+
+// === Le suivi visuel de la récitation ======================================
+
+test('la zone du verset récité est dessinée DERRIÈRE l’image, jamais devant', () => {
+  // C'est la propriété qui rend le surlignage possible sans toucher aux images :
+  // les pages sont des PNG dont l'unique index transparent est le blanc, donc
+  // tout ce qui est posé AVANT l'image passe sous l'encre, et les diacritiques
+  // restent intacts. Posée après, la bande les recouvrirait — et c'est
+  // exactement ce que la spécification interdit.
+  const source = rendu('src/components/LecteurPageMoushaf.tsx');
+
+  const zone = source.indexOf('styles.zoneVerset');
+  const selection = source.indexOf('styles.zoneSelectionnee');
+  const image = source.indexOf('<Image');
+
+  assert.ok(zone > 0, 'la zone du verset récité doit être rendue');
+  assert.ok(selection > 0, 'la zone de la sélection doit être rendue');
+  assert.ok(image > 0, 'l’image de la page doit être rendue');
+  assert.ok(zone < image, 'la zone du verset doit être posée avant l’image');
+  assert.ok(selection < image, 'la zone de la sélection doit être posée avant l’image');
+});
+
+test('le toucher ne désigne un verset que lorsque l’écran le demande', () => {
+  // Sans cette garde, un appui destiné à tourner une page — ou à reprendre sa
+  // lecture — sélectionnerait un verset sans prévenir, et l'utilisateur
+  // verrait apparaître une sélection qu'il n'a pas demandée.
+  const page = rendu('src/components/LecteurPageMoushaf.tsx');
+  const ecran = rendu('app/lecteur.tsx');
+
+  assert.match(
+    page,
+    /\.enabled\(onToucherVerset !== undefined\)/,
+    'le geste de désignation doit être désactivé hors du mode'
+  );
+  // Le second contrôle est dans l'ÉCRAN, pas dans la page : c'est lui qui décide
+  // d'activer le mode. Chercher cette ligne dans le composant de page ne
+  // trouverait rien, et l'assertion passerait pour de mauvaises raisons.
+  assert.match(
+    ecran,
+    /onToucherVerset=\{modeSelection \? toucherVerset : undefined\}/,
+    'l’écran ne doit transmettre le geste que dans le mode'
+  );
+});
+
+test('le geste de désignation est posé sur la feuille, pas sur la zone de page', () => {
+  // La feuille a exactement les dimensions de la page imprimée : `x` et `y` s'y
+  // ramènent aux fractions par une division. Posé sur la zone de page — plus
+  // grande, et centrée — il faudrait retrouver l'origine de la feuille, et le
+  // moindre décalage désignerait un autre verset sans que rien ne le signale.
+  const source = rendu('src/components/LecteurPageMoushaf.tsx');
+
+  const tap = source.indexOf('gesture={gesteTouche}');
+  const feuille = source.indexOf('styles.feuille');
+  assert.ok(tap > 0, 'le geste de désignation doit être posé');
+  assert.ok(
+    tap < feuille,
+    'le détecteur du toucher doit envelopper la feuille, et non la zone de page'
+  );
+
+  // Le calcul des fractions part de la largeur affichée de la page.
+  assert.match(
+    source,
+    /x \/ largeurAffichee, y \/ \(largeurAffichee \* ratio\)/,
+    'les fractions doivent être prises sur les dimensions de la page'
+  );
+});

@@ -16,6 +16,7 @@ import {
   useTheme,
   type NomPalette,
 } from '@/theme';
+import { FournisseurAudio } from '@/lib/audio/ContexteAudio';
 
 // Empêcher l'écran de démarrage de se cacher avant le chargement des polices
 SplashScreen.preventAutoHideAsync();
@@ -91,34 +92,54 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider nomInitial={nomTheme}>
         <BarreEtat />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen
-            name="onboarding"
-            options={{ presentation: 'fullScreenModal', headerShown: false }}
-          />
-          <Stack.Screen
-            name="lecteur"
-            options={{ presentation: 'card', headerShown: false }}
-          />
-          <Stack.Screen
-            name="amis"
-            options={{ presentation: 'card', headerShown: false }}
-          />
-          <Stack.Screen
-            name="discussion"
-            options={{ presentation: 'card', headerShown: false }}
-          />
-          {/* Le lien de courriel — confirmation d'adresse ou réinitialisation de
-              mot de passe — arrive sur `hifdh://lien`, que cette déclaration
-              associe à l'écran. Sans elle, Expo Router chercherait une route
-              `/lien` non déclarée et afficherait « écran introuvable » au moment
-              précis où l'utilisateur attend que son lien fasse quelque chose. */}
-          <Stack.Screen
-            name="lien"
-            options={{ presentation: 'card', headerShown: false }}
-          />
-        </Stack>
+        {/* Le moteur audio, monté UNE FOIS pour toute l'application.
+            Il est ici, et non dans l'écran du lecteur, pour une raison de fond :
+            la récitation doit survivre à la navigation. Sortir de l'écran pour
+            consulter son programme, revenir, et retrouver la récitation au même
+            verset — c'est ce qu'un moteur monté dans l'écran ne peut pas faire,
+            puisqu'il meurt avec lui.
+
+            C'est aussi ce qui rend l'état du verset actif **unique** : le
+            lecteur audio et la page du moushaf lisent le même fournisseur, donc
+            ils ne peuvent pas afficher deux versets différents. */}
+        <FournisseurAudio>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen
+              name="onboarding"
+              options={{ presentation: 'fullScreenModal', headerShown: false }}
+            />
+            <Stack.Screen
+              name="lecteur"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            {/* L'écran de sélection manuelle. Il n'a PAS d'entrée dans la barre
+                d'onglets : la spécification interdit d'en ajouter un, et
+                écouter est un geste qu'on fait depuis un passage, pas un
+                endroit où l'on vit. */}
+            <Stack.Screen
+              name="ecouter"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            <Stack.Screen
+              name="amis"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            <Stack.Screen
+              name="discussion"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            {/* Le lien de courriel — confirmation d'adresse ou réinitialisation de
+                mot de passe — arrive sur `hifdh://lien`, que cette déclaration
+                associe à l'écran. Sans elle, Expo Router chercherait une route
+                `/lien` non déclarée et afficherait « écran introuvable » au moment
+                précis où l'utilisateur attend que son lien fasse quelque chose. */}
+            <Stack.Screen
+              name="lien"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+          </Stack>
+        </FournisseurAudio>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

@@ -149,12 +149,36 @@ export interface LearningSchedule {
  */
 export type ModeAffichage = 'versets' | 'page';
 
+/**
+ * Les réglages du lecteur audio, tels qu'ils sont conservés.
+ *
+ * Les champs sont écrits en types primitifs, et non avec ceux de
+ * `lib/audio` : ce fichier ne décrit que la FORME de ce qui est rangé. Ce qui
+ * revient du disque n'est pas typé de toute façon — une version antérieure, une
+ * écriture interrompue ou une main étrangère peuvent y laisser n'importe quoi —
+ * et c'est `lireRepetition` qui ramène chaque valeur dans ses bornes.
+ *
+ * `nombre` vaut `null` pour l'infini : c'est une valeur, pas une absence, et la
+ * distinguer d'un champ manquant est ce qui empêche un réglage corrompu de
+ * devenir une récitation sans fin.
+ */
+export interface ReglagesAudio {
+  recitateurId?: string;
+  vitesse?: number;
+  repetition?: {
+    mode?: string;
+    nombre?: number | null;
+    pauseSecondes?: number;
+  };
+}
+
 export interface UserConfig {
   memorizedPassages: MemorizedPassage[];
   objective: Objective;
   schedule: LearningSchedule;
   onboardingCompleted: boolean;
   affichage?: { mode: ModeAffichage };
+  audio?: ReglagesAudio;
 }
 
 // === Programme d'apprentissage ===

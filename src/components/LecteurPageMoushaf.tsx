@@ -19,8 +19,37 @@
 // CE QUI EST AFFICHÉ
 // ------------------
 // L'image seule, centrée, à son rapport réel, dans un cadre sobre. Rien n'est
-// superposé : ni texte, ni SVG, ni médaillon. La page porte déjà tout ce qu'un
-// moushaf porte — son cadre, ses médaillons, ses cartouches et son numéro.
+// superposé **par-dessus** : ni texte, ni SVG, ni médaillon. La page porte déjà
+// tout ce qu'un moushaf porte — son cadre, ses médaillons, ses cartouches et son
+// numéro.
+//
+// DEUX SURLIGNAGES, ET ILS NE DISENT PAS LA MÊME CHOSE
+// ----------------------------------------------------
+// Les deux sont posés **derrière** l'image, donc sous l'encre :
+//
+//   - la bande de la séance (`bandeSurlignage`) couvre des **lignes entières**,
+//     et dit « ta séance passe par ici » ;
+//   - la zone du verset récité (`zoneVerset`) couvre les **mots d'un seul
+//     verset**, et dit « c'est ici, maintenant ».
+//
+// Elles ne se déduisent pas l'une de l'autre, et c'est pourquoi les deux
+// existent : la bande de ligne est exacte mais grossière — une ligne qui porte
+// trois versets courts les marque tous les trois —, tandis que la zone de verset
+// est précise au mot. Pour dire où en est la récitation, seule la seconde suffit.
+//
+// CE QUI REND LE SURLIGNAGE POSSIBLE SANS TOUCHER AUX IMAGES
+// ----------------------------------------------------------
+// Les pages sont des PNG à palette dont l'unique index transparent est le blanc
+// (`tRNS` de longueur 1, valeur 0 — mesuré) : le papier est transparent, l'encre
+// est opaque. Tout ce qui est dessiné **avant** l'image passe donc derrière
+// l'encre, et les signes de vocalisation — qui débordent au-dessus et au-dessous
+// de chaque ligne — restent intacts. C'est cette propriété, et non une marge
+// choisie à l'œil, qui garantit que le surlignage ne masque jamais rien.
+//
+// Les positions viennent de `zones_surlignage.json`, engendré depuis la table
+// `glyphs` de la base qui a servi à dessiner ces pages : ce sont les boîtes
+// exactes des mots, jamais des coordonnées devinées. Voir
+// `data/quran/generer_zones_surlignage.py` pour la provenance et les contrôles.
 //
 // TROIS ÉTATS, TOUJOURS LISIBLES
 // ------------------------------
@@ -47,7 +76,24 @@ import { getRatioPage } from '@/lib/pagesMoushaf';
 import { getLignesParPageMoushaf } from '@/data/quranData';
 import { gesteDePage } from '@/lib/gestePageMoushaf';
 import { lignesDuPassageSurPage, type PlageDeVersets } from '@/lib/surlignagePassage';
+import { positionEnPourcent, versetTouche, zoneAvecMarge, zonesDuVerset, type RefVerset, type ZoneVerset } from '@/lib/zonesMoushaf';
 import { raisonCacheIndisponible, usePageMoushaf } from '@/lib/cachePagesMoushaf';
+
+/**
+ * La marge, en fraction de la page, ajoutée autour d'une zone de verset.
+ *
+ * La boîte mesurée est celle de l'**encre** : collée au tracé, la bande rogne
+ * l'extrémité des lettres et se lit comme un défaut de rendu. Quatre millièmes
+ * de la largeur font environ huit pixels sur la page de 1920 — assez pour que
+ * la bande respire, trop peu pour qu'elle morde sur le verset voisin.
+ *
+ * La marge verticale est **nulle**, et c'est délibéré : le haut et le bas d'une
+ * zone sont déjà ceux de la ligne entière, donc de son encre la plus haute et
+ * la plus basse. Y ajouter une marge ferait toucher les bandes de deux lignes
+ * voisines, et la page paraîtrait soulignée d'un bout à l'autre.
+ */
+const MARGE_ZONE_X = 0.004;
+const MARGE_ZONE_Y = 0;
 
 export interface LecteurPageMoushafProps {
   /** La page à montrer, de 1 à 604. */
@@ -66,6 +112,32 @@ export interface LecteurPageMoushafProps {
    * suivre la séance, pas la page.
    */
   passage?: PlageDeVersets | null;
+  /**
+   * Le verset en cours de récitation, ou `null` quand rien ne joue.
+   *
+   * C'est lui qui est surligné **au mot près**, à partir des zones mesurées de
+   * `zones_surlignage.json`. `null` n'affiche aucune zone : c'est le cas d'un
+   * lecteur à l'arrêt, et aussi celui d'une page qui ne porte pas le verset
+   * récité — l'utilisateur a feuilleté, et le suivi est coupé.
+   */
+  actif?: RefVerset | null;
+  /**
+   * Les versets désignés à la main sur cette page.
+   *
+   * Mis en évidence d'une teinte distincte de celle du verset récité : ce que
+   * l'utilisateur a choisi et ce que le lecteur joue sont deux choses
+   * différentes, et les confondre l'empêcherait de voir sa sélection.
+   */
+  selection?: RefVerset[] | null;
+  /**
+   * Appelé quand l'utilisateur touche un verset de la page.
+   *
+   * **Sa présence active la désignation.** Sans lui, la page ne réagit pas au
+   * toucher : c'est l'état ordinaire de la lecture, où un appui ne doit rien
+   * faire. Un booléen séparé aurait permis d'activer le mode sans savoir quoi
+   * faire du verset touché.
+   */
+  onToucherVerset?: (surah: number, ayah: number) => void;
   /** Aller à la page précédente. */
   onPrecedente: () => void;
   /** Aller à la page suivante. */
@@ -84,6 +156,9 @@ export function LecteurPageMoushaf({
   dansLePassage,
   plageDeVersets,
   passage = null,
+  actif = null,
+  selection = null,
+  onToucherVerset,
   onPrecedente,
   onSuivante,
   onAllerA,
@@ -108,6 +183,37 @@ export function LecteurPageMoushaf({
     () => lignesDuPassageSurPage(page, passage),
     [page, passage]
   );
+
+  // Les zones du verset récité, en fractions de la page.
+  //
+  // Elles viennent de la table `glyphs` de la base qui a servi à dessiner ces
+  // images : ce sont donc les boîtes **exactes** des mots du verset, et non des
+  // positions estimées. Un verset coupé par un retour à la ligne en occupe
+  // plusieurs — une par ligne — et chacune ne couvre que ses propres mots.
+  //
+  // Rend un tableau vide quand le verset n'est pas sur la page affichée, ce qui
+  // est le cas normal d'un feuilletage : il n'y a alors rien à surligner, et
+  // c'est exact.
+  const zonesActives = useMemo(() => {
+    if (actif === null) return [];
+    return zonesDuVerset(page, actif.surah, actif.ayah).map((zone) =>
+      zoneAvecMarge(zone, MARGE_ZONE_X, MARGE_ZONE_Y)
+    );
+  }, [page, actif]);
+
+  // Les zones des versets désignés à la main. Même géométrie que celles du
+  // verset récité — ce sont les mêmes boîtes mesurées —, mais une autre teinte :
+  // ce que l'utilisateur a choisi n'est pas ce que le lecteur joue.
+  const zonesSelectionnees = useMemo(() => {
+    if (selection === null || selection.length === 0) return [];
+    const zones: ZoneVerset[] = [];
+    for (const verset of selection) {
+      for (const zone of zonesDuVerset(page, verset.surah, verset.ayah)) {
+        zones.push(zoneAvecMarge(zone, MARGE_ZONE_X, MARGE_ZONE_Y));
+      }
+    }
+    return zones;
+  }, [page, selection]);
 
   // La place réservée à la page, avant même que l'image ne soit là. On prend la
   // plus contraignante des deux dimensions : la page ne déborde jamais, ni en
@@ -148,6 +254,32 @@ export function LecteurPageMoushaf({
       runOnJS(gererGeste)(evenement.translationX, evenement.translationY);
     });
 
+  // Le geste de désignation.
+  //
+  // Il est posé sur la FEUILLE, et non sur la zone de page : la feuille a
+  // exactement les dimensions de la page imprimée, donc `x` et `y` se ramènent
+  // aux fractions de la page par une simple division. Le poser sur la zone de
+  // page obligerait à retrouver l'origine de la feuille — un calcul qui se
+  // trompe en silence dès que la page n'est plus centrée.
+  //
+  // Il est **désactivé** tant que `onToucherVerset` n'est pas fourni : en
+  // lecture ordinaire, un appui sur la page ne doit rien désigner.
+  const gererTouche = useCallback(
+    (x: number, y: number) => {
+      if (onToucherVerset === undefined) return;
+      if (largeurAffichee <= 0) return;
+      const verset = versetTouche(page, x / largeurAffichee, y / (largeurAffichee * ratio));
+      if (verset !== null) onToucherVerset(verset.surah, verset.ayah);
+    },
+    [onToucherVerset, page, largeurAffichee, ratio]
+  );
+
+  const gesteTouche = Gesture.Tap()
+    .enabled(onToucherVerset !== undefined)
+    .onEnd((evenement) => {
+      runOnJS(gererTouche)(evenement.x, evenement.y);
+    });
+
   return (
     <View style={styles.racine}>
       {/* La page, seule. `flex: 1` lui donne la place disponible ; le rapport
@@ -163,6 +295,7 @@ export function LecteurPageMoushaf({
             })
           }
         >
+        <GestureDetector gesture={gesteTouche}>
         <View
           style={[
             styles.feuille,
@@ -172,6 +305,18 @@ export function LecteurPageMoushaf({
             },
           ]}
         >
+          {/* Les versets désignés à la main, DERRIÈRE la page, et posés en
+              premier : la séance et le verset récité doivent rester visibles
+              par-dessus, sans quoi on ne saurait plus où en est la récitation
+              pendant qu'on prépare une sélection. */}
+          {largeurAffichee > 0 &&
+            zonesSelectionnees.map((zone, index) => (
+              <View
+                key={`sel-${zone.ligne}-${index}`}
+                pointerEvents="none"
+                style={[styles.zoneSelectionnee, positionEnPourcent(zone)]}
+              />
+            ))}
           {/* Le surlignage de la séance, DERRIÈRE la page.
               Il est posé avant l'image, donc dessiné en dessous : l'encre de
               l'imprimé reste au-dessus de la bande, et les mots ne sont jamais
@@ -187,6 +332,32 @@ export function LecteurPageMoushaf({
                   styles.bandeSurlignage,
                   { top: `${((numero - 1) / LIGNES_PAR_PAGE) * 100}%` },
                 ]}
+              />
+            ))}
+
+          {/* Le verset récité, DERRIÈRE la page lui aussi, et posé après la
+              bande de la séance — donc par-dessus elle.
+
+              C'est le cœur de la synchronisation : la zone n'est pas un
+              minuteur, c'est la boîte du verset dont le fichier audio joue.
+              Elle ne peut pas se tromper de verset, parce qu'elle ne le devine
+              pas — elle le lit.
+
+              Pourquoi elle peut être teintée sans rien masquer : les pages sont
+              des PNG dont l'unique index transparent est le blanc, et l'encre
+              est opaque. Tout ce qui est dessiné avant l'image passe donc
+              derrière l'encre, et les signes de vocalisation — qui débordent
+              au-dessus et au-dessous de la ligne — restent intacts. C'est la
+              propriété qui rend le surlignage possible sans toucher aux images.
+
+              La teinte est celle du thème (`primary`) : vert dans « Vert »,
+              rose dans « Rose », bleu dans « Bleu ». */}
+          {largeurAffichee > 0 &&
+            zonesActives.map((zone, index) => (
+              <View
+                key={`${zone.ligne}-${index}`}
+                pointerEvents="none"
+                style={[styles.zoneVerset, positionEnPourcent(zone)]}
               />
             ))}
 
@@ -236,6 +407,7 @@ export function LecteurPageMoushaf({
             </View>
           )}
           </View>
+        </GestureDetector>
         </View>
       </GestureDetector>
 
@@ -425,25 +597,61 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
   },
   // La bande de surlignage : une ligne du moushaf, derrière l'encre.
   //
-  // La teinte est celle de l'or de la charte, très diluée (`#C4A35A` à 22 %).
-  // Elle est volontairement faible : la page affichée est l'imprimé, et une
-  // bande opaque ferait disparaître les signes de vocalisation qui passent
-  // au-dessus et au-dessous de la ligne — ce sont eux qu'on vient lire.
+  // La teinte est celle de l'or de la charte, très diluée (`#C4A35A` à 16 %).
+  // Elle a été abaissée de 22 % à 16 % le jour où le verset récité a reçu sa
+  // propre bande : les deux se superposent — le verset est toujours sur une
+  // ligne de la séance — et à teintes égales la bande de la séance noyait celle
+  // du verset. Celle-ci dit « la séance passe par ici », l'autre dit « c'est
+  // ici, maintenant » : la seconde doit se distinguer de la première.
   bandeSurlignage: {
     position: 'absolute',
     left: 0,
     right: 0,
     height: `${(1 / LIGNES_PAR_PAGE) * 100}%`,
     backgroundColor: colors.gold,
-    opacity: 0.22,
+    opacity: 0.16,
+  },
+  // Le verset en cours de récitation : la boîte mesurée de ses mots, et rien
+  // de plus. Sa largeur ne couvre que lui — c'est ce qui le distingue de la
+  // bande de la séance, qui couvre des lignes entières.
+  //
+  // La teinte suit le thème, comme le demande la spécification. L'opacité reste
+  // modérée par principe : la bande passe de toute façon sous l'encre, donc
+  // elle ne peut pas cacher une diacritique — mais une teinte trop appuyée
+  // rendrait la lecture désagréable sur une page qu'on récite.
+  zoneVerset: {
+    position: 'absolute',
+    backgroundColor: colors.primary,
+    opacity: 0.3,
+    borderRadius: 4,
+  },
+  // Les versets désignés à la main. Teinte distincte de celle du verset récité,
+  // et plus soutenue : c'est un choix de l'utilisateur, pas un état de lecture,
+  // et il doit pouvoir vérifier d'un coup d'œil ce qu'il a sélectionné avant de
+  // lancer la récitation. Un contour marque les bords, parce qu'une teinte seule
+  // se confond avec le verset récité quand les deux se superposent.
+  zoneSelectionnee: {
+    position: 'absolute',
+    backgroundColor: colors.gold,
+    opacity: 0.45,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.goldDark,
   },
   // La barre du plein écran a été retirée : elle faisait double emploi avec la
   // barre de navigation, qui reste visible en plein écran et porte le même
   // compteur. La sortie du plein écran, elle, est portée par l'écran.
-  // La feuille : fond sobre, coins arrondis, ombre légère. C'est le seul
-  // habillage — la page n'est pas décorée, elle est posée.
+  // La feuille : le PAPIER, et non le fond du thème.
+  //
+  // C'est `colors.papier` et non `colors.surface`, et la différence n'est pas
+  // cosmétique. Les pages sont des PNG à palette dont l'unique index transparent
+  // est le blanc : le papier de l'image est **transparent**, et c'est le fond
+  // posé dessous qui lui donne sa couleur. Sur le fond du thème noir
+  // (`#191A1E`), l'encre `#000000` des pages serait devenue invisible — une
+  // page noire sur fond noir. Le papier vaut donc blanc dans les quatre
+  // palettes : une page de moushaf est blanche.
   feuille: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.papier,
     borderRadius: radii.md,
     overflow: 'hidden',
     alignItems: 'center',

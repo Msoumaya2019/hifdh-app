@@ -114,10 +114,15 @@ MUTATIONS = [
         "<GestureHandlerRootView>",
         "la racine perd flex: 1 : l'application s'affiche blanche",
     ),
+    # L'ancre porte la ligne PRÉCÉDENTE, et pas seulement `.onEnd(` : depuis que
+    # la feuille porte aussi un geste de désignation, le composant a DEUX
+    # `.onEnd(` — un pour le balayage, un pour l'appui. Viser `.onEnd(` seul ne
+    # désigne plus rien, et le falsificateur s'arrêtait sur « 2 occurrences, une
+    # seule attendue » : c'est `.failOffsetY` qui appartient au seul balayage.
     (
         "src/components/LecteurPageMoushaf.tsx",
-        "    .onEnd((evenement) => {",
-        "    .onBegin((evenement) => {",
+        "    .failOffsetY([-20, 20])\n    .onEnd((evenement) => {",
+        "    .failOffsetY([-20, 20])\n    .onBegin((evenement) => {",
         "le geste se déclenche au toucher au lieu du relâchement",
     ),
     (

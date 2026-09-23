@@ -32,6 +32,8 @@ import { aujourdHui, dansJours, ilYAjours } from '@/lib/dates';
 import { reporterSeance } from '@/lib/programGenerator';
 import { passagesARenforcer, type PassageARenforcer } from '@/lib/renforcement';
 import { getSurah } from '@/data/quranData';
+import { useAudio } from '@/lib/audio/ContexteAudio';
+import { versetsDeLaPlage } from '@/lib/audio/plan';
 import type { UserConfig, LearningSession } from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -150,6 +152,18 @@ export default function ProgrammeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Programme</Text>
+        {/* L'accès à la sélection manuelle. Il est ici, et non dans la barre
+            d'onglets, parce que la spécification interdit d'y ajouter une
+            entrée — et parce qu'écouter se fait depuis un passage. */}
+        <Pressable
+          style={styles.boutonEcouter}
+          onPress={() => router.push('/ecouter')}
+          accessibilityRole="button"
+          accessibilityLabel="Écouter un passage choisi à la main"
+          hitSlop={8}
+        >
+          <Ionicons name="headset-outline" size={22} color={colors.primary} />
+        </Pressable>
       </View>
 
       {/* Onglets */}
@@ -261,10 +275,19 @@ function SessionCard({ session, onComplete, onPostpone, onPress }: {
   onPress: () => void;
 }) {
   const styles = useStyles(creerStyles);
+  const { ouvrir } = useAudio();
   const statusIcon = session.status === 'completed' ? 'checkmark-circle' : 
     session.status === 'postponed' ? 'time-outline' : 'circle-outline';
   const statusColor = session.status === 'completed' ? colors.success :
     session.status === 'postponed' ? colors.warning : colors.textTertiary;
+
+  // « Écouter » ouvre la séance du jour avec **exactement** les bornes qu'elle
+  // porte : ce sont celles du programme, et le lecteur audio ne les redéfinit
+  // pas. Écouter ne marque rien — la spécification l'exige, et c'est aussi ce
+  // qui rend le geste sans conséquence : on peut écouter un passage qu'on n'a
+  // pas encore mémorisé.
+  const ecouter = () =>
+    ouvrir(versetsDeLaPlage(session.surah, session.startAyah, session.endAyah));
 
   return (
     <Card padding="md">
@@ -277,18 +300,33 @@ function SessionCard({ session, onComplete, onPostpone, onPress }: {
           </Text>
         </View>
       </Pressable>
-      {session.status === 'todo' && (
-        <View style={styles.sessionActions}>
-          <Pressable style={[styles.actionBtn, styles.completeBtn]} onPress={onComplete}>
-            <Ionicons name="checkmark" size={18} color={colors.textOnPrimary} />
-            <Text style={styles.actionBtnText}>Mémorisé</Text>
-          </Pressable>
-          <Pressable style={[styles.actionBtn, styles.postponeBtn]} onPress={onPostpone}>
-            <Ionicons name="time" size={18} color={colors.warning} />
-            <Text style={[styles.actionBtnText, { color: colors.warning }]}>Reporter</Text>
-          </Pressable>
-        </View>
-      )}
+      {/* La barre d'actions est désormais TOUJOURS rendue : « Écouter » vaut
+          pour une séance à faire comme pour une séance déjà faite — on peut
+          vouloir réécouter un passage mémorisé. Les deux boutons de jugement,
+          eux, ne concernent que ce qui reste à faire. */}
+      <View style={styles.sessionActions}>
+        <Pressable
+          style={[styles.actionBtn, styles.ecouterBtn]}
+          onPress={ecouter}
+          accessibilityRole="button"
+          accessibilityLabel={`Écouter les versets ${session.startAyah} à ${session.endAyah}`}
+        >
+          <Ionicons name="headset-outline" size={18} color={colors.primary} />
+          <Text style={[styles.actionBtnText, { color: colors.primary }]}>Écouter</Text>
+        </Pressable>
+        {session.status === 'todo' && (
+          <>
+            <Pressable style={[styles.actionBtn, styles.completeBtn]} onPress={onComplete}>
+              <Ionicons name="checkmark" size={18} color={colors.textOnPrimary} />
+              <Text style={[styles.actionBtnText, { color: colors.textOnPrimary }]}>Mémorisé</Text>
+            </Pressable>
+            <Pressable style={[styles.actionBtn, styles.postponeBtn]} onPress={onPostpone}>
+              <Ionicons name="time" size={18} color={colors.warning} />
+              <Text style={[styles.actionBtnText, { color: colors.warning }]}>Reporter</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
     </Card>
   );
 }
@@ -308,6 +346,7 @@ function RenforcementCard({ passage, onRenforce, onPasEncore, onPress }: {
   onPress: () => void;
 }) {
   const styles = useStyles(creerStyles);
+  const { ouvrir } = useAudio();
   const surah = getSurah(passage.surah);
   const marque = passage.origine === 'marque';
 
@@ -332,9 +371,23 @@ function RenforcementCard({ passage, onRenforce, onPasEncore, onPress }: {
         </View>
       </Pressable>
       <View style={styles.sessionActions}>
+        {/* « Écouter » ici aussi : c'est souvent en réécoutant qu'on débloque un
+            passage qu'on n'arrivait pas à retenir — et un passage « à renforcer »
+            est précisément celui-là. */}
+        <Pressable
+          style={[styles.actionBtn, styles.ecouterBtn]}
+          onPress={() =>
+            ouvrir(versetsDeLaPlage(passage.surah, passage.startAyah, passage.endAyah))
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Écouter les versets ${passage.startAyah} à ${passage.endAyah}`}
+        >
+          <Ionicons name="headset-outline" size={18} color={colors.primary} />
+          <Text style={[styles.actionBtnText, { color: colors.primary }]}>Écouter</Text>
+        </Pressable>
         <Pressable style={[styles.actionBtn, styles.completeBtn]} onPress={onRenforce}>
           <Ionicons name="checkmark" size={18} color={colors.textOnPrimary} />
-          <Text style={styles.actionBtnText}>Renforcé</Text>
+          <Text style={[styles.actionBtnText, { color: colors.textOnPrimary }]}>Renforcé</Text>
         </Pressable>
         <Pressable style={[styles.actionBtn, styles.postponeBtn]} onPress={onPasEncore}>
           <Ionicons name="time" size={18} color={colors.warning} />
@@ -353,6 +406,17 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
   header: {
     padding: spacing.lg,
     paddingBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  boutonEcouter: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySurface,
   },
   title: {
     fontSize: fontSizes.xxxl,
@@ -443,6 +507,16 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
   },
   postponeBtn: {
     backgroundColor: colors.warningLight,
+  },
+  // « Écouter » : fond discret, contour de la couleur du thème. C'est une
+  // commande d'étude, pas un jugement — elle ne doit donc pas peser autant que
+  // « Mémorisé », qui écrit un résultat.
+  ecouterBtn: {
+    flex: 0,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySurface,
   },
   actionBtnText: {
     fontSize: fontSizes.sm,

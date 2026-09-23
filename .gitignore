@@ -83,6 +83,20 @@ __pycache__/
 # un dossier de meme nom ailleurs.
 /assets/polices-pages/
 
+# La base des glyphes du moushaf : 5,9 Mo, et un fichier de TRAVAIL, pas une
+# donnee de l'application. Elle se tire de l'archive du moushaf par
+# `scripts/extraire_base_ipa.py`, qui en verifie l'empreinte. Ce que
+# l'application lit est `data/quran/zones_surlignage.json`, qui est versionne et
+# pese 369 Ko.
+#
+# `npm run verifier:zones` refait le calcul et le compare au fichier versionne.
+# Il exige la base, donc il ne tourne PAS en integration continue — ou elle est
+# absente. Ce que la CI garde est la coherence du fichier lui-meme, par les tests
+# de `tests/audio.test.mjs` : bornes dans la page, bandes conformes a la mise en
+# page, 604 pages, plus de 13 000 zones, et un appui qui designe le bon verset
+# sur chacune d'elles.
+/data/quran/ayahinfo_1920.db
+
 # Projets natifs : regeneres par `expo prebuild --clean`, jamais versionnes.
 # Un dossier `ios/` versionne porte ses references de signature et devient une
 # source constante de conflits a chaque mise a jour d'Expo.

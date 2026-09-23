@@ -36,6 +36,18 @@ export interface Palette {
   background: string;
   surface: string;
   surfaceVariant: string;
+  /**
+   * Le papier du moushaf : le fond sur lequel est posée la page imprimée.
+   *
+   * Il vaut blanc dans les QUATRE palettes, thème noir compris, et ce n'est pas
+   * un oubli. Les pages sont des PNG à palette dont l'unique index transparent
+   * est le blanc (mesuré : `tRNS` de longueur 1, valeur 0) ; l'encre est opaque
+   * et se dessine par-dessus. Sur un fond sombre, une encre `#000000` posée sur
+   * `#191A1E` devient illisible, et l'inverser reviendrait à modifier la page —
+   * ce que la spécification interdit. Une page de moushaf est donc blanche, dans
+   * tous les thèmes : c'est ce qu'elle est.
+   */
+  papier: string;
 
   // Touches secondaires
   beige: string;
@@ -90,6 +102,7 @@ const VERT: Palette = {
 
   background: '#FAF8F4',
   surface: '#FFFFFF',
+  papier: '#FFFFFF',
   surfaceVariant: '#F5F2EC',
 
   beige: '#E8DFD0',
@@ -142,6 +155,7 @@ const ROSE: Palette = {
 
   background: '#FDF9FA',
   surface: '#FFFFFF',
+  papier: '#FFFFFF',
   surfaceVariant: '#F9F1F4',
 
   beige: '#EFDCE3',
@@ -190,6 +204,7 @@ const BLEU: Palette = {
 
   background: '#F8FAFD',
   surface: '#FFFFFF',
+  papier: '#FFFFFF',
   surfaceVariant: '#EFF4FA',
 
   beige: '#DCE6F0',
@@ -254,6 +269,10 @@ const NOIR: Palette = {
 
   background: '#0E0E11',
   surface: '#191A1E',
+  // Blanc, comme les trois autres : la page est une image de papier blanc dont
+  // le seul index transparent est le blanc, et son encre est opaque. Voir la
+  // déclaration de `papier` dans `Palette`.
+  papier: '#FFFFFF',
   surfaceVariant: '#22242A',
 
   beige: '#2A2C33',

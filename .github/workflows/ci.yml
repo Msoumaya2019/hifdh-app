@@ -293,6 +293,29 @@ jobs:
       - name: Falsifier les contrôles du surlignage et du lecteur
         run: npm run falsifier:surlignage
 
+      # Et le lecteur audio : vingt mutations, plus une sentinelle.
+      #
+      # Ce qui est éprouvé ici ne se voit PAS quand c'est faux. Une zone de
+      # surlignage placée en miroir est de la bonne taille, de la bonne couleur,
+      # et posée sur le verset voisin ; un appui dans le blanc qui ne désigne
+      # rien ressemble à un appui manqué ; un verset oublié au milieu d'une plage
+      # donne une écoute qui paraît complète.
+      #
+      # La sentinelle — une mutation sans effet, qui doit être signalée NON
+      # DÉTECTÉE — est là pour que « non détectée » soit prononcé, et non confondu
+      # avec un succès.
+      #
+      # Le falsificateur a trouvé un défaut réel à sa première exécution : après
+      # l'auto-stop, le plan RESTE en place et l'index revient à zéro, donc
+      # `etapeCourante` désigne le premier verset. Rien n'assertait que la bande
+      # devait disparaître dans cet état — elle serait revenue sur le premier
+      # verset au moment où la séance se termine. Le test manquant a été écrit.
+      #
+      # Le contrôle d'ordre, lui, déplace RÉELLEMENT le bloc de surlignage après
+      # l'image : l'ordre de deux blocs ne se casse pas par substitution de texte.
+      - name: Falsifier les contrôles du lecteur audio
+        run: npm run falsifier:audio
+
       # Et pour les objectifs et les rythmes de l'inscription : quinze mutations.
       #
       # Le défaut visé est MUET. Le rendu parcourt `ORDRE_NIVEAUX`, puis filtre

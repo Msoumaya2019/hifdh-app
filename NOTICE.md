@@ -320,6 +320,126 @@ appareil), `src/components/LecteurPageMoushaf.tsx` (le rendu). Éprouvé par
 `tests/surlignage.test.mjs` et `tests/lecteur.test.mjs`, et tenu par
 `npm run falsifier:surlignage`.
 
+### Le verset récité, surligné au mot près (depuis 1.9.0)
+
+La ligne suffit pour dire « la séance passe par ici ». Elle ne suffit pas pour
+suivre une **récitation** : une ligne qui porte trois versets courts les
+marquerait tous les trois. Le suivi visuel demande donc la position de chaque
+verset, et cette position **existe** — elle n'a pas eu à être devinée.
+
+La base qui accompagne les images (`ayahinfo_1920.db`, table `glyphs`) porte, pour
+chacun des 88 246 mots des 604 pages, la **boîte exacte de son tracé** en
+coordonnées de la page (1920 × 3106). `data/quran/generer_zones_surlignage.py` en
+tire `data/quran/zones_surlignage.json` : 13 201 zones, une par fragment de verset
+et par ligne.
+
+**Ce qui a été mesuré, et non supposé :**
+
+- le **modèle de la table** — `glyphes = jetons + 1 − (4 si le verset porte la
+  basmala)` — vérifié verset par verset sur les 6 236 versets : 6 123 sont
+  exacts, 112 portent la basmala, et **13:37 est la seule exception** (son
+  médaillon est absent de la table, et non son dernier mot). Écarter son dernier
+  glyphe aurait supprimé le mot `وَاقٍ` ;
+- le **médaillon** du numéro de verset occupe la dernière position du verset et
+  déborde sur la ligne suivante dans **566 cas**. C'est lui qui explique les 566
+  écarts entre les zones et la mise en page. Médaillon écarté, **6 235 versets sur
+  6 236 ont exactement les mêmes lignes** dans les deux sources, et le seul écart
+  restant est **38:24, page 454** — celui que `docs/mise-en-page-moushaf.md`
+  documentait déjà ;
+- **2 971 boîtes sont transposées** (`max_x < min_x`) : ce sont des signes
+  détachés — harakat, marques de waqf — dont les deux bornes ont été échangées à
+  la saisie. Leurs boîtes retransposées tombent exactement dans le blanc que
+  l'ordre de lecture leur laisse. Les normaliser ne déplace que 204 zones, de
+  9,5 px en moyenne, toujours sur le bord gauche ;
+- **un seul recouvrement dans tout le Coran** : page 254, ligne 7, 13:37 finit à
+  x = 289 et 13:38 commence à x = 290 — un **contact d'un pixel**, expliqué par le
+  médaillon absent. Le générateur l'exige **exactement**, au lieu de le tolérer
+  par un seuil ;
+- **la transparence des pages** : ce sont des PNG à palette dont le `tRNS` a une
+  longueur de 1 et vaut 0, donc **le blanc est le seul index transparent**. Le
+  papier est transparent, l'encre est opaque. C'est cette propriété, et non une
+  marge choisie à l'œil, qui garantit qu'une bande posée **derrière** l'image ne
+  peut pas masquer une diacritique.
+
+**Deux surlignages, et ils ne disent pas la même chose.** La bande de la séance
+couvre des lignes entières et dit « la séance passe par ici » ; la zone du verset
+récité couvre les mots d'un seul verset et dit « c'est ici, maintenant ». La
+teinte de la seconde suit le thème (`primary`) — vert, rose ou bleu ; la première
+reste dorée, accent neutre présent dans les quatre palettes.
+
+**Le verset surligné est celui dont le fichier joue**, jamais un verset estimé
+d'après une durée écoulée. L'état est publié par le moteur audio
+(`src/lib/audio/ContexteAudio.tsx`, champ `actif`) et lu par la page : une seule
+source, donc deux affichages ne peuvent pas diverger.
+
+**Code** : `data/quran/generer_zones_surlignage.py` (la mesure),
+`src/lib/zonesMoushaf.ts` (les zones en fractions de page, et la résolution d'un
+appui), `src/components/LecteurPageMoushaf.tsx` (le rendu),
+`src/lib/audio/suiviRecitation.ts` (le changement de page). Éprouvé par
+`tests/audio.test.mjs` — dont un contrôle qui parcourt les 604 pages, et un qui
+pose un appui au milieu de **chacune** des 13 201 zones — et tenu par
+`npm run falsifier:audio`.
+
+Le fichier versionné se vérifie par `npm run verifier:zones`, qui refait le calcul
+depuis la base et le compare. Ce contrôle **exige la base**, qui n'est pas
+versionnée : il tourne en local, pas en intégration continue. La CI garde la
+cohérence du fichier lui-même, par les tests.
+
+## 3 quinquies. Récitation audio (un fichier par verset)
+
+Depuis la version 1.9.0, un passage peut être écouté et répété, avec le suivi
+visuel du verset récité.
+
+**La synchronisation est celle du verset, pas d'un minuteur.** Chaque verset a son
+propre fichier audio, et le lecteur joue exactement le verset qu'il surligne. Un
+minuteur — même bien réglé — dériverait, et annoncerait un verset pendant qu'un
+autre est récité ; c'est précisément ce que la spécification interdit.
+
+**Source** : le CDN d'Al Quran Cloud (`cdn.islamic.network`), qui sert
+`quran/audio/<débit>/<édition>/<id>.mp3`, **un fichier par verset**, désigné par le
+**numéro global du verset** (1 à 6236). Ce numéro est celui que l'application
+calcule déjà (`startAyahId + ayah - 1`) : aucune table de correspondance n'a été
+ajoutée. Douze versets ont été vérifiés contre l'API avant qu'elle ne limite le
+débit : 1:1 → 1, 2:255 → 262, 2:286 → 293, 18:1 → 2141, 29:69 → 3409, 36:1 → 3706,
+55:78 → 4979, 87:19 → 5967, 112:1 → 6222.
+
+**Le débit dépend de l'édition, et il a été mesuré édition par édition** :
+`128/ar.alafasy`, `128/ar.husary`, `128/ar.minshawi`,
+`192/ar.abdulbasitmurattal`, `128/ar.mahermuaiqly`, `192/ar.abdurrahmaansudais`,
+`128/ar.shaatree`, `128/ar.hudhaify`, `64/ar.saoodshuraym`,
+`128/ar.muhammadayyoub`. Écrire `128` partout rend un **403** pour Abdul Basit,
+As-Sudais et Ash-Shuraym : l'écran aurait annoncé une panne de réseau qui n'existe
+pas.
+
+**Al-Ghamdi n'est pas proposé**, et c'est un fait mesuré : `ar.saadalghamdi`
+existe dans le catalogue mais son champ `audio` est `null` — l'édition est servie
+au niveau de la sourate, pas du verset. Aucun identifiant « ghamdi » n'apparaît
+dans les 176 éditions audio. Un récitateur proposé qui ne peut pas jouer se lit
+comme une panne, donc il est **omis**, et son absence est documentée ici.
+
+**Une seule récitation à la fois.** Un seul objet `Audio.Sound` existe, dans un
+seul moteur (`src/lib/audio/ContexteAudio.tsx`), et changer de récitateur en cours
+de lecture arrête le fichier courant avant de rejouer l'étape. Un verrou de séance
+(`src/lib/audio/verrou.ts`) invalide toute réponse de chargement arrivée après un
+arrêt.
+
+**Lecture en arrière-plan : ce qui est configuré, et ce qui ne l'est pas.** Le mode
+audio demande `staysActiveInBackground` et déclare `UIBackgroundModes: ["audio"]`
+dans `app.json` : sur iOS, la récitation continue donc écran verrouillé. Sur
+Android, `expo-av` ne fournit pas de service de premier plan, et le système peut
+arrêter le son quand l'application passe en arrière-plan — ce n'est **pas** corrigé
+ici, et c'est écrit plutôt que sous-entendu.
+
+**Écouter ne marque rien.** Aucune écoute ne rend un passage « mémorisé », et
+aucune ne modifie le texte coranique. Le texte n'est jamais engendré : il vient de
+Tanzil, comme au § 1.
+
+**Code** : `src/lib/audio/` — `recitateurs.ts` (le catalogue et les adresses),
+`repetitions.ts`, `plan.ts` (l'ordre des étapes), `etatLecture.ts` (la machine à
+états), `suiviRecitation.ts` (le changement de page), `ContexteAudio.tsx` (le
+moteur), `preferences.ts` (les réglages conservés). Éprouvé par
+`tests/audio.test.mjs` et tenu par `npm run falsifier:audio`.
+
 ## 4. Données partagées entre comptes (suivi entre amis)
 
 Depuis la version 1.6.3, deux personnes peuvent se relier par un **code

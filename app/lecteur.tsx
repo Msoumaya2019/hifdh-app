@@ -60,6 +60,11 @@ import {
   getPageCount,
 } from '@/data/quranData';
 import { LecteurPageMoushaf } from '@/components/LecteurPageMoushaf';
+import { LecteurAudio } from '@/components/LecteurAudio';
+import { useAudio } from '@/lib/audio/ContexteAudio';
+import { versetsDeLaPlage } from '@/lib/audio/plan';
+import { pageASuivre } from '@/lib/audio/suiviRecitation';
+import { plageEntre, type RefVerset } from '@/lib/zonesMoushaf';
 // `teintesMoushaf` reste : les styles du mode « verset par verset » en
 // dérivent la couleur de l'encre (voir `verseText`).
 import { teintesMoushaf } from '@/components/ornementsMoushaf';
@@ -148,6 +153,87 @@ export default function LecteurScreen() {
     setPage(getPageOfAyah(surahNum, startAyah) ?? 1);
   }, [surahNum, startAyah]);
 
+  // === Le suivi de la récitation ===========================================
+  //
+  // `actif` est le verset en cours de récitation, tel que le moteur audio le
+  // publie : c'est le verset du fichier qui joue, et non un verset déduit d'une
+  // durée écoulée. C'est l'état centralisé que la spécification demande — le
+  // lecteur audio et la page du moushaf lisent la même valeur, donc ils ne
+  // peuvent pas afficher deux versets différents.
+  const { actif, etat: etatAudio, ouvrir } = useAudio();
+
+  // La page à afficher pour suivre la récitation, ou `null` s'il ne faut rien
+  // changer.
+  //
+  // La décision est prise par une fonction pure — éprouvée sans appareil — et
+  // l'effet ne fait que l'appliquer. Rappeler `setPage` à chaque verset avec la
+  // page courante remettrait l'écran dans un état qu'il a déjà, et surtout
+  // ramènerait de force un utilisateur qui vient de feuilleter.
+  const pageDeSuivi = pageASuivre({
+    suiviAuto: etatAudio.suiviAuto,
+    pageAffichee: page,
+    actif,
+  });
+
+  useEffect(() => {
+    if (pageDeSuivi !== null) setPage(pageDeSuivi);
+  }, [pageDeSuivi]);
+
+  // === La désignation de versets sur la page ===============================
+  //
+  // Deux appuis posent les deux bornes d'une plage, comme une sélection de
+  // texte. La plage est ensuite rendue dans l'ordre du moushaf par
+  // `plageEntre`, quelle que soit la façon dont les bornes ont été posées —
+  // sur une page arabe, on désigne souvent le bas avant le haut.
+  //
+  // Le mode est **explicite** : sans lui, la page ne réagirait pas au toucher,
+  // et un appui destiné à tourner une page ou à reprendre sa lecture
+  // sélectionnerait un verset sans qu'on l'ait demandé.
+  const [modeSelection, setModeSelection] = useState(false);
+  const [ancre, setAncre] = useState<RefVerset | null>(null);
+  const [selection, setSelection] = useState<RefVerset[] | null>(null);
+
+  /** Vider la sélection, et sortir du mode. */
+  const effacerSelection = () => {
+    setAncre(null);
+    setSelection(null);
+    setModeSelection(false);
+  };
+
+  /**
+   * Un verset touché sur la page.
+   *
+   * Premier appui : il pose l'ancre, et la plage se réduit à lui. Second appui :
+   * il ferme la plage, et l'ancre est effacée — un troisième appui commence donc
+   * une nouvelle sélection, plutôt que d'étirer indéfiniment la précédente.
+   */
+  const toucherVerset = (s: number, a: number) => {
+    const verset: RefVerset = { surah: s, ayah: a };
+    if (ancre === null) {
+      setAncre(verset);
+      setSelection([verset]);
+      return;
+    }
+    setSelection(plageEntre(page, ancre, verset));
+    setAncre(null);
+  };
+
+  // Changer de page abandonne la sélection : ses bornes désignent des versets
+  // de la page qu'on vient de quitter, et les garder ferait écouter une plage
+  // que l'utilisateur ne voit plus.
+  useEffect(() => {
+    setAncre(null);
+    setSelection(null);
+  }, [page]);
+
+  // Ce que le bouton du lecteur ouvre : la sélection si elle existe, sinon la
+  // séance du lecteur. Une seule définition de ce qui sera écouté, et elle est
+  // ici.
+  const versetsAEcouter =
+    selection !== null && selection.length > 0
+      ? selection
+      : versetsDeLaPlage(surahNum, startAyah, endAyah);
+
   /**
    * Le verdict de l'apprenant sur la séance du jour.
    *
@@ -210,6 +296,39 @@ export default function LecteurScreen() {
 
   const pagesDuPassage = getPagesOfRange(surahNum, startAyah, endAyah);
 
+  // Le bouton qui ouvre la désignation de versets, et qui la referme.
+  //
+  // Il est rendu dans les DEUX dispositions — plein écran et en-tête — parce que
+  // le plein écran est l'état par défaut : un bouton qui n'existerait que dans
+  // l'en-tête serait invisible à l'ouverture, et l'utilisateur n'aurait aucun
+  // moyen de découvrir la fonction.
+  const boutonSelection = (
+    <Pressable
+      style={[
+        styles.boutonFlottant,
+        modeSelection && styles.boutonFlottantActif,
+      ]}
+      onPress={() => {
+        if (modeSelection) effacerSelection();
+        else setModeSelection(true);
+      }}
+      accessibilityRole="button"
+      accessibilityState={{ selected: modeSelection }}
+      accessibilityLabel={
+        modeSelection
+          ? 'Quitter la sélection de versets'
+          : 'Sélectionner des versets à écouter'
+      }
+      hitSlop={12}
+    >
+      <Ionicons
+        name={modeSelection ? 'close' : 'checkmark-done-outline'}
+        size={22}
+        color={colors.textOnPrimary}
+      />
+    </Pressable>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Les commandes flottantes du plein écran, portées par l'écran lui-même.
@@ -244,6 +363,7 @@ export default function LecteurScreen() {
           >
             <Ionicons name="contract-outline" size={22} color={colors.textOnPrimary} />
           </Pressable>
+          {boutonSelection}
         </View>
       )}
 
@@ -268,6 +388,7 @@ export default function LecteurScreen() {
           <Text style={styles.surahNameFr}>{surah.nameFr}</Text>
         </View>
         <View style={styles.headerActions}>
+          {boutonSelection}
           <Pressable
             style={styles.zoomButton}
             onPress={() => setPleinEcran(true)}
@@ -277,6 +398,20 @@ export default function LecteurScreen() {
           </Pressable>
         </View>
       </View>
+      )}
+
+      {/* La consigne de désignation. Elle n'apparaît QUE dans le mode : une
+          phrase permanente prendrait à la page la place qu'elle réclame, et
+          n'apprendrait rien à qui ne sélectionne pas. */}
+      {modeSelection && (
+        <View style={styles.bandeauSelection}>
+          <Ionicons name="checkmark-done-outline" size={16} color={colors.goldDark} />
+          <Text style={styles.bandeauSelectionTexte}>
+            {ancre === null
+              ? 'Touche un premier verset pour commencer la sélection.'
+              : 'Touche un second verset : la plage sera celle qui les sépare.'}
+          </Text>
+        </View>
       )}
 
       {/* La page du moushaf, avec le surlignage des lignes de la séance.
@@ -296,11 +431,32 @@ export default function LecteurScreen() {
             : `Versets ${bornes.start.surah}:${bornes.start.ayah} à ${bornes.end.surah}:${bornes.end.ayah}`;
         })()}
         passage={passage}
+        actif={actif}
+        selection={modeSelection ? selection : null}
+        onToucherVerset={modeSelection ? toucherVerset : undefined}
         onPrecedente={() => setPage((p) => Math.max(1, p - 1))}
         onSuivante={() => setPage((p) => Math.min(getPageCount(), p + 1))}
         onAllerA={setPage}
         pleinEcran={pleinEcran}
         onBasculerPleinEcran={() => setPleinEcran((v) => !v)}
+      />
+
+      {/* Le lecteur audio, sous la page.
+          Il occupe la place qu'il doit occuper : quand rien ne joue, il ne
+          montre qu'un bouton — « Écouter mon passage » — et la page garde tout
+          l'écran. Pendant la récitation, il montre le transport et le compteur
+          de répétitions.
+
+          Le passage qu'il ouvre est **exactement** celui du lecteur : les mêmes
+          bornes que celles reçues en paramètres, donc celles du programme du
+          jour. Il n'y a pas deux définitions de la séance. */}
+      <LecteurAudio
+        onOuvrir={() => ouvrir(versetsAEcouter)}
+        libelleOuvrir={
+          selection !== null && selection.length > 0
+            ? `Écouter cette sélection (${selection.length})`
+            : 'Écouter mon passage'
+        }
       />
 
       {/* Barre de validation.
@@ -413,6 +569,28 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
+  },
+  // Le bouton de sélection, allumé : c'est le seul signe que la page répond au
+  // toucher. Sans lui, un appui sélectionnerait un verset sans prévenir.
+  boutonFlottantActif: {
+    backgroundColor: colors.gold,
+  },
+  bandeauSelection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.sm,
+    backgroundColor: colors.goldLight,
+  },
+  bandeauSelectionTexte: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.textPrimary,
   },
   backButton: {
     padding: spacing.sm,
