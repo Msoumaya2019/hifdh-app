@@ -550,3 +550,18 @@ GRANT EXECUTE ON FUNCTION public.ajouter_ami_par_code(UUID, TEXT) TO authenticat
 GRANT EXECUTE ON FUNCTION public.est_ami_avec(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.point_d_un_ami(UUID, DATE) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mes_amis(UUID, DATE) TO authenticated;
+
+-- ============================================================================
+-- Rechargement du cache de PostgREST
+-- ============================================================================
+
+-- PostgREST garde le schéma EN CACHE. Une fonction créée par ce fichier peut
+-- exister en base et répondre `PGRST202` (« could not find the function »)
+-- jusqu'au rechargement — et le message ne distingue pas « absente » de « cache
+-- en retard ». Sans cette ligne, on recolle une migration déjà appliquée en
+-- croyant qu'elle ne l'a pas été.
+--
+-- `NOTIFY` est sans effet s'il n'y a pas d'écouteur : l'exécuter depuis l'éditeur
+-- SQL est sans danger, et c'est la seule instruction de ce fichier qui ne modifie
+-- aucune donnée.
+NOTIFY pgrst, 'reload schema';
