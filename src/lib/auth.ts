@@ -8,11 +8,41 @@
 // Supabase sont techniques et en anglais (« Invalid login credentials ») :
 // les afficher telles quelles ne dirait rien à l'utilisateur.
 
+import * as Linking from 'expo-linking';
+
 import { getSupabase, isSupabaseConfigured } from './supabase';
+import { traduireErreur, verifierEmail, verifierNouveauMotDePasse } from './erreursAuth';
 
 export interface ResultatAuth {
   ok: boolean;
   message: string;
+}
+
+/**
+ * Le chemin de retour, et pourquoi il est nommé ici.
+ *
+ * Supabase renvoie l'utilisateur vers l'application après un lien de courriel.
+ * L'adresse exacte dépend de l'empaquetage — `hifdh://lien` dans une
+ * application installée, `exp://…/--/lien` dans Expo Go — et c'est
+ * `Linking.createURL` qui la construit correctement. Écrire `hifdh://` en dur
+ * marcherait sur l'IPA et échouerait pendant le développement, ce qui est la
+ * pire des combinaisons : un défaut qu'on ne voit qu'en production.
+ *
+ * UN SEUL chemin pour les deux liens — confirmation d'adresse et
+ * réinitialisation. Deux chemins exigeraient deux écrans, qui feraient la même
+ * chose à une ligne près ; ici, c'est `lireLienAuth` qui dit de quel lien il
+ * s'agit, et l'écran décide ensuite. Une seule adresse à déclarer dans le
+ * tableau de bord, donc, et un seul endroit où se tromper.
+ *
+ * Cette adresse doit figurer dans les « Redirect URLs » du projet Supabase,
+ * sinon Supabase refuse de rediriger et l'utilisateur reste sur une page
+ * blanche. C'est une action du propriétaire du compte, pas du code.
+ */
+export const CHEMIN_RETOUR = 'lien';
+
+/** L'adresse de retour vers l'application, pour un chemin donné. */
+export function adresseDeRetour(chemin: string): string {
+  return Linking.createURL(chemin);
 }
 
 export interface Utilisateur {
@@ -20,9 +50,7 @@ export interface Utilisateur {
   email: string;
 }
 
-/** Longueur minimale acceptée par Supabase pour un mot de passe. */
-export const LONGUEUR_MOT_DE_PASSE = 6;
-
+/** Ce qu'on répond quand le projet Supabase n'est pas configuré. */
 function indisponible(): ResultatAuth {
   return {
     ok: false,
@@ -33,47 +61,29 @@ function indisponible(): ResultatAuth {
 }
 
 /**
- * Traduit une erreur d'authentification en message utilisable.
+ * Les phrases d'erreur et les contrôles de saisie vivent dans
+ * `src/lib/erreursAuth.ts`, qui n'importe RIEN.
  *
- * On s'appuie sur le code quand il est fourni, et sur le texte sinon : tous les
- * chemins de Supabase ne remplissent pas `code`.
+ * Ce n'est pas un rangement : c'est ce qui les rend éprouvables. Ce fichier-ci
+ * importe `./supabase`, donc `expo-constants` et `react-native` ; un test qui
+ * l'importerait exigerait tout l'environnement d'une application, et aucun ne le
+ * faisait. La traduction des erreurs n'était donc couverte par rien — mesuré, et
+ * deux mutations du falsificateur l'ont montré en restant vertes.
+ *
+ * On ré-exporte pour que les appelants n'aient pas à connaître ce découpage.
  */
-function traduireErreur(erreur: { message?: string; code?: string } | null): string {
-  const code = erreur?.code ?? '';
-  const texte = (erreur?.message ?? '').toLowerCase();
+export {
+  LONGUEUR_MOT_DE_PASSE,
+  traduireErreur,
+  verifierEmail,
+  verifierNouveauMotDePasse,
+} from './erreursAuth';
 
-  if (code === 'invalid_credentials' || texte.includes('invalid login credentials')) {
-    return 'Adresse ou mot de passe incorrect.';
-  }
-  if (code === 'email_not_confirmed' || texte.includes('email not confirmed')) {
-    return 'Cette adresse doit d’abord être confirmée. Vérifiez vos courriels.';
-  }
-  if (code === 'user_already_exists' || texte.includes('already registered')) {
-    return 'Un compte existe déjà avec cette adresse.';
-  }
-  if (code === 'weak_password' || texte.includes('password should be at least')) {
-    return `Le mot de passe doit contenir au moins ${LONGUEUR_MOT_DE_PASSE} caractères.`;
-  }
-  if (texte.includes('rate limit') || code === 'over_email_send_rate_limit') {
-    return 'Trop de tentatives. Patientez quelques minutes avant de réessayer.';
-  }
-  if (texte.includes('unable to validate email') || texte.includes('invalid email')) {
-    return 'Cette adresse électronique n’est pas valide.';
-  }
-  if (texte.includes('network') || texte.includes('fetch')) {
-    return 'Pas de connexion. Vérifiez votre réseau et réessayez.';
-  }
-  return 'La connexion a échoué. Réessayez dans un instant.';
-}
-
+/** Le contrôle d'une adresse ET d'un mot de passe, pour les deux gestes. */
 function verifierSaisie(email: string, motDePasse: string): string | null {
-  if (email.trim() === '' || !email.includes('@')) {
-    return 'Saisissez une adresse électronique valide.';
-  }
-  if (motDePasse.length < LONGUEUR_MOT_DE_PASSE) {
-    return `Le mot de passe doit contenir au moins ${LONGUEUR_MOT_DE_PASSE} caractères.`;
-  }
-  return null;
+  const problemeEmail = verifierEmail(email);
+  if (problemeEmail !== null) return problemeEmail;
+  return verifierNouveauMotDePasse(motDePasse);
 }
 
 export async function creerCompte(email: string, motDePasse: string): Promise<ResultatAuth> {
@@ -121,12 +131,126 @@ export async function seConnecter(email: string, motDePasse: string): Promise<Re
   return { ok: true, message: 'Connexion réussie.' };
 }
 
+/**
+ * Demander un lien de réinitialisation.
+ *
+ * Le message de succès est le MÊME que l'adresse existe ou non, et c'est
+ * délibéré : répondre « cette adresse est inconnue » laisserait n'importe qui
+ * vérifier qui possède un compte. On dit donc toujours d'aller regarder sa
+ * boîte, ce qui est aussi la seule action utile.
+ */
+export async function reinitialiserMotDePasse(email: string): Promise<ResultatAuth> {
+  const client = getSupabase();
+  if (client === null) return indisponible();
+
+  const probleme = verifierEmail(email);
+  if (probleme !== null) return { ok: false, message: probleme };
+
+  const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: adresseDeRetour(CHEMIN_RETOUR),
+  });
+
+  if (error !== null) return { ok: false, message: traduireErreur(error) };
+
+  return {
+    ok: true,
+    message:
+      'Si un compte existe avec cette adresse, un lien vient d’être envoyé. ' +
+      'Regardez aussi vos courriers indésirables.',
+  };
+}
+
+/**
+ * Renvoyer le courriel de confirmation d'adresse.
+ *
+ * C'est la réponse au cas le plus fréquent : le compte est créé, mais le
+ * courriel n'est jamais arrivé — ou a été supprimé. Sans ce bouton,
+ * l'utilisateur n'a aucun recours, et son compte reste inutilisable pour
+ * toujours.
+ */
+export async function renvoyerConfirmation(email: string): Promise<ResultatAuth> {
+  const client = getSupabase();
+  if (client === null) return indisponible();
+
+  const probleme = verifierEmail(email);
+  if (probleme !== null) return { ok: false, message: probleme };
+
+  const { error } = await client.auth.resend({
+    type: 'signup',
+    email: email.trim(),
+    options: { emailRedirectTo: adresseDeRetour(CHEMIN_RETOUR) },
+  });
+
+  if (error !== null) return { ok: false, message: traduireErreur(error) };
+
+  return {
+    ok: true,
+    message:
+      'Un nouveau courriel de confirmation a été envoyé. Regardez aussi vos courriers indésirables.',
+  };
+}
+
+/**
+ * Choisir un nouveau mot de passe.
+ *
+ * Suppose une session ouverte — c'est le cas après avoir suivi un lien de
+ * réinitialisation, que `ouvrirSessionDepuisLien` a échangé. Sans session,
+ * Supabase refuse, et le message le dit plutôt que d'annoncer un succès.
+ */
+export async function changerMotDePasse(nouveauMotDePasse: string): Promise<ResultatAuth> {
+  const client = getSupabase();
+  if (client === null) return indisponible();
+
+  const probleme = verifierNouveauMotDePasse(nouveauMotDePasse);
+  if (probleme !== null) return { ok: false, message: probleme };
+
+  const { error } = await client.auth.updateUser({ password: nouveauMotDePasse });
+
+  if (error !== null) return { ok: false, message: traduireErreur(error) };
+
+  return { ok: true, message: 'Mot de passe modifié. Vous êtes connecté.' };
+}
+
+/**
+ * Ouvrir une session à partir des jetons d'un lien de courriel.
+ *
+ * Le lien de réinitialisation arrive avec `access_token` et `refresh_token`
+ * dans le fragment. Tant qu'ils ne sont pas posés, `updateUser` échoue : la
+ * session n'existe pas encore côté client.
+ *
+ * On ne passe PAS par `verifyOtp` : ce chemin exige de connaître le type exact
+ * du jeton, et se trompe en silence. `setSession` accepte les deux jetons tels
+ * qu'ils sont arrivés, et c'est la forme que Supabase documente pour ce cas.
+ */
+export async function ouvrirSessionDepuisLien(
+  accessToken: string,
+  refreshToken: string
+): Promise<ResultatAuth> {
+  const client = getSupabase();
+  if (client === null) return indisponible();
+
+  if (accessToken === '' || refreshToken === '') {
+    return {
+      ok: false,
+      message: 'Ce lien est incomplet. Demandez-en un nouveau depuis l’application.',
+    };
+  }
+
+  const { error } = await client.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+
+  if (error !== null) return { ok: false, message: traduireErreur(error) };
+
+  return { ok: true, message: 'Lien accepté. Choisissez un nouveau mot de passe.' };
+}
+
 export async function seDeconnecter(): Promise<void> {
   const client = getSupabase();
   if (client === null) return;
   await client.auth.signOut();
 }
-
 /** L'utilisateur connecté, ou `null`. */
 export async function utilisateurCourant(): Promise<Utilisateur | null> {
   const client = getSupabase();

@@ -110,9 +110,14 @@ test('« null » et « délai dépassé » sont deux issues distinctes', async (
 // === La forme des trois écrans ==============================================
 
 test('l’écran de sauvegarde retire « en cours » dans un finally, jamais après un await', () => {
-  // Trois mutations à couvrir d'un coup, et chacune est une panne différente :
-  // un `finally` transformé en code linéaire, un `catch` ajouté qui avale, ou
-  // la borne retirée d'un des deux gestes d'authentification.
+  // LA FORME A CHANGÉ, LA GARANTIE NON — et elle porte sur plus de gestes.
+  //
+  // Avant, chacun des deux gestes recopiait sa borne, son verrou et son
+  // `finally`. Ce fichier comptait donc « deux » de chaque, et une quatrième
+  // copie oubliant l'un des trois serait passée inaperçue. Il n'y a
+  // maintenant qu'UN lanceur, par lequel passent les quatre gestes : il suffit
+  // qu'il soit juste, et qu'aucun geste ne le contourne. C'est ce que les
+  // comptages ci-dessous vérifient.
   const source = lire('src/components/SauvegardeSection.tsx');
 
   assert.match(
@@ -121,16 +126,22 @@ test('l’écran de sauvegarde retire « en cours » dans un finally, jamais apr
     'la borne de l’authentification doit exister'
   );
 
-  // Les deux gestes passent par la borne. Compté, et non cherché une fois :
-  // un seul des deux borné laisserait l'autre tourner sans fin.
-  const bornes = source.match(/await borner\(/g) ?? [];
-  assert.equal(bornes.length, 2, `les deux gestes doivent être bornés, ${bornes.length} trouvé(s)`);
+  // La borne est appelée UNE fois, dans le lanceur partagé. Compter, plutôt que
+  // chercher : deux appels signifieraient qu'un geste s'est remis à appeler la
+  // borne pour son compte, donc qu'il a quitté le lanceur.
+  const bornes = source.match(/await borner\(action\(\)\)/g) ?? [];
+  assert.equal(
+    bornes.length,
+    1,
+    `la borne doit être appelée une seule fois, dans le lanceur — ${bornes.length} trouvée(s)`
+  );
 
-  // Le retrait de « en cours » est dans un `finally`.
+  // Le retrait de « en cours » est dans un `finally`, avec le relâchement du
+  // verrou — les deux ensemble, sinon l'un des deux peut être oublié seul.
   assert.match(
     source,
-    /finally \{\s*\n\s*setEnCours\(false\);\s*\n\s*\}/,
-    '« en cours » doit être retiré dans un finally'
+    /finally \{\s*\n\s*enCoursReference\.current = false;\s*\n\s*setEnCours\(false\);\s*\n\s*\}/,
+    '« en cours » doit être retiré dans un finally, avec le relâchement du verrou'
   );
 
   // Et il ne l'est plus nulle part ailleurs : une seconde sortie serait une
@@ -140,6 +151,29 @@ test('l’écran de sauvegarde retire « en cours » dans un finally, jamais apr
     false,
     '« en cours » ne doit plus être retiré juste après un await'
   );
+
+  // Aucun geste ne contourne le lanceur : les quatre y passent. C'est la
+  // contrepartie du regroupement — un seul chemin, mais il faut qu'il soit le
+  // SEUL. Un `await seConnecter(...)` écrit directement dans un gestionnaire
+  // échapperait au verrou et à la borne sans que rien ne le dise.
+  const parLeLanceur = source.match(/\blancer\(/g) ?? [];
+  assert.equal(
+    parLeLanceur.length,
+    4,
+    `les quatre gestes doivent passer par le lanceur, ${parLeLanceur.length} trouvé(s)`
+  );
+
+  for (const geste of [
+    'creerCompte',
+    'seConnecter',
+    'reinitialiserMotDePasse',
+    'renvoyerConfirmation',
+  ]) {
+    assert.ok(
+      new RegExp(`lancer\\(\\s*\\n?\\s*\\(\\) => ${geste}\\(`).test(source),
+      `${geste} doit passer par le lanceur, et non l’appeler directement`
+    );
+  }
 
   // La lecture de session est bornée elle aussi : c'est là que le verrou agit.
   assert.match(
@@ -174,25 +208,28 @@ test('deux appuis sur un bouton d’authentification ne laissent pas deux attent
 
   assert.match(
     source,
-    /if \(enCoursReference\.current\) return;/,
+    /if \(enCoursReference\.current\) \{\s*\n\s*return /,
     'la réentrance doit être refusée sur une référence synchrone'
   );
 
-  const verrous = source.match(/if \(enCoursReference\.current\) return;/g) ?? [];
-  assert.equal(verrous.length, 2, `les deux gestes doivent être verrouillés, ${verrous.length} trouvé(s)`);
+  // Un seul verrou, posé une fois et relâché une fois — dans le lanceur
+  // partagé. Compter reste indispensable : posé sans être relâché, le bouton ne
+  // marcherait plus jamais ; relâché sans être posé, deux appuis lanceraient
+  // deux attentes. Le regroupement en un lanceur supprime la quatrième copie
+  // où l'un des deux aurait pu manquer.
+  const verrous = source.match(/if \(enCoursReference\.current\) \{/g) ?? [];
+  assert.equal(verrous.length, 1, `le verrou doit être posé une fois, ${verrous.length} trouvé(s)`);
 
-  // La référence est posée avant l'appel et relâchée dans le `finally` : une
-  // seule des deux moitiés ne suffirait pas — posée sans être relâchée, le
-  // bouton ne marcherait plus jamais.
   const poses = source.match(/enCoursReference\.current = true;/g) ?? [];
-  assert.equal(poses.length, 2, `la référence doit être posée deux fois, ${poses.length} fois`);
+  assert.equal(poses.length, 1, `la référence doit être posée une fois, ${poses.length} fois`);
 
-  // Relâchée deux fois aussi. Ce n'est pas une redondance : un verrou posé sans
-  // être relâché ne fait pas tourner un rond, il rend le bouton définitivement
-  // inerte — et la mutation qui retire ce relâchement n'était détectée par rien
-  // tant qu'on ne comptait que les poses.
   const relaches = source.match(/enCoursReference\.current = false;/g) ?? [];
-  assert.equal(relaches.length, 2, `le verrou doit être relâché deux fois, ${relaches.length} fois`);
+  assert.equal(
+    relaches.length,
+    1,
+    `le verrou doit être relâché une fois, ${relaches.length} fois — un verrou posé ` +
+      'sans être relâché rend le bouton définitivement inerte'
+  );
 
   assert.match(
     source,

@@ -66,6 +66,15 @@ export default function RootLayout() {
           name="discussion"
           options={{ presentation: 'card', headerShown: false }}
         />
+        {/* Le lien de courriel — confirmation d'adresse ou réinitialisation de
+            mot de passe — arrive sur `hifdh://lien`, que cette déclaration
+            associe à l'écran. Sans elle, Expo Router chercherait une route
+            `/lien` non déclarée et afficherait « écran introuvable » au moment
+            précis où l'utilisateur attend que son lien fasse quelque chose. */}
+        <Stack.Screen
+          name="lien"
+          options={{ presentation: 'card', headerShown: false }}
+        />
       </Stack>
     </GestureHandlerRootView>
   );

@@ -38,6 +38,7 @@
     "falsifier:attente": "python scripts/falsifier_attente.py",
     "falsifier:surlignage": "python scripts/falsifier_surlignage.py",
     "falsifier:discussion": "python scripts/falsifier_discussion.py",
+    "falsifier:lien": "python scripts/falsifier_lien.py",
     "build:apk": "gh workflow run android-apk.yml",
     "build:ipa": "gh workflow run ios-unsigned.yml"
   },

@@ -362,3 +362,51 @@ deux contextes passe par le disque.
 La neutralisation du chargeur fait tomber 17 tests sur 30 : c'est la preuve que
 les doublures portent, et non qu'elles sont décoratives.
 
+## 7. Comptes, et liens de courriel
+
+Le compte ne sert qu'à deux choses : retrouver sa progression sur un autre
+téléphone, et la garder si l'appareil est perdu. Rien dans l'application n'exige
+de compte — elle fonctionne entièrement hors ligne.
+
+### Ce que le code fait
+
+- **Créer un compte** : si Supabase ouvre la session immédiatement, l'application
+  le dit ; s'il exige une confirmation par courriel, elle le dit aussi, et propose
+  alors de **renvoyer le courriel** — sans quoi un courriel perdu laisserait le
+  compte inutilisable pour toujours.
+- **Mot de passe oublié** : demande un lien de réinitialisation. La réponse est la
+  **même** que l'adresse existe ou non, délibérément : répondre « adresse
+  inconnue » laisserait n'importe qui vérifier qui possède un compte.
+- **Le lien reçu** ouvre `hifdh://lien`, que `src/lib/lienAuth.ts` lit. Les jetons
+  sont dans le **fragment** de l'adresse (`#access_token=…`), et non dans la
+  requête : `new URL(url).searchParams` ne voit pas le fragment, et un module
+  écrit avec lui rendrait un lien vide sur un lien parfaitement valide, **sans
+  rien lever ni rien afficher**. C'est le défaut le plus coûteux de cette partie,
+  et un test le surveille nommément.
+- Le flux d'authentification par défaut de `@supabase/supabase-js` est
+  **implicite** (`flowType: 'implicit'`, lu dans le paquet installé) : les liens
+  portent donc des jetons, et `setSession` est le bon appel. Le flux PKCE
+  porterait un `?code=`, qui exigerait le vérificateur déposé par l'appareil
+  ayant demandé le lien — suivre le lien sur un autre téléphone ne marcherait
+  alors pas, et l'écran le dit.
+
+### Ce que le propriétaire du compte doit faire
+
+Deux réglages, dans le tableau de bord Supabase, que le code ne peut pas poser :
+
+1. **Authentication → URL Configuration → Redirect URLs** : ajouter `hifdh://lien`.
+   Sans cette entrée, Supabase refuse de rediriger et l'utilisateur reste sur une
+   page blanche après avoir suivi son lien.
+2. **Authentication → Sign In / Providers → Email** : selon le choix,
+   - **décocher « Confirm email »** : l'inscription ouvre alors la session
+     immédiatement, sans courriel. C'est le réglage le plus simple, et il convient
+     à cette application, dont les comptes servent à sauvegarder une progression
+     et non à authentifier une identité ;
+   - **ou laisser la confirmation, et configurer un SMTP** : le service de
+     courriel intégré de Supabase est fortement limité en débit, et ses messages
+     arrivent souvent en indésirable. Sans SMTP dédié, la confirmation par
+     courriel est un point de blocage pour l'utilisateur.
+
+Le réglage a été **constaté** sur le projet, en lecture seule, par
+`GET /auth/v1/settings` : `mailer_autoconfirm: false`, c'est-à-dire confirmation
+exigée. C'est la cause directe du blocage à l'inscription.

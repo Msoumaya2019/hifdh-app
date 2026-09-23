@@ -265,6 +265,28 @@ jobs:
       - name: Falsifier les contrôles de l'espace de discussion
         run: npm run falsifier:discussion
 
+      # Les liens de courriel : confirmation d'adresse, et réinitialisation de
+      # mot de passe.
+      #
+      # Le défaut le plus coûteux de cette partie est TOTALEMENT MUET : Supabase
+      # dépose les jetons dans le FRAGMENT de l'adresse de retour, et
+      # `new URL(url).searchParams` ne voit pas le fragment. Un module écrit
+      # avec `searchParams` rendrait un lien vide sur un lien parfaitement
+      # valide, sans lever et sans rien afficher — l'utilisateur verrait un
+      # écran qui ne fait rien, et n'aurait aucun moyen de savoir pourquoi.
+      #
+      # Le contrôle porte sur le CODE et non sur le texte : le module ET son
+      # test CITENT tous deux `searchParams` pour expliquer le piège, donc un
+      # contrôle qui lirait le source brut se déclencherait sur sa propre
+      # documentation. C'est arrivé, et c'est corrigé.
+      #
+      # Le second point visé est la forme de l'écran : les quatre gestes
+      # d'authentification passent par UN lanceur partagé qui porte le verrou de
+      # réentrance et la borne de délai. Deux mutations le vérifient — un geste
+      # qui contourne le lanceur, et la borne retirée.
+      - name: Falsifier les contrôles des liens de courriel
+        run: npm run falsifier:lien
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

@@ -28,6 +28,8 @@ import {
   creerCompte,
   ecouterSession,
   isSupabaseConfigured,
+  reinitialiserMotDePasse,
+  renvoyerConfirmation,
   seConnecter,
   seDeconnecter,
   utilisateurCourant,
@@ -109,6 +111,18 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
   const [enCours, setEnCours] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
 
+  // Le panneau « mot de passe oublié » remplace les champs de connexion.
+  //
+  // Un état nommé plutôt que deux booléens : avec `oubli` et `connexion`, il
+  // existerait un état où les deux sont vrais, et il faudrait décider lequel
+  // gagne — décision qui finirait par diverger entre le rendu et les gestes.
+  const [oubli, setOubli] = useState(false);
+
+  // Vrai quand l'inscription a abouti sans ouvrir de session : Supabase exige
+  // alors une confirmation par courriel. C'est ce qui fait apparaître le bouton
+  // de renvoi, sans lequel un courriel perdu laisse le compte inutilisable.
+  const [confirmationAttendue, setConfirmationAttendue] = useState(false);
+
   // Le verrou de réentrance, et pourquoi il n'est pas `enCours`.
   //
   // `enCours` désactive le bouton, mais React n'applique un état qu'au rendu
@@ -180,51 +194,68 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
     }
   }
 
-  // Les deux gestes d'authentification sont bornés, et leur résultat traduit
+  // Les gestes d'authentification sont tous bornés, et leur résultat traduit
   // avant d'être affiché. « En cours… » est écrit AVANT l'appel et retiré dans
   // un `finally` : quelle que soit l'issue — succès, refus, exception, délai —
   // il n'existe plus de chemin où le rond reste.
-  const handleCreerCompte = async () => {
-    if (enCoursReference.current) return;
+  //
+  // Un seul lanceur pour les quatre gestes plutôt que quatre copies : la
+  // vérification du verrou de réentrance et la remise à zéro du message sont
+  // exactement ce qu'on oublie dans la quatrième copie.
+  const lancer = async (
+    action: () => Promise<ResultatAuth>,
+    suite?: (resultat: ResultatAuth) => void
+  ): Promise<ResultatAuth> => {
+    if (enCoursReference.current) {
+      return { ok: false, message: '' };
+    }
     enCoursReference.current = true;
     setEnCours(true);
     setMessage(null);
+
     let resultat: ResultatAuth;
     try {
-      resultat = await borner(creerCompte(email, motDePasse));
+      resultat = await borner(action());
     } catch (erreur) {
       resultat = messageDePanique(erreur);
     } finally {
       enCoursReference.current = false;
       setEnCours(false);
     }
+
     setMessage({ texte: resultat.message, ton: resultat.ok ? 'succes' : 'erreur' });
-    if (resultat.ok) {
-      setMotDePasse('');
-      await rafraichirUtilisateur();
-    }
+    suite?.(resultat);
+    return resultat;
   };
 
-  const handleConnexion = async () => {
-    if (enCoursReference.current) return;
-    enCoursReference.current = true;
-    setEnCours(true);
-    setMessage(null);
-    let resultat: ResultatAuth;
-    try {
-      resultat = await borner(seConnecter(email, motDePasse));
-    } catch (erreur) {
-      resultat = messageDePanique(erreur);
-    } finally {
-      enCoursReference.current = false;
-      setEnCours(false);
-    }
-    setMessage({ texte: resultat.message, ton: resultat.ok ? 'succes' : 'erreur' });
-    if (resultat.ok) {
-      setMotDePasse('');
-      await rafraichirUtilisateur();
-    }
-  };
+  const handleCreerCompte = () =>
+    lancer(
+      () => creerCompte(email, motDePasse),
+      async (resultat) => {
+        if (!resultat.ok) return;
+        setMotDePasse('');
+        // Un compte créé qui ne rend PAS de session signifie que Supabase
+        // attend une confirmation par courriel. On le retient, pour proposer
+        // le renvoi si le courriel n'arrive jamais.
+        setConfirmationAttendue(resultat.message.includes('Confirmez'));
+        await rafraichirUtilisateur();
+      }
+    );
+
+  const handleConnexion = () =>
+    lancer(
+      () => seConnecter(email, motDePasse),
+      async (resultat) => {
+        if (!resultat.ok) return;
+        setMotDePasse('');
+        setConfirmationAttendue(false);
+        await rafraichirUtilisateur();
+      }
+    );
+
+  const handleMotDePasseOublie = () => lancer(() => reinitialiserMotDePasse(email));
+
+  const handleRenvoyerConfirmation = () => lancer(() => renvoyerConfirmation(email));
 
   const lancerRestauration = async (confirmer: boolean) => {
     const resultat = await executer(() => restaurerDepuisCloud(confirmer));
@@ -294,8 +325,9 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
       {configure && utilisateur === null && (
         <Card>
           <Text style={styles.intro}>
-            Créez un compte pour retrouver votre progression sur un autre téléphone. Sans compte,
-            tout reste sur cet appareil.
+            {oubli
+              ? 'Saisissez l’adresse de votre compte : un lien vous sera envoyé pour choisir un nouveau mot de passe.'
+              : 'Créez un compte pour retrouver votre progression sur un autre téléphone. Sans compte, tout reste sur cet appareil.'}
           </Text>
 
           <TextInput
@@ -310,35 +342,94 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
             textContentType="emailAddress"
             editable={!enCours}
           />
-          <TextInput
-            style={styles.champ}
-            placeholder="Mot de passe"
-            placeholderTextColor={colors.textTertiary}
-            value={motDePasse}
-            onChangeText={setMotDePasse}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="password"
-            editable={!enCours}
-          />
 
-          <View style={styles.boutons}>
-            <Pressable
-              style={[styles.bouton, styles.boutonPrincipal, enCours && styles.boutonInactif]}
-              onPress={handleConnexion}
-              disabled={enCours}
-            >
-              <Text style={styles.texteBoutonPrincipal}>Se connecter</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.bouton, styles.boutonSecondaire, enCours && styles.boutonInactif]}
-              onPress={handleCreerCompte}
-              disabled={enCours}
-            >
-              <Text style={styles.texteBoutonSecondaire}>Créer un compte</Text>
-            </Pressable>
-          </View>
+          {/* Le champ du mot de passe disparaît en mode « oublié » : le laisser
+              ferait croire qu'il faut le ressaisir, alors qu'on ne l'a
+              justement plus. */}
+          {!oubli && (
+            <TextInput
+              style={styles.champ}
+              placeholder="Mot de passe"
+              placeholderTextColor={colors.textTertiary}
+              value={motDePasse}
+              onChangeText={setMotDePasse}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="password"
+              editable={!enCours}
+            />
+          )}
+
+          {oubli ? (
+            <>
+              <View style={styles.boutons}>
+                <Pressable
+                  style={[styles.bouton, styles.boutonPrincipal, enCours && styles.boutonInactif]}
+                  onPress={handleMotDePasseOublie}
+                  disabled={enCours}
+                >
+                  <Text style={styles.texteBoutonPrincipal}>Envoyer le lien</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                style={styles.lienTexte}
+                onPress={() => {
+                  setOubli(false);
+                  setMessage(null);
+                }}
+                disabled={enCours}
+              >
+                <Text style={styles.texteLien}>Revenir à la connexion</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <View style={styles.boutons}>
+                <Pressable
+                  style={[styles.bouton, styles.boutonPrincipal, enCours && styles.boutonInactif]}
+                  onPress={handleConnexion}
+                  disabled={enCours}
+                >
+                  <Text style={styles.texteBoutonPrincipal}>Se connecter</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.bouton, styles.boutonSecondaire, enCours && styles.boutonInactif]}
+                  onPress={handleCreerCompte}
+                  disabled={enCours}
+                >
+                  <Text style={styles.texteBoutonSecondaire}>Créer un compte</Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                style={styles.lienTexte}
+                onPress={() => {
+                  setOubli(true);
+                  setMessage(null);
+                }}
+                disabled={enCours}
+              >
+                <Text style={styles.texteLien}>Mot de passe oublié ?</Text>
+              </Pressable>
+
+              {/* Le recours quand le courriel de confirmation n'arrive pas.
+                  Sans ce bouton, un compte créé reste inutilisable pour
+                  toujours : Supabase exige la confirmation, et il n'existe
+                  aucun autre chemin pour la renvoyer depuis l'application. */}
+              {confirmationAttendue && (
+                <Pressable
+                  style={styles.lienTexte}
+                  onPress={handleRenvoyerConfirmation}
+                  disabled={enCours}
+                >
+                  <Text style={styles.texteLien}>
+                    Je n’ai pas reçu le courriel — en renvoyer un
+                  </Text>
+                </Pressable>
+              )}
+            </>
+          )}
         </Card>
       )}
 
@@ -446,6 +537,15 @@ const styles = StyleSheet.create({
   },
   boutonInactif: {
     opacity: 0.5,
+  },
+  lienTexte: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  texteLien: {
+    fontSize: fontSizes.sm,
+    color: colors.primary,
+    fontWeight: fontWeights.medium,
   },
   texteBoutonPrincipal: {
     color: colors.textOnPrimary,
