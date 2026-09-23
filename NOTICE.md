@@ -403,9 +403,20 @@ Deux réglages, dans le tableau de bord Supabase, que le code ne peut pas poser 
      à cette application, dont les comptes servent à sauvegarder une progression
      et non à authentifier une identité ;
    - **ou laisser la confirmation, et configurer un SMTP** : le service de
-     courriel intégré de Supabase est fortement limité en débit, et ses messages
-     arrivent souvent en indésirable. Sans SMTP dédié, la confirmation par
-     courriel est un point de blocage pour l'utilisateur.
+     courriel intégré de Supabase **ne livre qu'aux adresses membres de
+     l'organisation du projet**. À toute autre adresse, il **refuse** l'envoi, en
+     répondant « Email address not authorized » ; il est de plus plafonné à
+     **2 messages par heure**. Ce n'est donc pas une question de dossier
+     indésirable : sans SMTP dédié, aucun courriel de confirmation n'atteint un
+     utilisateur réel.
+
+**Ce que cela implique pour « mot de passe oublié ».** Cette fonction ne peut pas
+reposer sur la seule application : sans SMTP dédié, le lien de réinitialisation
+n'atteint jamais son destinataire, quel que soit le soin mis dans le code. Le
+réglage « Confirm email » peut donc être décoché pour débloquer les inscriptions,
+mais **configurer un SMTP** (Brevo, Resend, Postmark…) reste la seule voie qui
+rende la réinitialisation réellement utilisable. Les deux réglages sont
+indépendants.
 
 Le réglage a été **constaté** sur le projet, en lecture seule, par
 `GET /auth/v1/settings` : `mailer_autoconfirm: false`, c'est-à-dire confirmation
