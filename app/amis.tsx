@@ -52,14 +52,22 @@ export default function AmisScreen() {
 
   const charger = useCallback(async () => {
     setChargement(true);
-    const resultatCode = await monCodeAmi();
-    if (resultatCode.statut === 'ok') setCode(resultatCode.code);
-    else if (resultatCode.statut === 'erreur') setErreur(resultatCode.message);
+    // `setChargement(false)` est dans un `finally` : quelle que soit l'issue —
+    // les deux appels réussissent, l'un échoue, l'une des promesses ne rend
+    // jamais — l'indicateur s'arrête. Sans lui, l'écran des amis est le seul
+    // endroit de l'application où un rond peut tourner sans fin, parce que
+    // `chargement` n'y était retiré qu'après le dernier `await`.
+    try {
+      const resultatCode = await monCodeAmi();
+      if (resultatCode.statut === 'ok') setCode(resultatCode.code);
+      else if (resultatCode.statut === 'erreur') setErreur(resultatCode.message);
 
-    const resultat = await mesAmis();
-    if (resultat.statut === 'ok') setAmis(resultat.amis);
-    else if (resultat.statut === 'erreur') setErreur(resultat.message);
-    setChargement(false);
+      const resultat = await mesAmis();
+      if (resultat.statut === 'ok') setAmis(resultat.amis);
+      else if (resultat.statut === 'erreur') setErreur(resultat.message);
+    } finally {
+      setChargement(false);
+    }
   }, []);
 
   useFocusEffect(
@@ -181,8 +189,29 @@ export default function AmisScreen() {
               >
                 {formaterCodeAmi(code)}
               </Text>
-            ) : (
+            ) : chargement ? (
               <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
+            ) : (
+              // L'échec n'est plus un rond sans fin.
+              //
+              // Quand le code n'arrive pas, on ne laisse pas l'utilisateur
+              // devant une animation : on lui dit que ça n'a pas abouti, et on
+              // lui donne le moyen de réessayer. C'est la différence entre
+              // « ça charge » et « ça a échoué, appuie ici ».
+              <View style={styles.echecCode}>
+                <Text style={styles.texteEchecCode}>
+                  Le code n’a pas pu être affiché.
+                </Text>
+                <Pressable
+                  style={styles.boutonSecondaire}
+                  onPress={charger}
+                  accessibilityRole="button"
+                  accessibilityLabel="Réessayer d’obtenir le code"
+                >
+                  <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+                  <Text style={styles.texteSecondaire}>Réessayer</Text>
+                </Pressable>
+              </View>
             )}
             <Text style={styles.aide}>
               Donnez-le à la personne que vous souhaitez suivre. En le saisissant, elle vous
@@ -413,6 +442,14 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fontSizes.sm,
     fontWeight: '500',
+  },
+  echecCode: {
+    marginVertical: spacing.sm,
+  },
+  texteEchecCode: {
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+    lineHeight: 19,
   },
   erreur: {
     fontSize: fontSizes.sm,

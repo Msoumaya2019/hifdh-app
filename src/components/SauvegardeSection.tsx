@@ -10,7 +10,7 @@
 // n'existe donc pas de chemin qui écrase la progression locale sans être passé
 // par cette question.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -31,6 +31,7 @@ import {
   seConnecter,
   seDeconnecter,
   utilisateurCourant,
+  type ResultatAuth,
   type Utilisateur,
 } from '@/lib/auth';
 import {
@@ -49,6 +50,56 @@ interface Message {
   ton: 'succes' | 'erreur' | 'info';
 }
 
+/**
+ * Délai au-delà duquel on cesse d'attendre une réponse de la sauvegarde.
+ *
+ * Assez long pour un réseau lent, assez court pour que l'utilisateur ne reste
+ * pas devant un rond qui tourne : la connexion se fait en une à deux secondes
+ * dans le cas normal.
+ */
+const DELAI_AUTH_MS = 15000;
+
+/** Marqueur d'un délai dépassé. Jamais `null`, qui veut dire « déconnecté ». */
+const TIMEOUT = Symbol('delai-depasse');
+
+/**
+ * Borne une promesse.
+ *
+ * La promesse d'origine n'est pas annulée — on ne peut pas interrompre un appel
+ * déjà parti — mais on cesse de l'attendre, ce qui suffit : l'écran reprend la
+ * main et l'utilisateur peut réessayer.
+ */
+function withTimeout<T>(promesse: Promise<T>, ms: number = DELAI_AUTH_MS): Promise<T | typeof TIMEOUT> {
+  return Promise.race([
+    promesse,
+    new Promise<typeof TIMEOUT>((resoudre) => setTimeout(() => resoudre(TIMEOUT), ms)),
+  ]);
+}
+
+/** Une tentative d'authentification bornée, traduite en résultat affichable. */
+async function borner(tentative: Promise<ResultatAuth>): Promise<ResultatAuth> {
+  const resultat = await withTimeout(tentative);
+  if (resultat === TIMEOUT) {
+    return {
+      ok: false,
+      message:
+        'La connexion n’a pas répondu à temps. Vérifie ta connexion et réessaie.',
+    };
+  }
+  return resultat;
+}
+
+/** Une exception inattendue devient un message, jamais un écran figé. */
+function messageDePanique(erreur: unknown): ResultatAuth {
+  return {
+    ok: false,
+    message:
+      erreur instanceof Error
+        ? `La connexion a échoué : ${erreur.message}`
+        : 'La connexion a échoué.',
+  };
+}
+
 export function SauvegardeSection({ onDonneesChangees }: Props) {
   const configure = isSupabaseConfigured();
 
@@ -58,8 +109,35 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
   const [enCours, setEnCours] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
 
+  // Le verrou de réentrance, et pourquoi il n'est pas `enCours`.
+  //
+  // `enCours` désactive le bouton, mais React n'applique un état qu'au rendu
+  // suivant. Deux appuis dans le même cycle — un doigt qui tremble, une
+  // connexion lente — lancent donc deux tentatives. La seconde, hors de la
+  // borne, remet `setEnCours(false)` et fait disparaître « en cours » pendant
+  // que la première attend encore. Le bouton redevient actif, l'utilisateur
+  // appuie une troisième fois, et l'on ne sait plus quel résultat s'affiche.
+  //
+  // Une référence, elle, est lue immédiatement. C'est la seule forme qui
+  // refuse le second appui avant qu'il n'ait lancé quoi que ce soit.
+  const enCoursReference = useRef(false);
+
+  // `utilisateurCourant()` peut ne jamais rendre.
+  //
+  // La lecture de session passe par le client Supabase, qui la sérialise
+  // derrière un verrou de stockage. Un verrou jamais relâché — une écriture de
+  // session interrompue, un redémarrage au mauvais moment — et la promesse
+  // reste en attente indéfiniment. Sur l'écran, `await` sans borne est
+  // indiscernable d'un plantage : le rond tourne, et il n'y a rien à lire.
+  //
+  // On borne donc l'attente. Ce n'est pas une supposition sur la cause : c'est
+  // la raison pour laquelle ce module ne peut pas rester bloqué, quelle que
+  // soit la cause. Passé le délai, on rend « déconnecté », et l'écran propose
+  // de se connecter — un état faux, mais un état *agissable*, et le prochain
+  // appui le corrige.
   const rafraichirUtilisateur = useCallback(async () => {
-    setUtilisateur(await utilisateurCourant());
+    const resultat = await withTimeout(utilisateurCourant());
+    setUtilisateur(resultat === TIMEOUT ? null : resultat);
   }, []);
 
   useEffect(() => {
@@ -102,11 +180,24 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
     }
   }
 
+  // Les deux gestes d'authentification sont bornés, et leur résultat traduit
+  // avant d'être affiché. « En cours… » est écrit AVANT l'appel et retiré dans
+  // un `finally` : quelle que soit l'issue — succès, refus, exception, délai —
+  // il n'existe plus de chemin où le rond reste.
   const handleCreerCompte = async () => {
+    if (enCoursReference.current) return;
+    enCoursReference.current = true;
     setEnCours(true);
     setMessage(null);
-    const resultat = await creerCompte(email, motDePasse);
-    setEnCours(false);
+    let resultat: ResultatAuth;
+    try {
+      resultat = await borner(creerCompte(email, motDePasse));
+    } catch (erreur) {
+      resultat = messageDePanique(erreur);
+    } finally {
+      enCoursReference.current = false;
+      setEnCours(false);
+    }
     setMessage({ texte: resultat.message, ton: resultat.ok ? 'succes' : 'erreur' });
     if (resultat.ok) {
       setMotDePasse('');
@@ -115,10 +206,19 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
   };
 
   const handleConnexion = async () => {
+    if (enCoursReference.current) return;
+    enCoursReference.current = true;
     setEnCours(true);
     setMessage(null);
-    const resultat = await seConnecter(email, motDePasse);
-    setEnCours(false);
+    let resultat: ResultatAuth;
+    try {
+      resultat = await borner(seConnecter(email, motDePasse));
+    } catch (erreur) {
+      resultat = messageDePanique(erreur);
+    } finally {
+      enCoursReference.current = false;
+      setEnCours(false);
+    }
     setMessage({ texte: resultat.message, ton: resultat.ok ? 'succes' : 'erreur' });
     if (resultat.ok) {
       setMotDePasse('');

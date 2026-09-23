@@ -1,16 +1,28 @@
-// Lecteur du Coran — deux affichages au choix.
+// Lecteur du Coran — la page du moushaf.
 //
-//   - « Versets » : un verset par bloc, avec son numéro. Confortable pour
-//     apprendre un passage précis, et pour le masquer verset par verset.
-//   - « Page » : la page du moushaf, quinze lignes, les mots aux places que
-//     l'imprimeur leur a données. C'est la disposition du Coran imprimé, et
-//     donc celle que beaucoup connaissent.
+// LA PAGE, ET RIEN D'AUTRE
+// ------------------------
+// L'affichage « verset par verset » a été **retiré de l'écran**, à la demande.
+// Il n'a pas été supprimé : le mode existe encore dans les données
+// (`ModeAffichage`), et les composants qui le dessinaient sont intacts. Rien
+// n'est donc à réécrire pour le remettre — il suffit de rappeler son onglet.
+//
+// C'est un retrait, pas une suppression, et la distinction compte : le masquage
+// verset par verset était l'outil de travail du mode texte, et le mode page ne
+// l'offre pas de la même façon. Le jour où on le remet, il n'y aura rien à
+// reconstruire.
+//
+// CE QUI EST MONTRÉ
+// -----------------
+// La page imprimée, presque plein écran, avec le surlignage des lignes qui
+// portent la séance du jour. Le reste — les phrases d'explication, la plage de
+// versets en clair — a été retiré : sur un écran de téléphone, l'utile c'est la
+// page, et ces phrases prenaient la place qu'elle réclame.
 //
 // L'affichage « page » ne se réorganise pas selon la largeur de l'écran, et il
 // n'a pas de réglage de taille : une page du moushaf ne se réagence pas. Elle
 // est dessinée avec la police de page du complexe KFGQPC, celle du moushaf de
-// Madine, où chaque mot imprimé est un seul glyphe : les mots ne peuvent donc
-// pas tomber ailleurs que là où l'imprimeur les a mis.
+// Madine, où chaque mot imprimé est un seul glyphe.
 //
 // D'où viennent les coupures de ligne : de la mise en page engendrée par
 // `data/quran/generer_layout_moushaf.py`, recoupée sur le moushaf imprimé —
@@ -18,31 +30,20 @@
 // de Tanzil : la mise en page ne dit que des intervalles de jetons, jamais des
 // lettres.
 //
-// LA FORME DE LA PAGE, ELLE AUSSI
-// -------------------------------
-// La disposition ne fait pas tout : un moushaf se reconnaît à ce qui l'entoure.
-// Les ornements — médaillon de verset, cartouche de sourate, bandeau de marge,
-// cartouche du numéro, filets d'encadrement — sont donc dessinés eux aussi, dans
-// `src/components/ornementsMoushaf.tsx`, d'après les mesures relevées sur la
-// page imprimée. Le médaillon de verset est intéressant : son ovale est un
-// **support**, et le caractère du numéro vient de la police de page, qui le
-// dessine déjà. On pose donc la forme autour du glyphe, plutôt que de
-// reproduire le glyphe.
-//
-// LE MASQUAGE EN MODE PAGE
-// ------------------------
-// Il subsiste, mais il porte sur le **verset**, non sur le mot : un verset caché
-// devient transparent et garde sa place, si bien que la ligne ne se recompose
-// pas. Cacher mot à mot demanderait de mesurer chaque mot, donc de défaire le
-// collage des codes — et le moindre écart replacerait les mots autrement que
-// l'imprimeur. C'est le compromis assumé de ce mode : la page reste la page.
+// LE SURLIGNAGE, ET SA LIMITE
+// ---------------------------
+// La page affichée est une image : on ne peut pas y colorer des mots. On
+// surligne donc la **ligne**, en s'appuyant sur la mise en page qui dit, pour
+// chacune des quinze lignes, quels versets elle porte. Un verset qui commence
+// au milieu d'une ligne marque la ligne entière : c'est exact, et c'est la
+// seule chose qui le soit sans mesurer la police de page. Voir
+// `src/lib/surlignagePassage.ts`.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   Alert,
 } from 'react-native';
@@ -53,10 +54,8 @@ import { colors, fontSizes, fonts, spacing, radii, fontWeights } from '@/theme';
 import {
   getSurah,
   loadQuranText,
-  getAyahRangeText,
   getPageOfAyah,
   getPageBounds,
-  getJuzOfAyah,
   getPagesOfRange,
   getPageCount,
 } from '@/data/quranData';
@@ -70,15 +69,7 @@ import {
   getUserConfig,
   saveUserConfig,
 } from '@/lib/database';
-import type { Surah, UserConfig, ModeAffichage } from '@/types';
-
-// Le texte coranique est entièrement vocalisé : les signes montent au-dessus et
-// descendent sous la ligne. L'interligne doit donc être généreux — mais il doit
-// suivre le zoom. La valeur précédente était fixe (80 points) : en agrandissant
-// le texte, les signes finissaient par se toucher.
-const RATIO_INTERLIGNE_CORAN = 2.8;
-
-const CLE = (surah: number, ayah: number) => `${surah}:${ayah}`;
+import type { Surah, UserConfig } from '@/types';
 
 export default function LecteurScreen() {
   const router = useRouter();
@@ -97,45 +88,54 @@ export default function LecteurScreen() {
   const sessionId = params.sessionId;
   const depuisRenforcement = params.renforcer === '1';
 
+  // La plage à surligner : c'est la séance ouverte, telle qu'elle a été
+  // demandée. On ne la dérive pas de la page affichée — la page porte ce
+  // qu'elle porte — et on ne la recalcule pas non plus : le lecteur a reçu ces
+  // bornes en paramètres, et elles sont la vérité de ce qu'on est venu réciter.
+  const passage = { surah: surahNum, startAyah, endAyah };
+
   const [surah, setSurah] = useState<Surah | undefined>();
-  const [verses, setVerses] = useState<{ ayah: number; text: string }[]>([]);
-  const [fontSize, setFontSize] = useState(28);
-  const [hideMode, setHideMode] = useState(false);
-  const [hiddenVerses, setHiddenVerses] = useState<Set<string>>(new Set());
   const [textLoaded, setTextLoaded] = useState(false);
-  const [mode, setMode] = useState<ModeAffichage>('versets');
-  const [config, setConfig] = useState<UserConfig | null>(null);
   const [page, setPage] = useState(1);
 
   // Le plein écran du mode page.
   //
-  // Il ne s'applique qu'à l'affichage « page » : en mode « verset par verset »,
-  // les commandes de taille et de masquage sont l'outil de travail, les retirer
-  // retirerait la fonction. Le remettre à faux en quittant le mode page évite
-  // qu'un écran rouvert en mode « versets » hérite d'un en-tête masqué.
-  const [pleinEcran, setPleinEcran] = useState(false);
+  // **Vrai par défaut**, désormais : la page doit occuper l'écran, et l'en-tête
+  // avec le nom de la sourate n'apprend rien pendant la récitation. La sortie
+  // existe — voir plus bas — et la barre de navigation réapparaît avec elle.
+  const [pleinEcran, setPleinEcran] = useState(true);
 
   useEffect(() => {
     setSurah(getSurah(surahNum));
   }, [surahNum]);
 
+  // Le texte des versets n'est plus chargé : plus rien ne l'affiche. Il reste
+  // disponible par `getPageVerses` et `getAyahRangeText`, et le mode « verset
+  // par verset » le relira le jour où on le remettra.
   useEffect(() => {
-    loadQuranText().then(() => {
-      setTextLoaded(true);
-      setVerses(getAyahRangeText(surahNum, startAyah, endAyah));
-      setHiddenVerses(new Set());
-    });
-  }, [surahNum, startAyah, endAyah]);
+    loadQuranText().then(() => setTextLoaded(true));
+  }, []);
 
-  // Le mode d'affichage vit dans la configuration : il est donc retrouvé à la
-  // prochaine ouverture, et suit la sauvegarde d'un téléphone à l'autre.
+  // La configuration enregistrée, corrigée si elle porte encore l'ancien mode.
+  //
+  // Un seul affichage est désormais offert — la page du moushaf. Une
+  // configuration restée en mode « versets » est donc **ramenée** au mode page
+  // plutôt que respectée : la respecter afficherait un écran dont l'onglet
+  // n'existe plus, et l'utilisateur n'aurait aucun moyen d'en sortir. On écrit
+  // la correction, pour que l'ouverture suivante n'ait plus à la refaire.
+  //
+  // Le mode n'a plus d'état : la page est le seul affichage. Le champ reste
+  // écrit dans la configuration pour que le retour du mode « versets » se fasse
+  // en rappelant un onglet, sans migration de données.
   useEffect(() => {
     let actif = true;
     (async () => {
       const existante = await getUserConfig();
       if (!actif) return;
-      setConfig(existante);
-      setMode(existante?.affichage?.mode ?? 'versets');
+      if (existante?.affichage?.mode === 'versets') {
+        const corrigee: UserConfig = { ...existante, affichage: { mode: 'page' } };
+        await saveUserConfig(corrigee);
+      }
     })();
     return () => {
       actif = false;
@@ -146,39 +146,6 @@ export default function LecteurScreen() {
   useEffect(() => {
     setPage(getPageOfAyah(surahNum, startAyah) ?? 1);
   }, [surahNum, startAyah]);
-
-  const changerMode = useCallback(
-    async (nouveau: ModeAffichage) => {
-      setMode(nouveau);
-      setHiddenVerses(new Set());
-      // Changer de mode quitte le plein écran : il n'a de sens qu'en mode page,
-      // et le garder en mode « versets » masquerait l'en-tête sans raison.
-      setPleinEcran(false);
-      if (config === null) return;
-      const miseAJour: UserConfig = { ...config, affichage: { mode: nouveau } };
-      setConfig(miseAJour);
-      await saveUserConfig(miseAJour);
-    },
-    [config]
-  );
-
-  const basculerVersetCache = (cle: string) => {
-    const nouveau = new Set(hiddenVerses);
-    if (nouveau.has(cle)) nouveau.delete(cle);
-    else nouveau.add(cle);
-    setHiddenVerses(nouveau);
-  };
-
-  const basculerModeMasque = () => {
-    if (!hideMode) {
-      // Tout masquer sauf le premier verset du passage : c'est le point de
-      // départ du travail de mémoire.
-      setHiddenVerses(new Set(verses.slice(1).map((v) => CLE(surahNum, v.ayah))));
-    } else {
-      setHiddenVerses(new Set());
-    }
-    setHideMode(!hideMode);
-  };
 
   /**
    * Le verdict de l'apprenant sur la séance du jour.
@@ -262,8 +229,15 @@ export default function LecteurScreen() {
         </Pressable>
       )}
 
-      {/* En-tête. Masqué en plein écran : c'est le sens même du plein écran,
-          et le bouton de sortie vit dans la zone de la page. */}
+      {/* L'en-tête. Masqué en plein écran, qui est désormais l'état par défaut :
+          pendant la récitation, le nom de la sourate et les boutons de zoom ne
+          servent à rien. Le bouton de sortie, lui, vit au-dessus de la page —
+          voir `lecteur.tsx` plus haut et `LecteurPageMoushaf`.
+
+          L'onglet « Verset par verset » qui vivait ici a été retiré : il menait
+          à un affichage qu'on ne veut plus montrer. Le mode existe toujours
+          dans les données ; le remettre ne demandera que de rappeler cet
+          onglet. */}
       {!pleinEcran && (
         <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
@@ -274,132 +248,40 @@ export default function LecteurScreen() {
           <Text style={styles.surahNameFr}>{surah.nameFr}</Text>
         </View>
         <View style={styles.headerActions}>
-          {/* Le réglage de taille n'existe qu'en affichage « versets ». Une page
-              du moushaf ne se réagence pas : laisser un bouton qui agrandit le
-              texte laisserait croire le contraire, et la première ligne trop
-              longue ferait passer des mots à la ligne suivante — donc à une
-              place que l'imprimeur ne leur a pas donnée. */}
-          {mode === 'versets' && (
-            <>
-              <Pressable
-                onPress={() => setFontSize(Math.max(16, fontSize - 4))}
-                style={styles.zoomButton}
-                accessibilityLabel="Réduire le texte"
-              >
-                <Ionicons name="remove" size={20} color={colors.primary} />
-              </Pressable>
-              <Pressable
-                onPress={() => setFontSize(Math.min(60, fontSize + 4))}
-                style={styles.zoomButton}
-                accessibilityLabel="Agrandir le texte"
-              >
-                <Ionicons name="add" size={20} color={colors.primary} />
-              </Pressable>
-            </>
-          )}
           <Pressable
-            onPress={basculerModeMasque}
-            style={[styles.zoomButton, hideMode && styles.zoomButtonActive]}
-            accessibilityLabel="Mode mémorisation"
+            style={styles.zoomButton}
+            onPress={() => setPleinEcran(true)}
+            accessibilityLabel="Passer en plein écran"
           >
-            <Ionicons
-              name={hideMode ? 'eye-off' : 'eye'}
-              size={20}
-              color={hideMode ? colors.textOnPrimary : colors.primary}
-            />
+            <Ionicons name="expand-outline" size={20} color={colors.primary} />
           </Pressable>
         </View>
       </View>
       )}
 
-      {/* Choix de l'affichage. Masqué en plein écran, pour la même raison. */}
-      {!pleinEcran && (
-        <View style={styles.modeBar}>
-          {(['versets', 'page'] as ModeAffichage[]).map((m) => (
-            <Pressable
-              key={m}
-              onPress={() => changerMode(m)}
-              style={[styles.modeOnglet, mode === m && styles.modeOngletActif]}
-            >
-              <Ionicons
-                name={m === 'versets' ? 'list' : 'book'}
-                size={16}
-                color={mode === m ? colors.textOnPrimary : colors.primary}
-              />
-              <Text style={[styles.modeOngletTexte, mode === m && styles.modeOngletTexteActif]}>
-                {m === 'versets' ? 'Verset par verset' : 'Page du moushaf'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      {/* La page du moushaf, avec le surlignage des lignes de la séance.
 
-      {mode === 'versets' ? (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.rangeBarInline}>
-            <Text style={styles.rangeText}>
-              Versets {startAyah} à {endAyah}
-            </Text>
-          </View>
-
-          {startAyah === 1 && surahNum !== 1 && surahNum !== 9 && (
-            <Text style={[styles.bismillah, { fontSize: fontSize * 0.9 }]} selectable>
-              بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
-            </Text>
-          )}
-
-          {verses.map((verse) => {
-            const cle = CLE(surahNum, verse.ayah);
-            const cache = hiddenVerses.has(cle);
-            return (
-              <View key={verse.ayah} style={styles.verseBlock}>
-                <Text
-                  style={[styles.verseText, { fontSize, lineHeight: fontSize * RATIO_INTERLIGNE_CORAN }, cache && styles.verseHidden]}
-                  selectable
-                  onPress={() => hideMode && basculerVersetCache(cle)}
-                >
-                  {cache ? (
-                    <Text style={styles.hiddenPlaceholder}>
-                      ━━━━━━ ﴿{toArabicNumber(verse.ayah)}﴾ ━━━━━━{'\n'}
-                      <Text style={styles.revealHint}>Toucher pour révéler</Text>
-                    </Text>
-                  ) : (
-                    <Text>
-                      {verse.text}{' '}
-                      <Text style={styles.verseNumber}>﴿{toArabicNumber(verse.ayah)}﴾</Text>
-                    </Text>
-                  )}
-                </Text>
-              </View>
-            );
-          })}
-        </ScrollView>
-      ) : (
-        // Le mode « page » montre l'image de la page imprimée. La composition
-        // par police de page, qui exigeait de recalculer chaque mesure, n'est
-        // plus utilisée pour l'affichage : une image ne peut pas se tromper de
-        // mise en page. Le mode « verset par verset » ci-dessus est inchangé.
-        <LecteurPageMoushaf
-          page={page}
-          total={getPageCount()}
-          dansLePassage={pagesDuPassage.includes(page)}
-          plageDeVersets={(() => {
-            const bornes = getPageBounds(page);
-            return bornes === null
-              ? null
-              : `Versets ${bornes.start.surah}:${bornes.start.ayah} à ${bornes.end.surah}:${bornes.end.ayah}`;
-          })()}
-          onPrecedente={() => setPage((p) => Math.max(1, p - 1))}
-          onSuivante={() => setPage((p) => Math.min(getPageCount(), p + 1))}
-          onAllerA={setPage}
-          pleinEcran={pleinEcran}
-          onBasculerPleinEcran={() => setPleinEcran((v) => !v)}
-        />
-      )}
+          L'image ne peut pas être coloriée mot à mot ; la mise en page dit en
+          revanche quelles lignes portent quels versets. On surligne donc les
+          lignes, ce qui est exact et suffisant — voir
+          `src/lib/surlignagePassage.ts` pour la raison et pour la limite. */}
+      <LecteurPageMoushaf
+        page={page}
+        total={getPageCount()}
+        dansLePassage={pagesDuPassage.includes(page)}
+        plageDeVersets={(() => {
+          const bornes = getPageBounds(page);
+          return bornes === null
+            ? null
+            : `Versets ${bornes.start.surah}:${bornes.start.ayah} à ${bornes.end.surah}:${bornes.end.ayah}`;
+        })()}
+        passage={passage}
+        onPrecedente={() => setPage((p) => Math.max(1, p - 1))}
+        onSuivante={() => setPage((p) => Math.min(getPageCount(), p + 1))}
+        onAllerA={setPage}
+        pleinEcran={pleinEcran}
+        onBasculerPleinEcran={() => setPleinEcran((v) => !v)}
+      />
 
       {/* Barre de validation.
           Elle a deux formes selon d'où l'on vient : une séance du programme se
@@ -543,27 +425,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  modeOnglet: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.md,
-    backgroundColor: colors.primarySurface,
-  },
-  modeOngletActif: {
-    backgroundColor: colors.primary,
-  },
-  modeOngletTexte: {
-    fontSize: fontSizes.sm,
-    color: colors.primary,
-    fontWeight: fontWeights.medium,
-  },
-  modeOngletTexteActif: {
-    color: colors.textOnPrimary,
   },
   rangeBarInline: {
     backgroundColor: colors.primarySurface,

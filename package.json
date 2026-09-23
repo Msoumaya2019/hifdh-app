@@ -35,6 +35,8 @@
     "falsifier:objectifs": "python scripts/falsifier_objectifs.py",
     "falsifier:geste-page": "python scripts/falsifier_geste_page.py",
     "falsifier:amis": "python scripts/falsifier_amis.py",
+    "falsifier:attente": "python scripts/falsifier_attente.py",
+    "falsifier:surlignage": "python scripts/falsifier_surlignage.py",
     "build:apk": "gh workflow run android-apk.yml",
     "build:ipa": "gh workflow run ios-unsigned.yml"
   },

@@ -222,6 +222,29 @@ jobs:
       - name: Falsifier les contrôles du suivi entre amis
         run: npm run falsifier:amis
 
+      # Et l'attente bornée. Les deux ronds de chargement qui tournaient sans
+      # fin — à la connexion et sur « Mes amis » — venaient d'un `await` qui ne
+      # se résolvait jamais. Le remède n'est pas de savoir pourquoi : c'est de
+      # ne jamais attendre sans borne. Ce falsificateur-ci a trouvé deux vrais
+      # trous, dont un grave : rien n'exigeait que l'attente soit bornée à
+      # l'intérieur du helper partagé, si bien que retirer `borner` d'un seul
+      # endroit laissait quatre des cinq appels entre amis sans limite, fichier
+      # vert. Il vérifie aussi que le verrou de réentrance est bien RELÂCHÉ :
+      # sans quoi le bouton deviendrait inerte après un premier appui.
+      - name: Falsifier les contrôles de l'attente bornée
+        run: npm run falsifier:attente
+
+      # Et le surlignage de la séance avec la forme du lecteur. Le calcul est
+      # éprouvé ; ce qui ne se calcule pas — la place d'une bande, sa hauteur,
+      # l'ordre avec l'image — est tenu par des contrôles qui réintroduisent
+      # dans le rendu ce qui a été retiré, pour vérifier qu'ils le voient. Trois
+      # mutations n'étaient pas détectées à la première exécution, et les trois
+      # accusaient le test : rien n'assertait le décalage vertical d'une bande,
+      # rien n'assertait sa hauteur, et rien n'assertait que la plage de la
+      # séance était seulement transmise à la page.
+      - name: Falsifier les contrôles du surlignage et du lecteur
+        run: npm run falsifier:surlignage
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

@@ -24,7 +24,7 @@
 // rapport de la page est réservé avant l'arrivée de l'image, donc rien ne saute
 // quand elle arrive, et les boutons ne se déplacent pas sous le doigt.
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -40,7 +40,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fonts, radii, spacing } from '@/theme';
 import { getRatioPage } from '@/lib/pagesMoushaf';
+import { getLignesParPageMoushaf } from '@/data/quranData';
 import { gesteDePage } from '@/lib/gestePageMoushaf';
+import { lignesDuPassageSurPage, type PlageDeVersets } from '@/lib/surlignagePassage';
 import { raisonCacheIndisponible, usePageMoushaf } from '@/lib/cachePagesMoushaf';
 
 export interface LecteurPageMoushafProps {
@@ -52,6 +54,14 @@ export interface LecteurPageMoushafProps {
   dansLePassage: boolean;
   /** La plage de versets de la page, en clair, ou `null` si inconnue. */
   plageDeVersets: string | null;
+  /**
+   * La plage à surligner, ou `null`.
+   *
+   * Passée en paramètre plutôt que déduite de `page` : la page affichée n'est
+   * pas forcément celle de la séance — on feuillette — et le surlignage doit
+   * suivre la séance, pas la page.
+   */
+  passage?: PlageDeVersets | null;
   /** Aller à la page précédente. */
   onPrecedente: () => void;
   /** Aller à la page suivante. */
@@ -69,6 +79,7 @@ export function LecteurPageMoushaf({
   total,
   dansLePassage,
   plageDeVersets,
+  passage = null,
   onPrecedente,
   onSuivante,
   onAllerA,
@@ -82,6 +93,16 @@ export function LecteurPageMoushaf({
 
   const [mesure, setMesure] = useState({ largeur: 0, hauteur: 0 });
   const [saisie, setSaisie] = useState<string | null>(null);
+
+  // Les lignes à surligner, et leur hauteur.
+  //
+  // Une ligne fait le quinzième de la page : c'est la mise en page qui le dit,
+  // et non une estimation. On peut donc placer les bandes en fraction, ce qui
+  // les fait suivre exactement la page quelle que soit sa taille à l'écran.
+  const lignesSurlignees = useMemo(
+    () => lignesDuPassageSurPage(page, passage),
+    [page, passage]
+  );
 
   // La place réservée à la page, avant même que l'image ne soit là. On prend la
   // plus contraignante des deux dimensions : la page ne déborde jamais, ni en
@@ -146,6 +167,24 @@ export function LecteurPageMoushaf({
             },
           ]}
         >
+          {/* Le surlignage de la séance, DERRIÈRE la page.
+              Il est posé avant l'image, donc dessiné en dessous : l'encre de
+              l'imprimé reste au-dessus de la bande, et les mots ne sont jamais
+              voilés. Une ligne fait le quinzième de la hauteur de la page —
+              c'est la mise en page qui le dit, pas une estimation — donc la
+              bande se place en fraction et suit la page à toute taille. */}
+          {largeurAffichee > 0 &&
+            lignesSurlignees.map((numero) => (
+              <View
+                key={numero}
+                pointerEvents="none"
+                style={[
+                  styles.bandeSurlignage,
+                  { top: `${((numero - 1) / LIGNES_PAR_PAGE) * 100}%` },
+                ]}
+              />
+            ))}
+
           {largeurAffichee > 0 && etat.chemin !== null && (
             <Image
               source={{ uri: etat.chemin }}
@@ -210,26 +249,13 @@ export function LecteurPageMoushaf({
         </Pressable>
       )}
 
-      {/* La note de séance : dit si la page fait partie du programme du jour.
-          Elle disparaît en plein écran — c'est justement ce qu'on cherche en
-          l'activant : ne garder que la page. */}
-      {!pleinEcran && (
-        <>
-          <Text style={styles.noteSeance}>
-            {dansLePassage
-              ? 'Cette page porte une partie de ta séance du jour.'
-              : 'Page hors de ta séance du jour.'}
-          </Text>
+      {/* Le repère du geste, et la phrase qui disait « page hors de ta
+          séance », et la plage de versets en clair : retirés.
 
-          {plageDeVersets !== null && (
-            <Text style={styles.plageVersets}>{plageDeVersets}</Text>
-          )}
-        </>
-      )}
-
-      {/* Le repère du geste : un geste ne se découvre pas tout seul.
-          Affiché seulement au début, sans occuper de place une fois lu — la
-          phrase est courte et se place au-dessus de la navigation. */}
+          Ce qui a été retiré l'a été pour une seule raison : sur un écran de
+          téléphone, ces phrases occupaient la place que la page réclame. La
+          page, elle, dit déjà l'essentiel — le surlignage montre où est la
+          séance, et la bande du bas donne le numéro de page. */}
       {pleinEcran ? (
         <Pressable
           style={styles.barrePleinEcran}
@@ -242,11 +268,7 @@ export function LecteurPageMoushaf({
           </Text>
           <Ionicons name="contract-outline" size={16} color={colors.textSecondary} />
         </Pressable>
-      ) : (
-        <Text style={styles.repereGeste}>
-          Glisse la page vers la droite ou la gauche pour tourner.
-        </Text>
-      )}
+      ) : null}
 
       {/* La navigation. Trois commandes, assez grandes pour le pouce.
           Masquée en plein écran : le geste les remplace, et les laisser ferait
@@ -368,6 +390,9 @@ function ChampNumeroPage({
   );
 }
 
+/** Le nombre de lignes d'une page, lu dans la mise en page. */
+const LIGNES_PAR_PAGE = getLignesParPageMoushaf();
+
 const styles = StyleSheet.create({
   racine: {
     flex: 1,
@@ -396,14 +421,21 @@ const styles = StyleSheet.create({
   boutonPleinEcranActif: {
     backgroundColor: colors.primary,
   },
-  // Le repère du geste : discret, et seulement hors plein écran.
-  repereGeste: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: colors.gold,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+  // La bande de surlignage : une ligne du moushaf, derrière l'encre.
+  //
+  // La teinte est celle de l'or de la charte, très diluée (`#C4A35A` à 22 %).
+  // Elle est volontairement faible : la page affichée est l'imprimé, et une
+  // bande opaque ferait disparaître les signes de vocalisation qui passent
+  // au-dessus et au-dessous de la ligne — ce sont eux qu'on vient lire.
+  bandeSurlignage: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: `${(1 / LIGNES_PAR_PAGE) * 100}%`,
+    backgroundColor: colors.gold,
+    opacity: 0.22,
   },
+  // Le repère du geste : discret, et seulement hors plein écran.
   // La barre du plein écran : de quoi savoir où l'on est, et de quoi sortir.
   // Les deux ensemble, parce qu'un plein écran d'où l'on ne sait pas sortir
   // est un piège.
@@ -481,20 +513,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     fontSize: 15,
     color: colors.textOnPrimary,
-  },
-  noteSeance: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
-  plageVersets: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    marginTop: spacing.xs,
   },
   navigation: {
     flexDirection: 'row',

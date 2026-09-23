@@ -24,6 +24,28 @@ import { formaterCodeAmi, normaliserNom, resumeActivite } from '@/lib/amis';
 import { mesAmis, monCodeAmi } from '@/lib/sync/amis';
 import type { PointAmi } from '@/lib/amis';
 
+/** Délai au-delà duquel on cesse d'attendre la session. */
+const DELAI_SESSION_MS = 8000;
+
+/** Marqueur d'un délai dépassé. Jamais `null`, qui veut dire « personne ». */
+const DELAI_DEPASSE = Symbol('delai-depasse');
+
+/**
+ * Borne une promesse, et distingue trois issues : la valeur, `null` — qui a un
+ * sens métier ici — et le délai dépassé, qui n'en a pas.
+ */
+function repondreDans<T>(
+  promesse: Promise<T>,
+  ms: number
+): Promise<T | typeof DELAI_DEPASSE> {
+  return Promise.race([
+    promesse,
+    new Promise<typeof DELAI_DEPASSE>((resoudre) =>
+      setTimeout(() => resoudre(DELAI_DEPASSE), ms)
+    ),
+  ]);
+}
+
 export function AmisSection() {
   const configure = isSupabaseConfigured();
   const [connecte, setConnecte] = useState<boolean | null>(null);
@@ -36,9 +58,20 @@ export function AmisSection() {
       setConnecte(false);
       return;
     }
-    const oui = (await utilisateurCourant()) !== null;
-    setConnecte(oui);
-    if (!oui) return;
+    // `utilisateurCourant()` peut ne jamais rendre : la lecture de session se
+    // sérialise derrière un verrou de stockage, et un verrou jamais relâché
+    // laisse la promesse en attente indéfiniment. Ici, ce n'est pas un détail :
+    // `connecte` reste `null` — et `null` affiche un rond qui tourne. On borne
+    // donc l'attente, et un délai dépassé vaut « pas connecté », qui est un
+    // état que l'écran sait déjà montrer.
+    const oui = await repondreDans(utilisateurCourant(), DELAI_SESSION_MS);
+    if (oui === DELAI_DEPASSE) {
+      setConnecte(false);
+      return;
+    }
+    const connecte = oui !== null;
+    setConnecte(connecte);
+    if (!connecte) return;
 
     const resultatCode = await monCodeAmi();
     if (resultatCode.statut === 'ok') {
