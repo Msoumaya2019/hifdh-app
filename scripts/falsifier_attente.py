@@ -77,24 +77,43 @@ print(f"témoin : {nombre} test(s), tous verts\n")
 
 MUTATIONS = [
     # === L'écran de sauvegarde =============================================
+    #
+    # Les gestes d'authentification sont passés de quatre copies à UN lanceur
+    # partagé. Les garanties n'ont pas changé, mais elles sont devenues
+    # structurelles : il suffit que le lanceur soit juste, et qu'aucun geste ne
+    # le contourne. Les mutations ci-dessous attaquent donc le lanceur lui-même,
+    # plus une qui vérifie qu'on ne peut pas le contourner en silence.
     (
         "src/components/SauvegardeSection.tsx",
-        "      resultat = await borner(seConnecter(email, motDePasse));\n    } catch (erreur) {\n      resultat = messageDePanique(erreur);\n    } finally {\n      enCoursReference.current = false;\n      setEnCours(false);\n    }",
-        "      resultat = await borner(seConnecter(email, motDePasse));\n    } catch (erreur) {\n      resultat = messageDePanique(erreur);\n    }\n    setEnCours(false);",
-        "« en cours » n'est plus retiré dans un finally : une exception le laisse tourner",
+        "    } catch (erreur) {\n      resultat = messageDePanique(erreur);\n    } finally {\n      enCoursReference.current = false;\n      setEnCours(false);\n    }",
+        "    } catch (erreur) {\n      resultat = messageDePanique(erreur);\n    }\n    enCoursReference.current = false;\n    setEnCours(false);",
+        "« en cours » n'est plus retiré dans un finally : une sortie anormale le laisse tourner",
     ),
     (
         "src/components/SauvegardeSection.tsx",
-        "      resultat = await borner(creerCompte(email, motDePasse));",
-        "      resultat = await creerCompte(email, motDePasse);",
-        "la création de compte n'est plus bornée",
+        "      resultat = await borner(action());",
+        "      resultat = await action();",
+        "le lanceur ne borne plus l'attente : les quatre gestes perdent leur borne d'un coup",
     ),
     (
         "src/components/SauvegardeSection.tsx",
-        "      resultat = await borner(seConnecter(email, motDePasse));",
-        "      resultat = await seConnecter(email, motDePasse);",
-        "la connexion n'est plus bornée : c'est exactement le défaut signalé",
+        "    if (enCoursReference.current) {\n      return { ok: false, message: '' };\n    }\n",
+        "",
+        "le verrou de réentrance disparaît : deux appuis lancent deux attentes en course",
     ),
+    (
+        "src/components/SauvegardeSection.tsx",
+        "      enCoursReference.current = false;\n      setEnCours(false);\n    }",
+        "      setEnCours(false);\n    }",
+        "le verrou n'est jamais relâché : le bouton ne marche plus qu'une fois",
+    ),
+    (
+        "src/components/SauvegardeSection.tsx",
+        "  const handleMotDePasseOublie = () => lancer(() => reinitialiserMotDePasse(email));",
+        "  const handleMotDePasseOublie = () => reinitialiserMotDePasse(email);",
+        "un geste contourne le lanceur : il échappe au verrou et à la borne sans que rien ne le dise",
+    ),
+    # === La lecture de session, qui n'est pas un geste d'authentification ===
     (
         "src/components/SauvegardeSection.tsx",
         "    const resultat = await withTimeout(utilisateurCourant());",
@@ -106,18 +125,6 @@ MUTATIONS = [
         "    setUtilisateur(resultat === TIMEOUT ? null : resultat);",
         "    setUtilisateur(resultat as Utilisateur | null);",
         "un délai dépassé est présenté comme une session valide",
-    ),
-    (
-        "src/components/SauvegardeSection.tsx",
-        "    if (enCoursReference.current) return;\n    enCoursReference.current = true;\n    setEnCours(true);\n    setMessage(null);\n    let resultat: ResultatAuth;\n    try {\n      resultat = await borner(creerCompte(email, motDePasse));",
-        "    setEnCours(true);\n    setMessage(null);\n    let resultat: ResultatAuth;\n    try {\n      resultat = await borner(creerCompte(email, motDePasse));",
-        "le verrou de réentrance disparaît : deux appuis lancent deux attentes en course",
-    ),
-    (
-        "src/components/SauvegardeSection.tsx",
-        "      enCoursReference.current = false;\n      setEnCours(false);\n    }\n    setMessage({ texte: resultat.message, ton: resultat.ok ? 'succes' : 'erreur' });\n    if (resultat.ok) {\n      setMotDePasse('');\n      await rafraichirUtilisateur();\n    }\n  };\n\n  const handleConnexion",
-        "      setEnCours(false);\n    }\n    setMessage({ texte: resultat.message, ton: resultat.ok ? 'succes' : 'erreur' });\n    if (resultat.ok) {\n      setMotDePasse('');\n      await rafraichirUtilisateur();\n    }\n  };\n\n  const handleConnexion",
-        "le verrou n'est jamais relâché : le bouton ne marche plus qu'une fois",
     ),
     # === La section des amis ===============================================
     (
