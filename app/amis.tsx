@@ -316,6 +316,27 @@ export default function AmisScreen() {
 
                 <View style={styles.separateur} />
 
+                {/* Discuter : du texte seul, et un espace modéré. On le dit ici,
+                    en une ligne, plutôt que de laisser la découverte se faire au
+                    moment d'envoyer quelque chose qui n'a pas sa place. */}
+                <Pressable
+                  style={styles.boutonDiscuter}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/discussion',
+                      params: { amiId: ami.userId, nom: normaliserNom(ami.nom) },
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`Discuter avec ${normaliserNom(ami.nom)}`}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.primary} />
+                  <Text style={styles.texteDiscuter}>Discuter</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                </Pressable>
+
+                <View style={styles.separateur} />
+
                 <View style={styles.mesures}>
                   <View style={styles.mesure}>
                     <Text style={styles.valeur}>{ami.versetsCetteSemaine}</Text>
@@ -496,6 +517,18 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.borderLight,
     marginVertical: spacing.md,
+  },
+  boutonDiscuter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  texteDiscuter: {
+    flex: 1,
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: colors.primary,
   },
   mesures: {
     flexDirection: 'row',

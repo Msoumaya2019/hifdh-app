@@ -283,3 +283,82 @@ document ne le couvre.
   sans réseau), `src/lib/sync/amis.ts` (appels), `app/amis.tsx` et
   `src/components/AmisSection.tsx` (écrans). Éprouvé par
   `npm run verifier:supabase` (80 épreuves) et `npm run falsifier:amis`.
+
+## 5. L'espace de discussion entre deux amis (mots seulement, modéré)
+
+Depuis la version 1.6.5, deux amis déjà reliés disposent d'un espace de
+discussion textuelle pour s'encourager. Ce paragraphe dit ce qui est stocké, ce
+qui ne l'est **pas**, et qui peut lire quoi.
+
+- **Des mots, et rien d'autre — par la forme de la table, pas par un réglage.**
+  Elle déclare `corps TEXT NOT NULL` et **aucune** colonne pour un fichier, une
+  image ou une vidéo. Une colonne qui n'existe pas ne peut rien recevoir, quel
+  que soit l'écran écrit plus tard. C'est plus fort qu'une case à décocher :
+  trois tests lisent les colonnes **déclarées** (et non les commentaires qui
+  expliquent leur absence), le module de décisions, la couche réseau et l'écran.
+  Aucun sélecteur d'image ou de document n'est importé nulle part.
+- **Un message ne se réécrit pas.** Une fois envoyé, le texte reste : le
+  `UPDATE` est refusé par un déclencheur `BEFORE UPDATE`, qui compare l'ancien
+  et le nouveau corps. Une politique RLS ne peut pas le faire — dans un
+  `WITH CHECK`, les deux côtés nomment la ligne NOUVELLE, si bien que
+  `corps = corps` est une tautologie qui ne garde rien.
+- **Retirer n'est pas effacer.** L'auteur peut retirer son message : le texte
+  disparaît du fil, remplacé par « Message retiré », et une date garde la trace.
+  Aucun `DELETE` n'est possible, pour personne — ni politique, ni droit SQL.
+- **La modération.** L'administrateur (le même que celui du tableau de bord) peut
+  masquer un message : il disparaît du fil des deux amis, et **sa trace reste
+  lisible par la modération**, texte compris. Masquer est réversible ; démasquer
+  le rétablit. Un modérateur **ne peut pas écrire** dans un fil : un message est
+  signé par son auteur, et la table l'exige (`auteur = user_a OR auteur = user_b`).
+- **Ce que la modération ne fait pas** : elle ne voit pas les messages d'un fil
+  auquel elle ne participe pas sans le demander explicitement, par une fonction
+  dédiée qui **nomme la paire observée** — un modérateur n'est pas partie au fil,
+  et une fonction qui demanderait « mon fil avec X » rendrait zéro ligne en
+  silence. C'est le défaut qu'a trouvé le banc.
+- **Rupture de l'amitié** : le fil se ferme, dans les deux sens, et **aucun
+  message n'est supprimé**. Le modérateur continue de les lire. Vérifié par le
+  banc.
+- **Où l'autorisation vit** : dans les politiques RLS
+  (`supabase/discussions.sql`), jamais dans le client. Les fonctions de
+  modération accordées à `authenticated` se refusent **elles-mêmes** si
+  l'appelant n'est pas administrateur : le droit d'exécuter n'est pas le droit de
+  modérer, mais accorder le premier permet un refus lisible plutôt qu'une erreur
+  de permission qui ne dirait rien de la règle.
+- **Une limite de forme qui a coûté deux fois** : `GRANT` et politiques RLS sont
+  deux barrières successives. Sans le `GRANT`, le rôle est refusé avant qu'une
+  politique soit consultée. Et `BIGSERIAL` crée une **séquence séparée**, objet à
+  part entière qu'un `GRANT ... ON TABLE` ne couvre pas — le fichier accorde donc
+  aussi la séquence, sans quoi toute insertion échoue.
+- **Code** : `supabase/discussions.sql` (schéma), `src/lib/discussion.ts`
+  (décisions, testées sans réseau), `src/lib/sync/discussion.ts` (appels),
+  `app/discussion.tsx` (écran). Éprouvé par `npm run verifier:supabase`,
+  `npm test` et `npm run falsifier:discussion`.
+
+## 6. Doublures de modules, pour les tests
+
+Rien de tout ceci n'entre dans l'application livrée : ce paragraphe existe parce
+que la mécanique est inhabituelle et qu'elle a déjà été écrite deux fois.
+
+Pour éprouver la couche réseau de la discussion sans réseau, `tests/discussion_reseau.test.mjs`
+remplace deux modules (`src/lib/supabase.ts`, `src/lib/auth.ts`) par des
+doublures. `node:test` sait le faire (`mock.module`), mais pas ici : la
+substitution n'agit que sur un module **non encore chargé**, or l'import
+statique en tête du fichier de test compte comme ce premier chargement.
+
+Le remplacement passe donc par le chargeur d'alias déjà présent
+(`scripts/alias-loader.mjs`), qui décide quelle **source** sert une URL. La
+liste des doublures est déposée dans un fichier
+(`scripts/doublures-deposees.json`, ignoré par git) que le chargeur relit à
+chaque chargement.
+
+**Ce fichier est sur le disque, et non un `Map` partagé, pour une raison
+précise** : `--import` instancie le chargeur dans un **contexte séparé**. Un
+module importé des deux côtés — le test et le chargeur — y est donc évalué
+**deux fois**. Deux registres distincts, une doublure posée par le test mais
+invisible au chargeur, la vraie source servie, et un échec qui parle d'un module
+React Native non transpilé, à cent lieues de la cause. Un état partagé entre
+deux contextes passe par le disque.
+
+La neutralisation du chargeur fait tomber 17 tests sur 30 : c'est la preuve que
+les doublures portent, et non qu'elles sont décoratives.
+

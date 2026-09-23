@@ -213,6 +213,32 @@ async function tentative(userId, action) {
   }
 }
 
+/**
+ * Exécute `action` en tant qu'utilisateur, et **COMMITE**.
+ *
+ * `enTantQue` annule toujours sa transaction — c'est ce qui rend les épreuves
+ * de lecture indépendantes les unes des autres. Mais une épreuve qui doit
+ * laisser une trace derrière elle (poser une amitié, écrire un message) ne peut
+ * pas s'en servir : son écriture disparaît, et l'épreuve suivante échoue pour
+ * une raison qui n'existe pas.
+ *
+ * C'est l'erreur qui a été commise en écrivant le banc des discussions, deux
+ * fois : une amitié « posée » par `enTantQue` n'existait pas, puis trois
+ * messages « écrits » de même. Les deux fois l'échec accusait une politique,
+ * qui était juste. Ce helper existe pour que la confusion ne revienne pas.
+ */
+async function enTantQueEtCommit(userId, action) {
+  let valeur;
+  await db.transaction(async (tx) => {
+    await tx.exec('set local role authenticated');
+    if (userId !== null) {
+      await tx.exec(`set local request.jwt.claims = '{"sub":"${userId}"}'`);
+    }
+    valeur = await action(tx);
+  });
+  return valeur;
+}
+
 // === Lecture ===============================================================
 
 {
@@ -1276,6 +1302,530 @@ let codeA = null;
     tx.query('select * from public.point_d_un_ami($1::uuid, $2::date)', [USER_A, AUJOURDHUI])
   );
   noter('apres rupture, le point de l’ami ne rend plus rien', point.rows.length === 0, `${point.rows.length} ligne(s)`);
+}
+
+// === L'espace de discussion ================================================
+
+const CHEMIN_DISCUSSIONS = fileURLToPath(new URL('supabase/discussions.sql', RACINE));
+const discussions = readFileSync(CHEMIN_DISCUSSIONS, 'utf8');
+
+let premiereDiscussions = null;
+try {
+  await db.exec(discussions);
+} catch (erreur) {
+  premiereDiscussions = `${erreur.code ?? '?'} — ${erreur.message ?? erreur}`;
+}
+noter(
+  'les discussions s’appliquent après le suivi entre amis',
+  premiereDiscussions === null,
+  premiereDiscussions ?? ''
+);
+
+let secondeDiscussions = null;
+try {
+  await db.exec(discussions);
+} catch (erreur) {
+  secondeDiscussions = `${erreur.code ?? '?'} — ${erreur.message ?? erreur}`;
+}
+noter('les discussions se rejouent sans erreur', secondeDiscussions === null, secondeDiscussions ?? '');
+
+// L'ordre canonique de la paire, pour l'écrire dans le banc sans se tromper.
+const [PAIRE_A, PAIRE_B] = [USER_A, USER_B].sort();
+
+// --- La relation doit exister avant le fil ---------------------------------
+//
+// Le fil s'adosse à l'amitié : sans elle, rien ne s'écrit. On le vérifie AVANT
+// de poser l'amitié, sinon l'épreuve ne prouverait rien.
+
+{
+  await db.exec('delete from public.discussion_messages; delete from public.amis;');
+
+  const refus = await tentative(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, $4)`,
+      [PAIRE_A, PAIRE_B, USER_A, 'sans amitie, rien ne passe']
+    )
+  );
+  noter(
+    'sans amitie, un message ne s’ecrit pas',
+    refus.refus,
+    refus.refus ? `refus ${refus.code ?? ''}` : 'accepte'
+  );
+}
+
+// On pose l'amitié par le vrai geste : chacun saisit le code de l'autre. C'est
+// la fonction éprouvée plus haut, donc la relation du banc est celle qu'un
+// utilisateur obtiendrait.
+//
+// Ce bloc COMMITE, et c'est indispensable : `enTantQue` annule toujours sa
+// transaction, si bien qu'une amitié posée par elle n'existerait pas pour les
+// épreuves suivantes. L'erreur a été commise en écrivant ce banc — le premier
+// `insert` du fil a échoué en 42501 sur la politique d'INSERT, et l'on aurait
+// pu accuser la politique alors que la relation n'avait jamais été écrite.
+{
+  const codes = await db.query(
+    `select id, friend_code from public.profiles
+      where id in ('${USER_A}', '${USER_B}')`
+  );
+  const codeDe = Object.fromEntries(codes.rows.map((r) => [r.id, r.friend_code]));
+  noter(
+    'les deux comptes temoins ont un code',
+    Boolean(codeDe[USER_A]) && Boolean(codeDe[USER_B]),
+    JSON.stringify(Object.keys(codeDe))
+  );
+
+  await db.transaction(async (tx) => {
+    await tx.exec('set local role authenticated');
+    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_B}"}'`);
+    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [
+      USER_B,
+      codeDe[USER_A],
+    ]);
+  });
+
+  const n = await db.query('select count(*)::int as n from public.amis');
+  noter('l’amitie est posee pour la suite', n.rows[0].n === 1, `${n.rows[0].n} ligne(s)`);
+}
+
+// --- Écrire et lire --------------------------------------------------------
+
+{
+  await db.exec('delete from public.discussion_messages;');
+
+  // A écrit deux messages, B un seul. Aucun ne prend l'autre pour soi.
+  //
+  // Ces écritures COMMITENT — sans quoi les épreuves de lecture ci-dessous
+  // liraient un fil vide, et l'échec accuserait les politiques, qui sont
+  // justes. C'est précisément l'erreur que le helper `enTantQueEtCommit`
+  // documente.
+  const ecrit = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'Bismillah'),
+              ($1::uuid, $2::uuid, $3::uuid, 'On commence par la fatiha ?')
+       returning id`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+  noter('A ecrit dans son fil', ecrit.rows.length === 2, `${ecrit.rows.length} message(s)`);
+
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'Oui, allons-y')`,
+      [PAIRE_A, PAIRE_B, USER_B]
+    )
+  );
+
+  const enBase = await db.query('select count(*)::int as n from public.discussion_messages');
+  noter(
+    'les trois messages sont bien en base',
+    enBase.rows[0].n === 3,
+    `${enBase.rows[0].n} message(s)`
+  );
+
+  // B lit le fil entier : trois messages, dans l'ordre.
+  const filB = await enTantQue(USER_B, (tx) =>
+    tx.query('select corps from public.lire_fil($1::uuid, $2::uuid)', [USER_B, USER_A])
+  );
+  noter(
+    'B lit les trois messages du fil',
+    filB.rows.length === 3,
+    `${filB.rows.length} message(s)`
+  );
+  noter(
+    'le fil se lit du plus ancien au plus recent',
+    filB.rows[0]?.corps === 'Bismillah' && filB.rows[2]?.corps === 'Oui, allons-y',
+    filB.rows.map((r) => r.corps).join(' | ')
+  );
+
+  // Et A le lit aussi — la réciprocité n'est pas déclarative.
+  const filA = await enTantQue(USER_A, (tx) =>
+    tx.query('select count(*)::int as n from public.lire_fil($1::uuid, $2::uuid)', [USER_A, USER_B])
+  );
+  noter('A lit le meme fil que B', filA.rows[0].n === 3, `${filA.rows[0].n} message(s)`);
+}
+
+// --- L'étranger ne voit rien -----------------------------------------------
+
+{
+  // C n'est l'ami de personne. Il ne doit voir aucun message, et les fonctions
+  // elles-mêmes ne doivent rien lui rendre.
+  const vue = await enTantQue(USER_C, (tx) =>
+    tx.query('select count(*)::int as n from public.discussion_messages')
+  );
+  noter('un etranger ne voit aucun message', vue.rows[0].n === 0, `${vue.rows[0].n} message(s)`);
+
+  const fil = await enTantQue(USER_C, (tx) =>
+    tx.query('select * from public.lire_fil($1::uuid, $2::uuid)', [USER_C, USER_A])
+  );
+  noter('un etranger ne lit pas le fil par la fonction non plus', fil.rows.length === 0, `${fil.rows.length} ligne(s)`);
+}
+
+// --- On ne signe pas du nom de l'autre -------------------------------------
+
+{
+  const refus = await tentative(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'ce n’est pas moi qui l’ai dit')`,
+      [PAIRE_A, PAIRE_B, USER_B]
+    )
+  );
+  noter(
+    'on ne signe pas un message du nom de l’autre',
+    refus.refus,
+    refus.refus ? `refus ${refus.code ?? ''}` : 'accepte'
+  );
+}
+
+// --- Ce que la table refuse, et pourquoi -----------------------------------
+
+{
+  // Un corps vide, ou fait d'espaces : refusé par la contrainte, pas par
+  // l'interface. C'est la base qui tranche.
+  const vide = await tentative(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, '   ')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+  noter('un message fait d’espaces est refuse par la base', vide.refus, vide.refus ? `refus ${vide.code ?? ''}` : 'accepte');
+
+  // Trop long : la borne de la base, qui n'est pas celle de l'interface.
+  const long = await tentative(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, repeat('a', 2001))`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+  noter('un message trop long est refuse par la base', long.refus, long.refus ? `refus ${long.code ?? ''}` : 'accepte');
+
+  // Et la paire inversée : l'ordre canonique tient.
+  const inverse = await tentative(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'paire a l’envers')`,
+      [PAIRE_B, PAIRE_A, USER_A]
+    )
+  );
+  noter('la paire doit etre rangee dans l’ordre canonique', inverse.refus, inverse.refus ? `refus ${inverse.code ?? ''}` : 'accepte');
+}
+
+// --- Retirer et masquer : deux gestes, deux autorisations ------------------
+
+{
+  await db.exec('delete from public.discussion_messages;');
+
+  const poses = await db.query(
+    `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+     values ('${PAIRE_A}', '${PAIRE_B}', '${USER_A}', 'a retirer'),
+            ('${PAIRE_A}', '${PAIRE_B}', '${USER_A}', 'a masquer'),
+            ('${PAIRE_A}', '${PAIRE_B}', '${USER_B}', 'temoin')
+     returning id, corps`
+  );
+  const parCorps = Object.fromEntries(poses.rows.map((r) => [r.corps, r.id]));
+
+  // B, qui n'est pas l'auteur, ne peut PAS retirer un message d'A.
+  //
+  // `retirer_message` est SECURITY INVOKER : son écriture passe par la
+  // politique d'UPDATE, qui n'ouvre que l'auteur ou un administrateur. Le geste
+  // ne lève donc pas — il ne touche simplement aucune ligne, et rend `false`.
+  // C'est la forme à vérifier ici : un `false`, pas une exception.
+  const gesteB = await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.retirer_message($1::bigint) as fait', [parCorps['a retirer']])
+  );
+  noter(
+    'on ne retire pas le message d’un autre',
+    gesteB.rows[0].fait === false,
+    `rendu ${gesteB.rows[0].fait}`
+  );
+
+  // Et la preuve que rien n'a bougé, lue en base plutôt que supposée.
+  const intact = await db.query(
+    `select retire_le from public.discussion_messages where id = $1::bigint`,
+    [parCorps['a retirer']]
+  );
+  noter('le message d’un autre reste intact', intact.rows[0].retire_le === null, `${intact.rows[0].retire_le}`);
+
+  // A retire le sien. C'est son droit.
+  const retire = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.retirer_message($1::bigint) as fait', [parCorps['a retirer']])
+  );
+  noter('l’auteur retire son propre message', retire.rows[0].fait === true, `${retire.rows[0].fait}`);
+
+  // Le texte du message retiré n'est plus rendu : `lire_fil` pose `NULL`, la
+  // politique laisse la ligne visible pour la pierre tombale.
+  //
+  // On interroge `masque_par_moderateur`, qui est une COLONNE DE `lire_fil` et
+  // non de la table — l'erreur a été commise en écrivant ce banc, et le message
+  // rendu (« column masque_par_moderateur does not exist ») désignait la
+  // fonction, pas la table.
+  const fil = await enTantQue(USER_A, (tx) =>
+    tx.query('select corps, retire_le, masque_par_moderateur from public.lire_fil($1::uuid, $2::uuid)', [
+      USER_A,
+      USER_B,
+    ])
+  );
+  const tombe = fil.rows.find((r) => r.retire_le !== null);
+  noter(
+    'un message retire est rendu sans son texte',
+    tombe !== undefined && tombe.corps === null,
+    `corps=${JSON.stringify(tombe?.corps)}, present=${tombe !== undefined}`
+  );
+
+  // Un ami ne masque pas : `masquer_message` exige le rôle, et B ne l'a pas.
+  const masquageRefuse = await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.masquer_message($1::bigint) as fait', [parCorps['a masquer']])
+  );
+  noter(
+    'un simple ami ne masque pas un message',
+    masquageRefuse.rows[0].fait === false,
+    `${masquageRefuse.rows[0].fait}`
+  );
+
+  // Le modérateur, lui, masque.
+  const masque = await enTantQueEtCommit(USER_ADMIN, (tx) =>
+    tx.query('select public.masquer_message($1::bigint) as fait', [parCorps['a masquer']])
+  );
+  noter('un moderateur masque un message', masque.rows[0].fait === true, `${masque.rows[0].fait}`);
+
+  // L'ami ne voit plus le message masqué ; le modérateur, si.
+  const filAmi = await enTantQue(USER_A, (tx) =>
+    tx.query('select corps from public.lire_fil($1::uuid, $2::uuid)', [USER_A, USER_B])
+  );
+  const voitMasque = filAmi.rows.some((r) => r.corps === 'a masquer');
+  noter('un message masque disparait du fil des amis', voitMasque === false, `${filAmi.rows.length} message(s)`);
+
+  // Le modérateur lit par SA fonction, pas par `lire_fil` : celle-ci borne sur
+  // le fil de l'appelant, et un modérateur qui n'est pas partie au fil n'y
+  // verrait rien. Ses deux paramètres nomment LA PAIRE, pas « moi et un autre ».
+  // Le premier jet de ce banc s'y est trompé deux fois, et l'échec accusait la
+  // politique alors que la lecture était simplement la mauvaise.
+  const filAdmin = await enTantQue(USER_ADMIN, (tx) =>
+    tx.query(
+      'select corps, masque_par_moderateur from public.lire_fil_moderation($1::uuid, $2::uuid)',
+      [PAIRE_A, PAIRE_B]
+    )
+  );
+  noter(
+    'le moderateur voit encore le message masque',
+    filAdmin.rows.some((r) => r.corps === 'a masquer' && r.masque_par_moderateur === true),
+    `${filAdmin.rows.length} message(s)`
+  );
+
+  // Et il voit aussi le TEXTE du message retiré, que les amis ne voient plus.
+  noter(
+    'le moderateur voit le texte d’un message retire',
+    filAdmin.rows.some((r) => r.corps === 'a retirer'),
+    filAdmin.rows.map((r) => r.corps).join(' | ')
+  );
+
+  // Un simple ami ne peut pas emprunter cette lecture : elle exige le rôle.
+  const refusLecture = await tentative(USER_A, (tx) =>
+    tx.query('select * from public.lire_fil_moderation($1::uuid, $2::uuid)', [PAIRE_A, PAIRE_B])
+  );
+  noter(
+    'un simple ami ne peut pas lire par la moderation',
+    refusLecture.refus,
+    refusLecture.refus ? `refus ${refusLecture.code ?? ''}` : 'accepte'
+  );
+
+  // Ni parcourir la liste des fils.
+  const refusFils = await tentative(USER_A, (tx) =>
+    tx.query('select * from public.fils_de_moderation(10)')
+  );
+  noter(
+    'un simple ami ne parcourt pas la liste des fils',
+    refusFils.refus,
+    refusFils.refus ? `refus ${refusFils.code ?? ''}` : 'accepte'
+  );
+
+  const fils = await enTantQue(USER_ADMIN, (tx) =>
+    tx.query('select * from public.fils_de_moderation(10)')
+  );
+  noter(
+    'le moderateur parcourt les fils et y voit ce qui est masque',
+    fils.rows.length === 1 && fils.rows[0].masques === 1,
+    `${fils.rows.length} fil(s), ${fils.rows[0]?.masques ?? '?'} masque(s)`
+  );
+
+  // Défaire un masquage : réversible, et c'est le point.
+  const demasque = await enTantQueEtCommit(USER_ADMIN, (tx) =>
+    tx.query('select public.demasquer_message($1::bigint) as fait', [parCorps['a masquer']])
+  );
+  noter('le moderateur defait son masquage', demasque.rows[0].fait === true, `${demasque.rows[0].fait}`);
+
+  const filRedonne = await enTantQue(USER_A, (tx) =>
+    tx.query('select corps from public.lire_fil($1::uuid, $2::uuid)', [USER_A, USER_B])
+  );
+  noter(
+    'le message demasque revient dans le fil',
+    filRedonne.rows.some((r) => r.corps === 'a masquer'),
+    `${filRedonne.rows.length} message(s)`
+  );
+}
+
+// --- On ne reecrit pas ce qu'on a dit --------------------------------------
+
+{
+  const cible = await db.query(
+    `select id from public.discussion_messages where corps = 'temoin' limit 1`
+  );
+  const id = cible.rows[0].id;
+
+  // B, auteur du temoin, tente de changer le texte. Le déclencheur refuse et
+  // LÈVE — un `42501`, pour que l'appelant lise « refus » et non « erreur de
+  // saisie ».
+  //
+  // L'épreuve regarde donc les DEUX faces : que le geste échoue **et** que le
+  // texte n'ait pas bougé. Un déclencheur qui lèverait après avoir écrit
+  // passerait la première et raterait la seconde.
+  const reecriture = await tentative(USER_B, (tx) =>
+    tx.query(`update public.discussion_messages set corps = 'autre chose' where id = $1::bigint`, [id])
+  );
+  noter(
+    'on ne reecrit pas un message deja envoye',
+    reecriture.refus,
+    reecriture.refus ? `refus ${reecriture.code ?? ''}` : 'accepte'
+  );
+
+  // Et le texte n'a pas bouge, malgre la tentative.
+  const lu = await db.query(`select corps from public.discussion_messages where id = $1::bigint`, [id]);
+  noter('le texte d’origine est intact', lu.rows[0].corps === 'temoin', lu.rows[0].corps);
+
+  // Le modérateur non plus ne réécrit pas : son rôle ouvre le masquage, pas la
+  // parole d'autrui. C'est la même garde, et elle vaut pour tout le monde.
+  const reecritureAdmin = await tentative(USER_ADMIN, (tx) =>
+    tx.query(`update public.discussion_messages set corps = 'reecrit par le moderateur' where id = $1::bigint`, [
+      id,
+    ])
+  );
+  noter(
+    'un moderateur ne reecrit pas la parole d’autrui',
+    reecritureAdmin.refus,
+    reecritureAdmin.refus ? `refus ${reecritureAdmin.code ?? ''}` : 'accepte'
+  );
+
+  // Et un message ne change pas de main : ni d'auteur, ni de destinataire.
+  //
+  // C'est L'AUTEUR du témoin qui tente le geste — B. Le tenter sous une autre
+  // identité ne prouverait rien ici : la politique d'UPDATE écarterait la ligne
+  // avant même le déclencheur (aucune politique ne laisse toucher le message
+  // d'autrui), et l'épreuve serait verte sans que la règle sur l'auteur soit
+  // jamais atteinte. Il faut donc l'auteur, qui a bien le droit de toucher sa
+  // ligne — et c'est le déclencheur, et lui seul, qui refuse.
+  const auteurDuTemoin = await db.query(
+    `select auteur from public.discussion_messages where id = $1::bigint`,
+    [id]
+  );
+  const changeAuteur = await tentative(auteurDuTemoin.rows[0].auteur, (tx) =>
+    tx.query(`update public.discussion_messages set auteur = $2::uuid where id = $1::bigint`, [
+      id,
+      USER_A,
+    ])
+  );
+  noter(
+    'un message ne change pas d’auteur, meme par son auteur',
+    changeAuteur.refus,
+    changeAuteur.refus ? `refus ${changeAuteur.code ?? ''}` : 'accepte'
+  );
+
+  // Et la ligne est bien intacte, auteur compris.
+  const relu = await db.query(
+    `select auteur, corps from public.discussion_messages where id = $1::bigint`,
+    [id]
+  );
+  noter(
+    'l’auteur d’origine est intact',
+    relu.rows[0].auteur === auteurDuTemoin.rows[0].auteur,
+    `${relu.rows[0].auteur}`
+  );
+}
+
+// --- Aucun effacement reel n'est possible ----------------------------------
+
+{
+  // La table n'accorde aucune politique de DELETE — et, en fait, pas même le
+  // DROIT de supprimer : le `GRANT` ne porte que SELECT, INSERT, UPDATE. Un
+  // `delete` lève donc un `42501` de permission, AVANT d'atteindre une
+  // politique. Les deux barrières disent la même chose ici, et c'est voulu :
+  // accorder un droit qu'aucune politique n'ouvre ne ferait qu'ajouter un refus
+  // silencieux (« 0 ligne supprimée ») là où l'on veut un refus lisible.
+  //
+  // L'épreuve regarde donc le refus, et confirme ensuite que rien n'a bougé.
+  const effaceAdmin = await tentative(USER_ADMIN, (tx) =>
+    tx.query('delete from public.discussion_messages returning id')
+  );
+  noter(
+    'meme un moderateur ne peut pas supprimer un message',
+    effaceAdmin.refus,
+    effaceAdmin.refus ? `refus ${effaceAdmin.code ?? ''}` : 'accepte'
+  );
+
+  const effaceAuteur = await tentative(USER_A, (tx) =>
+    tx.query('delete from public.discussion_messages returning id')
+  );
+  noter(
+    'un auteur ne supprime pas ses propres messages',
+    effaceAuteur.refus,
+    effaceAuteur.refus ? `refus ${effaceAuteur.code ?? ''}` : 'accepte'
+  );
+
+  const restant = await db.query('select count(*)::int as n from public.discussion_messages');
+  noter('les messages sont tous encore la', restant.rows[0].n === 3, `${restant.rows[0].n} message(s)`);
+}
+
+// --- Rompre l'amitie ferme la discussion sans effacer les messages ---------
+
+{
+  const avant = await db.query('select count(*)::int as n from public.discussion_messages');
+
+  await db.transaction(async (tx) => {
+    await tx.exec('set local role authenticated');
+    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_B}"}'`);
+    await tx.query('delete from public.amis');
+  });
+
+  const apres = await db.query('select count(*)::int as n from public.discussion_messages');
+  noter(
+    'rompre l’amitie ne supprime aucun message',
+    apres.rows[0].n === avant.rows[0].n,
+    `${avant.rows[0].n} avant, ${apres.rows[0].n} apres`
+  );
+
+  // Mais plus personne n'ecrit, et plus personne ne lit.
+  const ecriture = await tentative(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'apres rupture')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+  noter('apres rupture, on n’ecrit plus dans le fil', ecriture.refus, ecriture.refus ? `refus ${ecriture.code ?? ''}` : 'accepte');
+
+  const lecture = await enTantQue(USER_A, (tx) =>
+    tx.query('select count(*)::int as n from public.discussion_messages')
+  );
+  noter(
+    'apres rupture, on ne lit plus le fil — les messages restent en base',
+    lecture.rows[0].n === 0,
+    `${lecture.rows[0].n} message(s) visible(s)`
+  );
+
+  // Le moderateur, lui, voit toujours — c'est ce qui rend la moderation
+  // possible apres coup, sans dependre de l'amitie.
+  const vueAdmin = await enTantQue(USER_ADMIN, (tx) =>
+    tx.query('select count(*)::int as n from public.discussion_messages')
+  );
+  noter(
+    'le moderateur voit le fil meme apres rupture',
+    vueAdmin.rows[0].n === 3,
+    `${vueAdmin.rows[0].n} message(s)`
+  );
 }
 
 // === Verdict ===============================================================

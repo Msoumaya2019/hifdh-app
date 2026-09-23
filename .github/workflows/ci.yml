@@ -245,6 +245,26 @@ jobs:
       - name: Falsifier les contrôles du surlignage et du lecteur
         run: npm run falsifier:surlignage
 
+      # L'espace de discussion entre deux amis : un fil de mots, modéré.
+      #
+      # Deux fichiers de tests le tiennent, et il faut les deux. Les décisions
+      # pures (conversion des lignes, bornes de longueur, ordre du fil, dates)
+      # sont dans `tests/discussion.test.mjs`. La couche RÉSEAU est dans
+      # `tests/discussion_reseau.test.mjs` : c'est là que vivent les trois
+      # défauts silencieux — une attente non bornée, un délai dépassé présenté
+      # comme un fil vide, et une paire envoyée non rangée que la base refuse.
+      #
+      # Ce dernier fichier remplace le client et la session par des doublures
+      # déposées sur disque, et relues par `scripts/alias-loader.mjs` à chaque
+      # chargement. Le disque, et non un `Map` partagé : `--import` instancie le
+      # chargeur dans un contexte séparé, si bien qu'un module importé des deux
+      # côtés est évalué deux fois — deux registres distincts, une doublure
+      # invisible, et un échec qui parle d'un module React Native non transpilé.
+      # La neutralisation du chargeur fait tomber 17 tests sur 30, ce qui est la
+      # preuve que les doublures portent vraiment.
+      - name: Falsifier les contrôles de l'espace de discussion
+        run: npm run falsifier:discussion
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

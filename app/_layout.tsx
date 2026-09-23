@@ -62,6 +62,10 @@ export default function RootLayout() {
           name="amis"
           options={{ presentation: 'card', headerShown: false }}
         />
+        <Stack.Screen
+          name="discussion"
+          options={{ presentation: 'card', headerShown: false }}
+        />
       </Stack>
     </GestureHandlerRootView>
   );
