@@ -165,56 +165,88 @@ police ne fait que le dessiner.
 
 ## 3 ter. Images des pages du moushaf (604 pages)
 
-L'affichage « page du moushaf » montre désormais l'**image** de la page
-imprimée, et non plus une composition de cette page. Les 604 images ne sont pas
-redistribuées dans ce dépôt : elles sont téléchargées à la demande, puis gardées
-dans le cache local de l'appareil.
+L'affichage « page du moushaf » montre l'**image** de la page imprimée, et non
+une composition de cette page. Les 604 images sont **rangées dans ce dépôt**,
+sous `pages-moushaf/`, et servies depuis ce dépôt. Elles ne sont pas embarquées
+dans l'application : elles sont téléchargées à la demande, puis gardées dans le
+cache local de l'appareil.
 
-- **Œuvre** : photographies numériques du moushaf de Madine, narration Hafs
-  'an Asim, 604 pages (1 à 604, sans page manquante).
-- **Source** : jeu `Zohanur2026/zohanur-mushaf-pages-hafs`, servi par le CDN
-  jsDelivr — <https://cdn.jsdelivr.net/gh/Zohanur2026/zohanur-mushaf-pages-hafs@main/{page}.jpg>
-- **Licence** : **non déclarée** par la source. Voir l'avertissement ci-dessous.
+- **Œuvre** : les pages du moushaf de Madine, narration Hafs 'an Asim, 604 pages
+  (1 à 604, sans page manquante), telles qu'elles sont imprimées — cadre,
+  médaillons, cartouches et numéros compris.
+- **Provenance** : extraites de l'archive `com.quran.ios-2.6.8-eeveedecrypter.ipa`
+  fournie par le propriétaire du projet, dossier
+  `Payload/Quran.app/hafs_1405/images_1920/width_1920/`. Les 604 fichiers sont
+  **recopiés octet pour octet** : aucun réencodage, aucun redimensionnement,
+  aucune retouche.
+- **Droits** : le propriétaire du projet déclare détenir les droits sur cette
+  archive et sur son usage ici. Aucune licence tierce n'est invoquée : la source
+  n'est pas un dépôt public de tiers, mais le fichier fourni par le projet
+  lui-même. **Avant toute distribution de l'application**, il lui appartient de
+  confirmer cette appréciation — c'est une déclaration, et elle est écrite ici
+  comme telle, non comme une licence vérifiée.
+- **Empreinte de l'ensemble** : les 604 fichiers, lus dans l'ordre des pages,
+  donnent
+  `12024d904b55a7f5bd817c4a81d6dfe791880c1d19f667fe3c784f6c2e99a93f`
+  (118 203 707 octets, soit 112,7 Mio). Le détail par page est dans
+  `pages-moushaf/EMPREINTES.txt`.
+- **Format** : 1920 × 3106 pour les 604 pages, sans exception. Palette de 9 à 13
+  couleurs (599 fichiers en 4 bits, 5 en 8 bits). Réduire la résolution les
+  **alourdit** — 1440 px donne 256 Ko par page contre 148 Ko à 1920 px — parce que
+  l'anti-aliasing ajoute des couleurs et détruit les aplats que le filtre PNG
+  compresse. Les originaux sont donc aussi le plus petit choix fidèle.
 - **Code** : `src/lib/pagesMoushaf.ts` — `getMushafPageImage(page)` est le seul
   point de contact avec cette source ; `SOURCE_PAGES` en est le seul endroit à
   modifier pour en changer.
+- **Servi depuis ce dépôt.** L'application lit les pages à l'adresse
+  `https://cdn.jsdelivr.net/gh/Msoumaya2019/hifdh-app@main/pages-moushaf/pageNNN.png`.
+  Deux conséquences, dites ici parce qu'elles ne se voient nulle part ailleurs :
+  le dépôt doit rester **public**, et la branche servie est **`main`**. Renommer
+  le dépôt, le rendre privé ou renommer la branche couperait les 604 pages d'un
+  coup — sans erreur de compilation. Changer de branche servie est une
+  modification de `SOURCE_PAGES.base`.
 - **Cache** : `src/lib/cachePagesMoushaf.ts` — une page téléchargée est écrite
   sur le disque et n'est plus retéléchargée.
 - **Repli** : si le cache disque n'est pas disponible sur l'appareil — le module
   natif de fichiers peut être absent, et `cacheDirectory` vaut alors `null` sans
-  lever — l'image n'est **pas** cachée : c'est l'URL distante qui est rendue, et
-  l'`Image` de React Native l'affiche avec son propre cache réseau. Une panne du
-  cache ne doit jamais retirer la page à la personne qui la lit.
+  lever — l'image n'est **pas** cachée : c'est l'adresse distante qui est rendue,
+  et l'`Image` de React Native l'affiche avec son propre cache réseau. Une panne
+  du cache ne doit jamais retirer la page à la personne qui la lit.
 - **Vérification** : `npm run verifier:pages-moushaf` (et son falsificateur
-  `npm run falsifier:pages-moushaf`), qui contrôle les invariants de la source
-  et, avec `--reseau`, l'existence réelle des pages.
+  `npm run falsifier:pages-moushaf`). Le contrôle lit l'en-tête des **604**
+  fichiers sur le disque, compare leur format à celui que le code réserve, exige
+  que le nom servi soit celui du fichier rangé, et vérifie qu'aucun module ne
+  réclame ces pages — les embarquer doublerait le poids de l'application. Avec
+  `--reseau`, il interroge en plus la source pour seize pages.
 
-### Avertissement sur la licence des images
+### Ce qui a été mesuré sur ces pages
 
-Contrairement au texte de Tanzil (CC-BY 3.0), aux métadonnées et aux polices,
-**le jeu d'images ne porte aucune licence explicite**. Le dépôt qui les héberge
-n'en déclare aucune. C'est signalé ici plutôt que passé sous silence, et c'est
-la raison pour laquelle :
-
-1. les images ne sont **pas** redistribuées dans ce dépôt ;
-2. la source est isolée derrière une seule fonction, pour qu'un remplacement
-   soit possible sans toucher au reste de l'application ;
-3. **avant toute distribution de l'application**, il appartient à la personne
-   qui la publie de vérifier que l'usage de ces images est autorisé — ou de les
-   remplacer par une source dont la licence est établie.
-
-Le code des pages du moushaf est écrit pour que ce remplacement soit une
-modification d'une seule constante.
+- **La mise en page calculée leur correspond.** `data/quran/moushaf_layout.json`
+  vient de l'API quran.com, donc d'une autre source que ces images. Confronté mot
+  par mot à la table `glyphs` de l'archive — qui donne, pour chaque mot, sa page
+  et sa ligne — il place **81 989 mots sur 81 990** sur la même page et la même
+  ligne que l'image affichée. Les bandes de surlignage de la séance tombent donc
+  sur les bonnes lignes. Le seul écart — un mot, page 454 — est mesuré et nommé
+  dans `docs/mise-en-page-moushaf.md`, avec la méthode et les deux conventions
+  qu'il a fallu neutraliser pour que la comparaison ait un sens.
+- **La composition par police n'est plus une voie de repli.** `src/lib/policesMoushaf.ts`
+  n'est importé par personne : les 92 Mo de polices de page restent dans le dépôt
+  (§3 bis) mais ne sont pas embarqués. Mesuré dans l'APK publié, qui n'en
+  contient aucun fichier.
 
 ### Pourquoi pas quran.com
 
-Quran.com a été essayé en premier, comme demandé à l'origine. Son API v4 — et la
-nouvelle API de la Quran Foundation, qui demande désormais des identifiants
-d'application — expose le texte, les traductions, l'audio et la recherche, mais
-**aucune image de page** : ni champ `image` sur un verset, ni ressource
-« pages ». Les URL d'images du site ne sont pas non plus adressables (essayées :
-404 ou 403). Quran.com n'est donc pas exploitable pour les images, et c'est la
-solution de repli qui a été mise en place.
+Quran.com a été essayé en premier, comme demandé à l'origine, pour les images
+des pages. Son API v4 — et la nouvelle API de la Quran Foundation, qui demande
+désormais des identifiants d'application — expose le texte, les traductions,
+l'audio et la recherche, mais **aucune image de page** : ni champ `image` sur un
+verset, ni ressource « pages ». Les URL d'images du site ne sont pas non plus
+adressables (essayées : 404 ou 403). C'est cette recherche qui avait conduit à
+une source de tiers, désormais remplacée par le fichier du projet lui-même.
+
+Quran.com reste la source de la **mise en page** (`moushaf_layout.json`), et non
+des images : c'est l'API qui donne, pour chaque verset, la page et la ligne. Ce
+fichier a été confronté mot par mot aux images (§ ci-dessus) et leur correspond.
 
 ## 3 quater. Lecture de la page, et surlignage de la séance
 

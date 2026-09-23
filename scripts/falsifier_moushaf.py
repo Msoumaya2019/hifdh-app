@@ -81,7 +81,14 @@ TEST = RACINE / "tests" / "moushaf.test.mjs"
 # refusé de certifier la campagne avant que le compte soit remis à jour.
 # Il n'est pas dérivé du rapport, et c'est délibéré : un compte lu dans le
 # rapport ne pourrait jamais signaler qu'un test ne tourne plus.
-TESTS_ATTENDUS = 20
+#
+# Passé de 20 à 22 le 2026-09-23 : les pages du moushaf viennent désormais du
+# fichier de l'utilisateur, copiées à l'octet dans `pages-moushaf/`. Deux
+# propriétés nouvelles se tiennent donc, et chacune a son test — le nom servi
+# est celui des fichiers rangés dans le dépôt, et la place réservée avant
+# chargement est le format réel des pages. Le témoin a de nouveau refusé de
+# tourner tant que le compte n'était pas remis à jour.
+TESTS_ATTENDUS = 22
 
 
 def lancer_controle():

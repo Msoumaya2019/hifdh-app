@@ -12,12 +12,12 @@
 // C'est aussi ce qui rend l'application utilisable hors connexion après une
 // première visite, ce qu'un cache mémoire ne permet pas.
 //
-// MÊME FORME QUE LE CHARGEMENT DES POLICES
-// ----------------------------------------
-// Comme `policesMoushaf` : une table des téléchargements en cours, pour que deux
-// demandes de la même page ne téléchargent qu'une fois, et un `Set` des pages
-// déjà prêtes. Un échec rend `null` — jamais une exception : une page qu'on ne
-// peut pas montrer ne doit pas faire tomber le lecteur.
+// LA FORME DU CHARGEMENT
+// ----------------------
+// Une table des téléchargements en cours, pour que deux demandes de la même
+// page ne téléchargent qu'une fois, et un `Set` des pages déjà prêtes. Un échec
+// rend `null` — jamais une exception : une page qu'on ne peut pas montrer ne
+// doit pas faire tomber le lecteur.
 
 import { useEffect, useState } from 'react';
 import * as FileSystem from 'expo-file-system';
@@ -41,7 +41,7 @@ import { getMushafPageImage, pageValide } from '@/lib/pagesMoushaf';
  * où `ExponentFileSystemShim` déclare `cacheDirectory: null`. Autrement dit, sur
  * un binaire où la couche native n'est pas joignable, `cacheDirectory` vaut
  * `null` **sans lever**. Un `?? ''` construit alors un chemin **relatif sans
- * schéma** (`pages-moushaf/page-1.jpg`), que `downloadAsync` refuse — et le
+ * schéma** (`pages-moushaf/page-1.png`), que `downloadAsync` refuse — et le
  * `catch` du téléchargement transformait ce refus en « vérifie ta connexion ».
  * C'est exactement le défaut signalé sur appareil : le message accusait le
  * réseau alors que la cause était un chemin sans `file://`.
@@ -78,9 +78,16 @@ async function preparerDossier(): Promise<void> {
   dossierPret.fait = true;
 }
 
-/** Le chemin local d'une page, ou `null` si le cache disque est indisponible. */
+/**
+ * Le chemin local d'une page, ou `null` si le cache disque est indisponible.
+ *
+ * L'extension est `.png` parce que les pages servies sont des PNG. Le nom du
+ * fichier local n'a pas à suivre celui du dépôt — c'est une copie, pas une
+ * référence —, mais une copie qui mentirait sur son format se paierait un jour
+ * au diagnostic.
+ */
 function cheminLocal(page: number): string | null {
-  return DOSSIER === null ? null : `${DOSSIER}page-${page}.jpg`;
+  return DOSSIER === null ? null : `${DOSSIER}page-${page}.png`;
 }
 
 const pretes = new Set<number>();

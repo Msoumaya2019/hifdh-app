@@ -35,6 +35,8 @@ hifdh-app/
 │   └── rapport_divisions_estimees.py # Engendre docs/divisions-estimees.md
 ├── assets/                 # Polices (Amiri, images) — et les 604 polices de page
 │   └── polices-pages/                # p001.ttf … p604.ttf (95 Mo, QCF v1, KFGQPC)
+├── pages-moushaf/          # Les 604 images du moushaf (112,7 Mo), copiées à l'octet
+│   └── EMPREINTES.txt                # Le SHA-256 de chaque page (`sha256sum -c`)
 ├── supabase/               # Schéma SQL Supabase
 │   ├── schema.sql                    # Tables, politiques RLS (rejouable)
 │   └── administration.sql            # Rôles, vérification des toumoun (rejouable)
@@ -43,6 +45,7 @@ hifdh-app/
 ├── .github/workflows/      # CI/CD GitHub Actions
 └── docs/                   # Documentation
     ├── SECRETS.md              # Configuration, compilation, installation
+    ├── mise-en-page-moushaf.md # La mise en page confrontée aux images (mesuré)
     └── divisions-estimees.md   # Les limites non vérifiées (engendré)
 ```
 

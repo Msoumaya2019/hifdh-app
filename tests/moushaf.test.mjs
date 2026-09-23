@@ -34,7 +34,15 @@ import {
 } from '@/data/quranData';
 
 import largeursPages from '@data/quran/largeurs_pages.json' with { type: 'json' };
-import { getMushafPageImage, pageValide, pageBornee } from '@/lib/pagesMoushaf';
+import {
+  getMushafPageImage,
+  getRatioPage,
+  nomDeFichierPage,
+  pageValide,
+  pageBornee,
+  RATIO_PAGE_PAR_DEFAUT,
+  SOURCE_PAGES,
+} from '@/lib/pagesMoushaf';
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LARGEURS = largeursPages;
@@ -375,21 +383,23 @@ test('le mode page affiche une image, jamais une composition', () => {
 test('la source des pages est centralisée et bornée', () => {
   // `getMushafPageImage` est le seul point de contact avec la source : changer
   // de fournisseur doit se faire en un endroit. Et une page hors bornes doit
-  // rendre `null` plutôt que fabriquer une URL qui répondrait 404.
+  // rendre `null` plutôt que fabriquer une adresse qui répondrait 404.
   const source = readFileSync(join(RACINE, 'src/lib/pagesMoushaf.ts'), 'utf8');
 
   assert.match(source, /export function getMushafPageImage\(/);
   assert.match(source, /nombreDePages: 604/);
-  // L'URL n'est écrite qu'ici : une seule occurrence de gabarit.
-  assert.match(source, /gabarit: \(page: number\) =>/);
+  // Le nom du fichier vient d'une fonction du numéro de page : aucune page n'est
+  // écrite en dur, sinon les 604 devraient y être.
+  assert.match(source, /export function nomDeFichierPage\(page: number\)/);
 
   assert.equal(getMushafPageImage(0), null, 'la page 0 doit être refusée');
   assert.equal(getMushafPageImage(605), null, 'la page 605 doit être refusée');
   assert.equal(getMushafPageImage(1.5), null, 'une page non entière doit être refusée');
-  assert.ok(getMushafPageImage(1), 'la page 1 doit rendre une URL');
-  assert.ok(getMushafPageImage(604), 'la page 604 doit rendre une URL');
-  assert.match(getMushafPageImage(177), /177\.jpg$/);
-  assert.match(getMushafPageImage(177), /^https:\/\//, 'l’URL doit être absolue');
+  assert.ok(getMushafPageImage(1), 'la page 1 doit rendre une adresse');
+  assert.ok(getMushafPageImage(604), 'la page 604 doit rendre une adresse');
+  assert.match(getMushafPageImage(177), /page177\.png$/);
+  assert.match(getMushafPageImage(1), /page001\.png$/, 'le numéro est complété à trois chiffres');
+  assert.match(getMushafPageImage(177), /^https:\/\//, 'l’adresse doit être absolue');
 
   // Les deux prédicats qui vont avec : `pageValide` dit si une page existe,
   // `pageBornee` ramène un numéro dans les bornes. Ils servent au champ « Aller
@@ -402,6 +412,46 @@ test('la source des pages est centralisée et bornée', () => {
   assert.equal(pageBornee(605), 604, 'un numéro trop haut est ramené à 604');
   assert.equal(pageBornee(177), 177, 'un numéro valide est laissé tel quel');
   assert.equal(pageBornee(Number.NaN), 1, 'une saisie vide retombe sur la page 1');
+});
+
+test('le nom servi est celui des pages rangées dans le dépôt', () => {
+  // Le nom est fabriqué par le code et l'adresse est construite à partir de lui.
+  // S'il divergeait des fichiers, les 604 pages répondraient 404 — et rien, à
+  // l'écran, ne dirait pourquoi. Le contrôle complet est en Python
+  // (`npm run verifier:pages-moushaf`, qui lit les 604 en-têtes) ; ici on tient
+  // la convention elle-même, et l'existence de quelques pages témoins.
+  const dossier = join(RACINE, SOURCE_PAGES.dossier);
+
+  assert.equal(nomDeFichierPage(1), 'page001.png');
+  assert.equal(nomDeFichierPage(7), 'page007.png', 'le remplissage à trois chiffres');
+  assert.equal(nomDeFichierPage(99), 'page099.png');
+  assert.equal(nomDeFichierPage(100), 'page100.png');
+  assert.equal(nomDeFichierPage(604), 'page604.png');
+
+  for (const page of [1, 2, 7, 177, 300, 454, 604]) {
+    const chemin = join(dossier, nomDeFichierPage(page));
+    assert.ok(existsSync(chemin), `la page ${page} devrait être rangée dans le dépôt`);
+    assert.ok(statSync(chemin).size > 1000, `la page ${page} ne devrait pas être vide`);
+  }
+
+  // Et l'adresse se termine bien par ce nom-là.
+  for (const page of [1, 177, 604]) {
+    assert.ok(
+      getMushafPageImage(page).endsWith(`/${SOURCE_PAGES.dossier}/${nomDeFichierPage(page)}`),
+      `l’adresse de la page ${page} devrait finir par le nom du fichier rangé`
+    );
+  }
+});
+
+test('la place réservée avant chargement est le format réel des pages', () => {
+  // Une place réservée fausse ne se voit pas sur une image : elle se voit au
+  // moment où l'image arrive, quand la page saute et que les boutons se
+  // déplacent sous le doigt. Les 604 pages ont le même format — mesuré —, donc
+  // le rapport est une constante, et c'est le format qui la fixe.
+  assert.equal(RATIO_PAGE_PAR_DEFAUT, 3106 / 1920);
+  assert.equal(RATIO_PAGE_PAR_DEFAUT.toFixed(5), '1.61771');
+  assert.equal(getRatioPage(1), RATIO_PAGE_PAR_DEFAUT);
+  assert.equal(getRatioPage(604), RATIO_PAGE_PAR_DEFAUT);
 });
 
 test('les cartouches se dimensionnent sur le pas des lignes', () => {
