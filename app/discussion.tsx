@@ -16,7 +16,7 @@
 // n'est pas effacé pour autant — il reste lisible par le modérateur. C'est un
 // choix, et il se dit à l'endroit où l'on écrit, pas dans un document séparé.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -47,7 +47,8 @@ import {
   texteAffiche,
   type MessageDiscussion,
 } from '@/lib/discussion';
-import { envoyerMessage, lireFil, retirerMessage } from '@/lib/sync/discussion';
+import { envoyerMessage, lireFil, marquerFilLu, retirerMessage, abonnerFil } from '@/lib/sync/discussion';
+import { bloquerUtilisateur } from '@/lib/sync/amis';
 
 /**
  * Le jour d'aujourd'hui, au format `AAAA-MM-JJ`.
@@ -90,11 +91,13 @@ export default function DiscussionScreen() {
     // `setChargement(false)` est dans un `finally` : quelle que soit l'issue —
     // y compris une promesse qui ne rend jamais — l'indicateur s'arrête. Un
     // rond qui tourne sans fin est le défaut que ce projet a déjà payé.
+    let affiche = false;
     try {
       const resultat = await lireFil(amiId);
       if (resultat.statut === 'ok') {
         setMessages(rangerFil(resultat.messages));
         setErreur(null);
+        affiche = true;
       } else if (resultat.statut === 'refuse') {
         setErreur(messageErreurDiscussion(resultat.code, resultat.message));
         setMessages([]);
@@ -107,6 +110,14 @@ export default function DiscussionScreen() {
     } finally {
       setChargement(false);
     }
+
+    // La marque de lecture est posée APRÈS l'affichage, et sans être attendue.
+    // L'ordre a une raison : marquer avant de lire éteindrait la pastille d'un
+    // fil qui n'a pas encore été montré — et si la lecture échouait, on aurait
+    // effacé un non-lu pour rien. Le `catch` est là parce que rien n'attend
+    // cette promesse : un rejet sans preneur remonterait comme une erreur que
+    // personne ne peut expliquer.
+    if (affiche) void marquerFilLu(amiId).catch(() => undefined);
   }, [amiId]);
 
   useFocusEffect(
@@ -114,6 +125,11 @@ export default function DiscussionScreen() {
       charger();
     }, [charger])
   );
+
+  // Le temps réel : sans lui, un message reçu pendant que l'écran est ouvert
+  // n'apparaîtrait qu'en revenant plus tard. L'abonnement est retiré au
+  // démontage — c'est la fonction rendue que `useEffect` appelle en nettoyage.
+  useEffect(() => abonnerFil(amiId, () => charger()), [amiId, charger]);
 
   async function envoyer() {
     if (envoiEnCours.current) return;
@@ -185,6 +201,45 @@ export default function DiscussionScreen() {
     );
   }
 
+  /**
+   * Bloquer la personne avec qui l'on parle.
+   *
+   * Le geste vit ICI autant que dans « Mes amis », et ce n'est pas un doublon :
+   * c'est dans la conversation qu'on décide de ne plus la recevoir. L'alerte
+   * dit ce que le blocage fait vraiment, et le dit en entier — il ferme la
+   * discussion, parce que le fil pend de l'amitié ; il empêche les demandes ;
+   * et il ne se défait pas d'un second appui, ce que l'on croit souvent.
+   *
+   * L'écran quitte la conversation APRÈS le succès seulement : revenir en
+   * arrière sur un échec ferait croire que le blocage a eu lieu, et l'on ne
+   * saurait pas que la personne peut encore écrire.
+   */
+  function confirmerBlocage() {
+    Alert.alert(
+      `Bloquer ${nom} ?`,
+      "Vous ne serez plus amis, cette discussion se ferme, et cette personne ne pourra plus vous écrire ni vous envoyer de demande. La débloquer ne rétablira pas l'amitié : il faudra redemander.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Bloquer',
+          style: 'destructive',
+          onPress: async () => {
+            const resultat = await bloquerUtilisateur(amiId);
+            if (resultat.statut === 'ok') {
+              router.back();
+              return;
+            }
+            setErreur(
+              resultat.statut === 'erreur'
+                ? (resultat.message ?? 'Le blocage n’a pas abouti.')
+                : 'Le blocage n’a pas abouti.'
+            );
+          },
+        },
+      ]
+    );
+  }
+
   const restants = caracteresRestants(saisie);
   const tropLong = saisie.length > LONGUEUR_MESSAGE_MAX;
   const peutEnvoyer = saisie.trim().length > 0 && !tropLong && !envoi;
@@ -208,7 +263,14 @@ export default function DiscussionScreen() {
             {messages === null ? 'Discussion' : resumerFil(messages)}
           </Text>
         </View>
-        <View style={{ width: 26 }} />
+        <Pressable
+          onPress={confirmerBlocage}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={`Bloquer ${nom}`}
+        >
+          <Ionicons name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView

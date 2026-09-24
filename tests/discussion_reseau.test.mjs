@@ -704,3 +704,347 @@ test('le harnais retire toute doublure en sortant, même après un échec', () =
   );
   assert.match(source, /import test, \{ after \} from 'node:test'/, '`after` doit être importé du lanceur');
 });
+
+// === Les non-lus : les garanties de la base =================================
+
+test('un fil jamais ouvert est entièrement non lu, pas entièrement lu', () => {
+  // Le défaut le plus coûteux de cette fonctionnalité, et le plus silencieux.
+  // Un fil jamais ouvert n'a AUCUNE ligne dans `discussion_lectures` : la
+  // jointure rend donc `NULL`. Or `created_at > NULL` n'est pas vrai — c'est
+  // inconnu, donc écarté. Sans le `COALESCE`, tout fil neuf serait compté
+  // comme entièrement lu, c'est-à-dire exactement l'inverse de ce qu'on veut.
+  const source = lire('supabase/discussions.sql');
+
+  assert.match(
+    source,
+    /m\.created_at > COALESCE\(l\.lu_le, '-infinity'::timestamptz\)/,
+    'sans repli sur une date très ancienne, un fil jamais ouvert compte zéro non-lu'
+  );
+});
+
+test('le compte des non-lus ne retient que ce qui s’ouvre', () => {
+  // Trois exclusions, et chacune a sa raison :
+  //   - ses propres messages ne sont pas « à lire » ;
+  //   - un message retiré laisse une pierre tombale qui ne s'ouvre pas ;
+  //   - un message masqué par la modération non plus.
+  // Une pastille qui clignote pour quelque chose d'inouvrable est un défaut
+  // qu'on ne remarque qu'à l'usage, et qu'aucune erreur ne signale.
+  const source = lire('supabase/discussions.sql');
+  const fonction = source.split('CREATE OR REPLACE FUNCTION public.non_lus_par_fil')[1] ?? '';
+  const corps = fonction.split('$$;')[0];
+
+  assert.match(corps, /AND m\.auteur <> p_moi/, 'ses propres messages ne sont pas à lire');
+  assert.match(corps, /AND m\.retire_le IS NULL/, 'un message retiré ne se lit pas');
+  assert.match(corps, /AND m\.modere_le IS NULL/, 'un message masqué ne se lit pas');
+});
+
+test('la marque de lecture vient du serveur, jamais de l’appareil', () => {
+  // Un téléphone à l'heure fausse, en avance de quelques minutes, marquerait
+  // comme lus des messages qui n'existent pas encore — et le premier message
+  // arrivé ensuite serait invisible à jamais, puisque plus ancien que la
+  // marque. La fonction ne prend donc AUCUN horodatage en paramètre : c'est ce
+  // qui rend le défaut impossible, plutôt que de compter sur la discipline de
+  // l'appelant.
+  const source = lire('supabase/discussions.sql');
+  const fonction = source.split('CREATE OR REPLACE FUNCTION public.marquer_fil_lu')[1] ?? '';
+  const entete = fonction.split('AS $$')[0];
+  const corps = fonction.split('AS $$')[1]?.split('$$;')[0] ?? '';
+
+  // `entete` commence APRÈS le nom de la fonction : c'est la coupure qui l'a
+  // consommé, et le motif ne doit donc pas le redemander.
+  assert.match(entete, /\(p_moi UUID, p_ami UUID\)/, 'deux paramètres, et pas d’horodatage');
+  assert.doesNotMatch(entete, /lu_le/, 'aucun horodatage n’est reçu du dehors');
+  assert.match(corps, /NOW\(\)/, 'le serveur date la lecture, comme il date les messages');
+});
+
+test('on ne marque pas comme lu le fil de quelqu’un d’autre', () => {
+  // La politique de lecture suffit à protéger la consultation, pas l'écriture.
+  // Sans `WITH CHECK (auth.uid() = lecteur)`, n'importe qui pourrait écrire la
+  // ligne d'un autre et lui retirer sa pastille à distance.
+  const source = lire('supabase/discussions.sql');
+  const table = source.split('ALTER TABLE public.discussion_lectures ENABLE ROW LEVEL SECURITY')[1] ?? '';
+  const politiques = table.split('CREATE OR REPLACE FUNCTION')[0];
+
+  const ecritures = politiques.match(/WITH CHECK \(auth\.uid\(\) = lecteur\)/g) ?? [];
+  assert.ok(
+    ecritures.length >= 2,
+    `l'insertion ET la mise à jour doivent exiger le lecteur, ${ecritures.length} trouvée(s)`
+  );
+  assert.doesNotMatch(
+    politiques,
+    /FOR DELETE/i,
+    'une lecture ne se supprime pas : sa disparition remettrait tout un fil à non-lu'
+  );
+});
+
+test('la table des messages est publiée pour le temps réel', () => {
+  // Realtime ne diffuse que les tables PUBLIÉES, et l'ajout se fait
+  // normalement à la main dans le tableau de bord — donc sans trace. Écrit
+  // ici, il devient une ligne du dépôt qu'on peut relire et rejouer.
+  const source = lire('supabase/discussions.sql');
+
+  assert.match(
+    source,
+    /ALTER PUBLICATION supabase_realtime ADD TABLE public\.discussion_messages;/,
+    'sans publication, la conversation ne se met pas à jour toute seule'
+  );
+});
+
+test('les quatre fonctions des non-lus sont exécutables par un utilisateur connecté', () => {
+  // Un `GRANT EXECUTE` manquant rend un `42501` que rien ne distingue d'un
+  // refus métier — et le message montré parlerait de droits alors qu'il
+  // s'agirait d'un oubli.
+  const source = lire('supabase/discussions.sql');
+
+  for (const fonction of [
+    'marquer_fil_lu(UUID, UUID)',
+    'non_lus_par_fil(UUID)',
+    'total_non_lus(UUID)',
+    'apercu_fils(UUID)',
+  ]) {
+    assert.match(
+      source,
+      new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fonction.replace(/[()]/g, '\\$&')} TO authenticated;`),
+      `la fonction ${fonction} doit être accordée`
+    );
+  }
+});
+
+// === Les non-lus, les aperçus, et le temps réel =============================
+
+/**
+ * Un faux client qui sait ouvrir des canaux.
+ *
+ * Le faux généraliste ne connaît que `rpc` et `from` : l'appeler sur un
+ * abonnement ferait échouer le module sur un `channel` absent, et l'échec
+ * parlerait de la doublure au lieu du code. On garde donc les canaux, les
+ * rappels posés et les retraits, pour pouvoir vérifier ce qui PART.
+ */
+function fauxClientTempsReel() {
+  const appels = { canaux: [], retires: [], rappels: [] };
+
+  const client = {
+    rpc: () => Promise.resolve({ data: null, error: null }),
+    from: () => ({ insert: () => Promise.resolve({ data: null, error: null }) }),
+    channel(nom) {
+      const canal = {
+        nom,
+        on(_type, _filtre, rappel) {
+          appels.rappels.push({ nom, rappel });
+          return canal;
+        },
+        subscribe() {
+          appels.canaux.push(nom);
+          return canal;
+        },
+      };
+      return canal;
+    },
+    removeChannel(canal) {
+      appels.retires.push(canal.nom);
+      return Promise.resolve('ok');
+    },
+  };
+
+  return { client, appels };
+}
+
+test('le total de l’accueil se lit seul, sans charger les conversations', async () => {
+  // L'accueil affiche un nombre : il n'a donc pas à charger une ligne par
+  // conversation pour l'obtenir. C'est `total_non_lus` qui compte, et c'est la
+  // même fonction qui sert partout — donc le même nombre partout.
+  const { client, appels } = fauxClient({
+    rpc: { total_non_lus: { data: 7, error: null } },
+  });
+  const { totalNonLus } = await chargerModule({ client });
+
+  const resultat = await totalNonLus();
+  assert.equal(resultat.statut, 'ok');
+  assert.equal(resultat.total, 7);
+  assert.equal(appels.rpc[0].fonction, 'total_non_lus');
+  assert.deepEqual(Object.keys(appels.rpc[0].parametres), ['p_moi']);
+});
+
+test('un total arrivé en chaîne est converti, et un total illisible vaut zéro', async () => {
+  const { client } = fauxClient({ rpc: { total_non_lus: { data: '12', error: null } } });
+  const { totalNonLus } = await chargerModule({ client });
+  assert.equal((await totalNonLus()).total, 12, 'un total en chaîne est converti');
+
+  const { client: autre } = fauxClient({ rpc: { total_non_lus: { data: null, error: null } } });
+  const module = await chargerModule({ client: autre });
+  assert.equal((await module.totalNonLus()).total, 0, 'sans total, rien à lire');
+});
+
+test('les non-lus se lisent, se convertissent et se totalisent', async () => {
+  const { client, appels } = fauxClient({
+    rpc: {
+      non_lus_par_fil: {
+        data: [
+          // Le compte arrive en CHAÎNE : `COUNT(*)` est un `BIGINT`, que
+          // PostgREST sérialise en texte pour ne pas perdre de précision.
+          { autre: AMI, non_lus: '3', dernier_le: '2026-09-23T14:32:11Z' },
+          { autre: 'autre-ami', non_lus: 2, dernier_le: null },
+        ],
+        error: null,
+      },
+    },
+  });
+  const { mesNonLus } = await chargerModule({ client });
+
+  const resultat = await mesNonLus();
+  assert.equal(resultat.statut, 'ok');
+  assert.equal(resultat.fils.length, 2);
+  assert.equal(resultat.fils[0].nonLus, 3, 'un compte en chaîne est converti en nombre');
+  assert.equal(resultat.total, 5, 'le total additionne les fils');
+  assert.equal(appels.rpc[0].fonction, 'non_lus_par_fil');
+  assert.equal(appels.rpc[0].parametres.p_moi, MOI, 'la fonction reçoit mon identifiant');
+});
+
+test('un compte illisible est écarté, il ne devient pas zéro', async () => {
+  // La différence compte : écarter la ligne laisse le fil sans pastille ;
+  // la garder à zéro laisse croire qu'on a tout lu.
+  const { client } = fauxClient({
+    rpc: {
+      non_lus_par_fil: {
+        data: [
+          { autre: AMI, non_lus: 4, dernier_le: null },
+          { autre: null, non_lus: 9, dernier_le: null },
+        ],
+        error: null,
+      },
+    },
+  });
+  const { mesNonLus } = await chargerModule({ client });
+
+  const resultat = await mesNonLus();
+  assert.equal(resultat.fils.length, 1, 'la ligne sans participant est écartée');
+  assert.equal(resultat.total, 4);
+});
+
+test('les aperçus se lisent, et un message retiré reste retiré', async () => {
+  const { client, appels } = fauxClient({
+    rpc: {
+      apercu_fils: {
+        data: [
+          { autre: AMI, dernier_le: '2026-09-23T14:32:11Z', apercu: 'salam', de_moi: false },
+          { autre: 'autre-ami', dernier_le: '2026-09-22T09:00:00Z', apercu: null, de_moi: true },
+        ],
+        error: null,
+      },
+    },
+  });
+  const { mesApercus } = await chargerModule({ client });
+
+  const resultat = await mesApercus();
+  assert.equal(resultat.statut, 'ok');
+  assert.equal(resultat.apercus.length, 2);
+  assert.equal(resultat.apercus[0].apercu, 'salam');
+  assert.equal(resultat.apercus[1].apercu, null, 'un message retiré n’a pas de texte');
+  assert.equal(resultat.apercus[1].deMoi, true);
+  assert.equal(appels.rpc[0].fonction, 'apercu_fils');
+});
+
+test('marquer un fil comme lu n’envoie aucun horodatage', async () => {
+  // C'est la garantie de forme qui protège d'un téléphone à l'heure fausse :
+  // la fonction SQL date avec `NOW()`. Si un horodatage pouvait partir d'ici,
+  // un appareil en avance marquerait comme lus des messages à venir, et le
+  // premier message arrivé ensuite serait invisible à jamais.
+  const { client, appels } = fauxClient({
+    rpc: { marquer_fil_lu: { data: true, error: null } },
+  });
+  const { marquerFilLu } = await chargerModule({ client });
+
+  const resultat = await marquerFilLu(AMI);
+  assert.equal(resultat.statut, 'ok');
+  assert.equal(resultat.fait, true);
+
+  const envoi = appels.rpc[0];
+  assert.equal(envoi.fonction, 'marquer_fil_lu');
+  assert.deepEqual(
+    Object.keys(envoi.parametres).sort(),
+    ['p_ami', 'p_moi'],
+    'deux paramètres, et pas d’horodatage'
+  );
+  assert.equal(envoi.parametres.p_ami, AMI);
+});
+
+test('une ligne appartient au fil si l’ami est l’un de ses deux membres', async () => {
+  const { concerneLeFil } = await chargerModule({ client: fauxClient().client });
+
+  assert.equal(concerneLeFil({ user_a: AMI, user_b: MOI }, AMI), true);
+  assert.equal(concerneLeFil({ user_a: MOI, user_b: AMI }, AMI), true, 'l’ordre n’importe pas');
+  assert.equal(concerneLeFil({ user_a: 'autre', user_b: MOI }, AMI), false);
+  assert.equal(concerneLeFil({ user_a: null, user_b: null }, AMI), false);
+  assert.equal(concerneLeFil({ user_a: AMI, user_b: MOI }, ''), false, 'sans ami, aucun fil');
+});
+
+test('l’abonnement à un fil ne rend que les messages de ce fil', async () => {
+  // Realtime ne sait filtrer que sur UNE colonne, alors qu'un fil se définit
+  // par une paire. On s'abonne donc sans filtre serveur, et c'est ici que le
+  // tri se fait — un tri qu'aucun test de forme ne remplacerait.
+  const { client, appels } = fauxClientTempsReel();
+  const { abonnerFil } = await chargerModule({ client });
+
+  let changements = 0;
+  const retirer = abonnerFil(AMI, () => {
+    changements += 1;
+  });
+
+  assert.equal(appels.canaux.length, 1, 'un seul canal est ouvert');
+  assert.equal(appels.rappels.length, 1, 'un seul rappel est posé');
+  assert.equal(appels.rappels[0].nom, appels.canaux[0], 'le rappel porte le nom du canal');
+
+  appels.rappels[0].rappel({ new: { user_a: AMI, user_b: MOI } });
+  assert.equal(changements, 1, 'un message du fil réveille l’écran');
+
+  appels.rappels[0].rappel({ new: { user_a: 'autre', user_b: MOI } });
+  assert.equal(changements, 1, 'un message d’un autre fil ne le réveille pas');
+
+  retirer();
+  assert.deepEqual(appels.retires, [appels.canaux[0]], 'le canal est retiré au démontage');
+});
+
+test('l’abonnement à tous les fils réagit à n’importe quel message', async () => {
+  // C'est ce qu'il faut pour une pastille de non-lus : elle ne connaît pas le
+  // fil d'avance, donc elle ne peut pas trier.
+  const { client, appels } = fauxClientTempsReel();
+  const { abonnerFils } = await chargerModule({ client });
+
+  let changements = 0;
+  abonnerFils(() => {
+    changements += 1;
+  });
+
+  appels.rappels[0].rappel({ new: { user_a: 'x', user_b: 'y' } });
+  appels.rappels[0].rappel({ new: { user_a: 'z', user_b: 'w' } });
+  assert.equal(changements, 2);
+});
+
+test('sans client, l’abonnement rend quand même de quoi se retirer', async () => {
+  // Un écran qui appelle ceci dans un `useEffect` attend une fonction : lui
+  // rendre `undefined` ferait échouer le nettoyage au démontage, et le défaut
+  // ne se verrait qu'en changeant d'écran.
+  const { abonnerFil, abonnerFils } = await chargerModule({ client: null });
+
+  for (const retirer of [abonnerFil(AMI, () => {}), abonnerFils(() => {})]) {
+    assert.equal(typeof retirer, 'function', 'le retrait doit exister même sans client');
+    retirer();
+  }
+});
+
+test('l’aperçu d’un fil ne montre pas ce que le fil cache', () => {
+  // La liste des conversations est un second chemin vers le même texte. Si
+  // elle ne reprenait pas les règles du fil, un message masqué par la
+  // modération s'y lirait — c'est-à-dire à l'endroit où on le voit le plus.
+  const source = lire('supabase/discussions.sql');
+  const fonction = source.split('CREATE OR REPLACE FUNCTION public.apercu_fils')[1] ?? '';
+  const corps = fonction.split('$$;')[0];
+
+  assert.match(corps, /AND m\.modere_le IS NULL/, 'un message masqué ne s’aperçoit pas');
+  assert.match(
+    corps,
+    /CASE WHEN m\.retire_le IS NULL THEN m\.corps ELSE NULL END/,
+    'un message retiré s’aperçoit sans son texte'
+  );
+  assert.match(corps, /DISTINCT ON/, 'un seul message par fil : le dernier');
+});

@@ -1,12 +1,14 @@
 // Écran d'accueil - Tableau de bord
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
 import { colors, fontSizes, fonts, spacing, radii, fontWeights, useStyles, type Palette } from '@/theme';
+import { badgeNonLus } from '@/lib/discussion';
+import { abonnerFils, totalNonLus } from '@/lib/sync/discussion';
 import { getUserConfig, getTodaySessions, getMemorizedPassages, getReviewItemsDue, getReviewItemCount, getSessionsByDateRange } from '@/lib/database';
 import { computeProgressStats, formatDate } from '@/lib/progress';
 import { passagesARenforcer } from '@/lib/renforcement';
@@ -29,6 +31,23 @@ export default function AccueilScreen() {
   const [revisionsSuivies, setRevisionsSuivies] = useState(0);
   const [allSessions, setAllSessions] = useState<LearningSession[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  // Le nombre de messages non lus, pour la pastille de l'en-tête. Il reste à
+  // zéro quand il n'y a pas de compte configuré : l'accueil fonctionne hors
+  // ligne, et une pastille ne doit pas y faire apparaître une erreur de réseau.
+  const [nonLus, setNonLus] = useState(0);
+
+  /**
+   * Le seul nombre, et rien d'autre.
+   *
+   * L'accueil affiche une pastille ; il n'a donc pas à charger une ligne par
+   * conversation. Un échec n'est PAS montré : la pastille est un confort, et
+   * une erreur de réseau sur un écran qui fonctionne hors ligne ferait plus de
+   * bruit que de bien. On retombe simplement sur « rien à lire ».
+   */
+  const chargerPastille = useCallback(async () => {
+    const resultat = await totalNonLus();
+    setNonLus(resultat.statut === 'ok' ? resultat.total : 0);
+  }, []);
 
   const loadData = useCallback(async () => {
     const cfg = await getUserConfig();
@@ -65,8 +84,15 @@ export default function AccueilScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [loadData])
+      chargerPastille();
+    }, [loadData, chargerPastille])
   );
+
+  // La pastille doit s'allumer SANS qu'on revienne sur l'accueil : un ami qui
+  // écrit pendant qu'on regarde l'écran ne fait rien bouger autrement. C'est
+  // `abonnerFils` — tous les fils, puisqu'une pastille ne connaît pas le fil
+  // d'avance — et la fonction rendue est le retrait au démontage.
+  useEffect(() => abonnerFils(() => chargerPastille()), [chargerPastille]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -87,6 +113,10 @@ export default function AccueilScreen() {
 
   const objectiveLabel = getObjectiveLabel(config);
 
+  // `null` quand il n'y a rien à lire : une pastille qui affiche « 0 » est un
+  // signe qui ne dit rien et qui attire l'œil.
+  const pastille = badgeNonLus(nonLus);
+
   return (
     <ScrollView
       style={styles.container}
@@ -95,10 +125,30 @@ export default function AccueilScreen() {
     >
       {/* En-tête */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>Bonjour,</Text>
-        <Text style={styles.welcome}>
-          Bienvenue dans ton programme de mémorisation
-        </Text>
+        <View style={styles.headerTexte}>
+          <Text style={styles.greeting}>Bonjour,</Text>
+          <Text style={styles.welcome}>
+            Bienvenue dans ton programme de mémorisation
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => router.push('/messages')}
+          hitSlop={12}
+          style={styles.boutonMessages}
+          accessibilityRole="button"
+          accessibilityLabel={
+            pastille === null
+              ? 'Messages'
+              : `Messages, ${nonLus} message${nonLus > 1 ? 's' : ''} non lu${nonLus > 1 ? 's' : ''}`
+          }
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
+          {pastille !== null && (
+            <View style={styles.pastille}>
+              <Text style={styles.textePastille}>{pastille}</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
 
       {/* Objectif */}
@@ -292,7 +342,40 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     color: colors.textSecondary,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  headerTexte: {
+    flex: 1,
+  },
+  boutonMessages: {
+    marginTop: spacing.sm,
+    width: 44,
+    height: 44,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primarySurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pastille: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 20,
+    height: 20,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.xs,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textePastille: {
+    fontSize: fontSizes.xs,
+    fontWeight: fontWeights.bold,
+    color: colors.textOnPrimary,
   },
   greeting: {
     fontSize: fontSizes.xxxl,

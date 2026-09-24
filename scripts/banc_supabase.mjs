@@ -99,6 +99,25 @@ await db.exec(`
 
   create role authenticated;
   create role anon;
+
+  -- Le rôle de service existe chez Supabase, et le banc doit le créer aussi.
+  -- Sans lui, le GRANT que notifications.sql accorde à service_role échoue sur
+  -- « role service_role does not exist », et c'est TOUT le fichier qui ne
+  -- s'applique pas — donc les épreuves suivantes, qui n'ont rien à voir avec
+  -- cette autorisation.
+  --
+  -- BYPASSRLS est reproduit parce que c'est ce que Supabase pose, et parce que
+  -- la fonction d'envoi lit appareils et envois_notification sans qu'aucune
+  -- politique ne l'y autorise : c'est précisément son privilège. Un banc qui
+  -- l'omettrait ferait conclure un jour que la conception est cassée, alors que
+  -- ce serait le banc qui ne ressemble pas au serveur.
+  --
+  -- ATTENTION : ce bloc est un littéral de gabarit délimité par des accents
+  -- graves. Un accent grave écrit DANS ce commentaire le referme, et le fichier
+  -- ne s'analyse plus du tout — « SyntaxError: missing ) after argument list »,
+  -- avant même la première épreuve. C'est arrivé, et c'est pourquoi les noms de
+  -- tables sont écrits ici sans décoration.
+  create role service_role bypassrls;
 `);
 
 // === Le schéma réel, appliqué deux fois ====================================
@@ -891,7 +910,11 @@ await db.exec(`
     where id in ('${USER_A}', '${USER_B}', '${USER_C}');
   update public.profiles set display_name = 'Apprenant A' where id = '${USER_A}';
   update public.profiles set display_name = 'Apprenant B' where id = '${USER_B}';
+  update public.profiles set public_id = null where id in ('${USER_A}', '${USER_B}', '${USER_C}');
+  update public.profiles set partage_progression = true where id in ('${USER_A}', '${USER_B}', '${USER_C}');
   delete from public.amis;
+  delete from public.demandes_amis;
+  delete from public.blocages;
   alter table public.profiles enable row level security;
 `);
 
@@ -998,7 +1021,7 @@ await db.exec(`
   );
 }
 
-// --- La relation -----------------------------------------------------------
+// --- La relation : une demande, puis une acceptation ------------------------
 
 let codeB = null;
 let codeA = null;
@@ -1047,33 +1070,173 @@ let codeA = null;
 }
 
 {
-  // A saisit le code de B : la relation se crée, dans l'ordre canonique.
+  // A saisit le code de B : cela crée une DEMANDE, et rien d'autre.
   //
-  // Cette épreuve COMMITE, et c'est nécessaire : les suivantes ont besoin que
-  // la relation existe réellement, et `enTantQue` l'annulerait. Le geste est
-  // reproduit tel quel — identité de A, transaction qui aboutit — donc rien
-  // n'est court-circuité.
-  await db.transaction(async (tx) => {
-    await tx.exec('set local role authenticated');
-    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_A}"}'`);
-    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_A, codeB]);
-  });
+  // C'est le changement de modèle, et l'épreuve le mesure des DEUX côtés : la
+  // demande existe, ET l'amitié n'existe pas. Ne vérifier que la première
+  // laisserait passer une fonction qui ferait les deux — c'est-à-dire l'ancien
+  // comportement, celui qu'on vient retirer.
+  //
+  // Cette épreuve COMMITE : les suivantes ont besoin que la demande existe
+  // réellement, et `enTantQue` l'annulerait.
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_A, codeB])
+  );
 
-  const r = await db.query('select user_a, user_b from public.amis');
+  const d = await db.query('select de, vers from public.demandes_amis');
+  const a = await db.query('select count(*)::int as n from public.amis');
   noter(
-    'saisir le code d’un ami cree la relation',
-    r.rows.length === 1 && r.rows[0].user_b === USER_B,
-    `${r.rows.length} ligne(s), cible ${r.rows[0]?.user_b ?? 'aucune'}`
+    'saisir un code cree une demande, et non une amitie',
+    d.rows.length === 1 &&
+      d.rows[0].de === USER_A &&
+      d.rows[0].vers === USER_B &&
+      a.rows[0].n === 0,
+    `${d.rows.length} demande(s), ${a.rows[0].n} amitie(s)`
+  );
+}
+
+{
+  // La demande se voit des deux côtés, et de nul autre.
+  const parB = await enTantQue(USER_B, (tx) =>
+    tx.query('select count(*)::int as n from public.demandes_amis').then((r) => r.rows[0].n)
+  );
+  const parC = await enTantQue(USER_C, (tx) =>
+    tx.query('select count(*)::int as n from public.demandes_amis').then((r) => r.rows[0].n)
+  );
+  noter('le destinataire voit la demande recue', parB === 1, `${parB} ligne(s)`);
+  noter('un etranger ne voit aucune demande', parC === 0, `${parC} ligne(s)`);
+}
+
+{
+  // `mes_demandes` range la même ligne de deux côtés : c'est ce qui donne à
+  // l'écran une section « Reçues » et une section « Envoyées » sans refaire la
+  // comparaison dans trois fichiers.
+  const coteA = await enTantQue(USER_A, (tx) =>
+    tx.query('select * from public.mes_demandes($1::uuid)', [USER_A]).then((r) => r.rows)
+  );
+  const coteB = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.mes_demandes($1::uuid)', [USER_B]).then((r) => r.rows)
+  );
+  noter(
+    'la meme demande est « envoyee » chez A et « recue » chez B',
+    coteA.length === 1 && coteA[0].recue === false && coteB.length === 1 && coteB[0].recue === true,
+    `A recue=${coteA[0]?.recue}, B recue=${coteB[0]?.recue}`
+  );
+  // Le pseudonyme suit la demande : sans le prédicat « lien », la boîte de
+  // réception serait une liste d'identifiants anonymes, et l'on ne saurait pas
+  // qui l'on accepte.
+  noter(
+    'une demande en attente ouvre le pseudonyme de l’autre',
+    coteA[0]?.nom === 'Apprenant B' && coteB[0]?.nom === 'Apprenant A',
+    `${coteA[0]?.nom} / ${coteB[0]?.nom}`
+  );
+}
+
+{
+  // Refuser : la demande tombe, et rien d'autre ne se crée.
+  //
+  // L'épreuve s'exécute dans une transaction ANNULÉE, et c'est volontaire : le
+  // refus consomme la demande, et les épreuves suivantes ont besoin qu'elle
+  // soit encore là. Ce qui compte est observé DANS la transaction — c'est le
+  // geste réel, vu de son auteur, pas un état reconstitué.
+  const vu = await enTantQue(USER_B, async (tx) => {
+    const fait = await tx.query(
+      'select public.repondre_demande_ami($1::uuid, $2::uuid, false) as fait',
+      [USER_B, USER_A]
+    );
+    const restantes = await tx.query('select count(*)::int as n from public.demandes_amis');
+    const amities = await tx.query('select count(*)::int as n from public.amis');
+    return {
+      fait: fait.rows[0].fait,
+      restantes: restantes.rows[0].n,
+      amities: amities.rows[0].n,
+    };
+  });
+  noter(
+    'refuser efface la demande sans creer d’amitie',
+    vu.fait === true && vu.restantes === 0 && vu.amities === 0,
+    `fait=${vu.fait}, ${vu.restantes} demande(s), ${vu.amities} amitie(s)`
+  );
+}
+
+{
+  // Un tiers ne peut pas accepter une demande qui ne lui est pas adressée.
+  //
+  // C'est l'épreuve qui a coûté une correction, et la correction est dans le
+  // fichier SQL. La politique d'insertion de `amis` acceptait d'elle-même la
+  // paire (C, A) : elle ne connaît que la ligne écrite, pas l'histoire qui l'a
+  // précédée. Sans la garde « la demande existe », C se liait à A sans que rien
+  // n'ait jamais été demandé.
+  //
+  // L'appel COMMITE, et il le faut : si la garde manquait, la ligne parasite
+  // serait annulée avec la transaction, et l'épreuve serait verte pour une
+  // raison qui n'existe pas.
+  const fait = await enTantQueEtCommit(USER_C, (tx) =>
+    tx
+      .query('select public.repondre_demande_ami($1::uuid, $2::uuid, true) as fait', [USER_C, USER_A])
+      .then((r) => r.rows[0].fait)
+  );
+  const apres = await db.query('select count(*)::int as n from public.amis');
+  noter(
+    'un tiers ne peut pas accepter la demande d’un autre',
+    fait === false && apres.rows[0].n === 0,
+    `rendu ${fait}, ${apres.rows[0].n} amitie(s)`
+  );
+}
+
+{
+  // Le mensonge sur sa propre identité, sous sa forme nouvelle.
+  //
+  // Les deux gestes qui envoient une demande sont SECURITY DEFINER — ils
+  // doivent lire `profiles`, dont la politique n'ouvre que son propre profil —
+  // et ils écrivent donc sans passer par une politique. La garde est dans leur
+  // corps : `auth.uid() = p_moi`. C dit être A, et se fait refuser.
+  const r = await tentative(USER_C, (tx) =>
+    tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_A, codeB])
+  );
+  const n = await db.query('select count(*)::int as n from public.demandes_amis');
+  noter(
+    'mentir sur son identifiant ne permet pas d’envoyer une demande au nom d’un autre',
+    r.refus === true && r.code === '42501' && n.rows[0].n === 1,
+    `${r.code ?? 'aucun refus'} — ${n.rows[0].n} demande(s)`
+  );
+}
+
+{
+  // Accepter : la demande disparaît, l'amitié apparaît.
+  //
+  // Cette épreuve COMMITE : la suite du banc a besoin de l'amitié.
+  const fait = await enTantQueEtCommit(USER_B, (tx) =>
+    tx
+      .query('select public.repondre_demande_ami($1::uuid, $2::uuid, true) as fait', [USER_B, USER_A])
+      .then((r) => r.rows[0].fait)
+  );
+
+  const a = await db.query('select user_a, user_b from public.amis');
+  const d = await db.query('select count(*)::int as n from public.demandes_amis');
+  noter(
+    'accepter cree l’amitie',
+    fait === true && a.rows.length === 1,
+    `rendu ${fait}, ${a.rows.length} amitie(s)`
+  );
+  noter(
+    'la relation est rangee dans un ordre canonique',
+    a.rows.length === 1 && a.rows[0].user_a < a.rows[0].user_b,
+    a.rows[0] ? `${a.rows[0].user_a} < ${a.rows[0].user_b}` : 'aucune ligne'
+  );
+  noter(
+    'accepter efface la demande : il ne reste jamais les deux',
+    d.rows[0].n === 0,
+    `${d.rows[0].n} demande(s) restante(s)`
   );
 }
 
 {
   // La réciprocité est structurelle : une seule ligne, et elle suffit aux deux.
-  const n = await enTantQue(USER_B, async (tx) => {
-    const r = await tx.query('select count(*)::int as n from public.amis');
-    return r.rows[0].n;
-  });
-  noter('B voit la relation sans l’avoir demandee', n === 1, `${n} ligne(s)`);
+  const n = await enTantQue(USER_B, (tx) =>
+    tx.query('select count(*)::int as n from public.amis').then((r) => r.rows[0].n)
+  );
+  noter('B voit l’amitie sans l’avoir declaree', n === 1, `${n} ligne(s)`);
 }
 
 {
@@ -1100,24 +1263,12 @@ let codeA = null;
 }
 
 {
-  // Le point de la table : A suit B, donc B suit A. Il n'existe pas d'état à
-  // sens unique — c'est la clé primaire ordonnée qui le garantit.
-  const r = await db.query('select user_a, user_b from public.amis');
-  const ligne = r.rows[0];
-  noter(
-    'la relation est rangee dans un ordre canonique',
-    ligne !== undefined && ligne.user_a < ligne.user_b,
-    ligne ? `${ligne.user_a} < ${ligne.user_b}` : 'aucune ligne'
-  );
-}
-
-{
   // Un code qui ne désigne personne. On ne le fabrique pas en abîmant un vrai
   // code — un tirage malchanceux aurait pu tomber sur un code valide et
   // l'épreuve aurait alors accusé la fonction. On prend un code bien formé
   // mais qui n'a jamais été distribué, ce qui est exactement le cas réel.
   const r = await tentative(USER_B, async (tx) => {
-    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_B, 'ZZZZZZZZZZ']);
+    await tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_B, 'ZZZZZZZZZZ']);
   });
   noter(
     'un code inconnu est refuse',
@@ -1128,7 +1279,7 @@ let codeA = null;
   // Un code vide est un autre refus, avec son propre code d'erreur : l'écran
   // doit pouvoir distinguer « champ vide » de « code inexistant ».
   const vide = await tentative(USER_B, async (tx) => {
-    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_B, '   ']);
+    await tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_B, '   ']);
   });
   noter(
     'un code vide est refuse autrement qu’un code inconnu',
@@ -1136,18 +1287,29 @@ let codeA = null;
     `${vide.code ?? 'aucun code'} — ${vide.message ?? ''}`
   );
 
-  const n = await db.query('select count(*)::int as n from public.amis');
-  noter('aucun des deux refus n’a rien cree', n.rows[0].n === 1, `${n.rows[0].n} ligne(s)`);
+  // Déjà amis : le conflit a son propre code, celui qu'un index unique aurait
+  // levé, et que l'écran sait déjà lire.
+  const deja = await tentative(USER_A, async (tx) => {
+    await tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_A, codeB]);
+  });
+  noter(
+    'redemander quelqu’un qui est deja ami est un conflit, pas une saisie invalide',
+    deja.refus === true && deja.code === '23505',
+    `${deja.code ?? 'aucun code'} — ${deja.message ?? ''}`
+  );
+
+  const n = await db.query('select count(*)::int as n from public.demandes_amis');
+  noter('aucun des trois refus n’a rien cree', n.rows[0].n === 0, `${n.rows[0].n} demande(s)`);
 }
 
 {
-  // On ne s'ajoute pas soi-même. Le code de A est celui qui est réellement en
+  // On ne se demande pas soi-même. Le code de A est celui qui est réellement en
   // base — on le relit, on ne le redemande pas dans une transaction annulée.
   const r = await tentative(USER_A, async (tx) => {
-    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_A, codeA]);
+    await tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_A, codeA]);
   });
   noter(
-    'on ne s’ajoute pas soi-meme',
+    'on ne se demande pas soi-meme',
     r.refus === true && r.code === '22023',
     `${r.code ?? 'aucun refus'} — ${r.message ?? ''}`
   );
@@ -1155,7 +1317,7 @@ let codeA = null;
   // Et la casse ne compte pas : un code recopié en minuscules doit marcher.
   // C'est ce qu'on fait en le dictant au téléphone.
   const enMinuscules = await enTantQue(USER_C, async (tx) => {
-    const r = await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text) as c', [
+    const r = await tx.query('select public.demander_ami_par_code($1::uuid, $2::text) as c', [
       USER_C,
       codeA.toLowerCase(),
     ]);
@@ -1164,7 +1326,7 @@ let codeA = null;
   noter(
     'un code recopie en minuscules est accepte',
     enMinuscules === USER_A,
-    `rendu : ${enMinuscules ?? 'null'}`,
+    `rendu : ${enMinuscules ?? 'null'}`
   );
 }
 
@@ -1187,44 +1349,6 @@ let codeA = null;
   );
 }
 
-{
-  // Le mensonge, et ce qu'il permet vraiment.
-  //
-  // `ajouter_ami_par_code` est SECURITY DEFINER et reçoit l'identifiant en
-  // paramètre : l'appelant peut donc mentir sur SON identité. C'est la
-  // POLITIQUE d'insertion qui arrête le mensonge — mais pas celui qu'on
-  // croirait. Écrire `p_user_id = A` quand on est C produit la paire (A, C) ;
-  // la politique exige « auth.uid() = user_a OR auth.uid() = user_b », et
-  // auth.uid() vaut C, qui EST user_b. Elle l'accepte donc.
-  //
-  // Autrement dit : on peut se lier soi-même à n'importe qui, ce qui est
-  // exactement le comportement retenu (suivi immédiat, sans acceptation), mais
-  // on ne peut pas fabriquer une relation où l'on ne figure pas. C'est ce
-  // second cas qu'il faut refuser, et c'est celui-ci qu'on éprouve.
-  const codeA2 = await db.query('select friend_code from public.profiles where id = $1', [USER_A]);
-  const cibleA = codeA2.rows[0].friend_code;
-
-  // C ment : il dit être A, et saisit le code de A. La paire serait (A, A).
-  const soi = await tentative(USER_C, async (tx) => {
-    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [USER_A, cibleA]);
-  });
-  noter(
-    'mentir sur son identifiant ne permet pas de se lier a soi-meme',
-    soi.refus === true && soi.code === '22023',
-    `${soi.code ?? 'aucun refus'} — ${soi.message ?? ''}`
-  );
-
-  // Et C ne peut pas non plus créer une relation entre A et B, où il ne figure
-  // pas : il n'a pas le code de B sous la main, il a le sien, et se lier à B
-  // est légitime. On vérifie donc plutôt qu'aucune paire parasite n'existe.
-  const paires = await db.query('select user_a, user_b from public.amis');
-  noter(
-    'aucune paire parasite n’a ete creee',
-    paires.rows.length === 1,
-    paires.rows.map((r) => `(${r.user_a.slice(0, 4)},${r.user_b.slice(0, 4)})`).join(' ') || 'aucune'
-  );
-}
-
 // --- La synthèse -----------------------------------------------------------
 
 {
@@ -1240,6 +1364,11 @@ let codeA = null;
       'la synthese expose les versets de la semaine',
       ami.versets_cette_semaine !== undefined && ami.versets_cette_semaine !== null,
       `${ami.versets_cette_semaine}`
+    );
+    noter(
+      'la synthese dit que le partage est ouvert, tant que rien ne l’a ferme',
+      ami.partage === true,
+      `partage=${ami.partage}`
     );
   }
 }
@@ -1258,13 +1387,223 @@ let codeA = null;
   );
 }
 
+// --- Le profil public ------------------------------------------------------
+
+{
+  // L'identifiant public : format, unicité, et recherche.
+  const mauvais = await tentative(USER_A, (tx) =>
+    tx.query('update public.profiles set public_id = $1 where id = $2', ['A B', USER_A])
+  );
+  noter(
+    'un identifiant public mal forme est refuse par la base',
+    mauvais.refus === true && mauvais.code === '23514',
+    `${mauvais.code ?? 'aucun code'} — ${mauvais.message ?? ''}`
+  );
+
+  const pose = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('update public.profiles set public_id = $1 where id = $2', ['apprenant_a', USER_A])
+  );
+  const relu = await db.query('select public_id from public.profiles where id = $1', [USER_A]);
+  noter(
+    'un utilisateur choisit son identifiant public',
+    relu.rows[0].public_id === 'apprenant_a',
+    String(relu.rows[0].public_id)
+  );
+
+  const double = await tentative(USER_C, (tx) =>
+    tx.query('update public.profiles set public_id = $1 where id = $2', ['apprenant_a', USER_C])
+  );
+  noter(
+    'deux comptes ne peuvent pas porter le meme identifiant public',
+    double.refus === true && double.code === '23505',
+    `${double.code ?? 'aucun code'} — ${double.message ?? ''}`
+  );
+}
+
+{
+  // La recherche par identifiant public rend de quoi se reconnaître, et RIEN
+  // de plus. C'est un profil public, pas un profil transparent.
+  const r = await enTantQue(USER_C, (tx) =>
+    tx.query('select * from public.rechercher_par_identifiant($1::text)', ['apprenant_a'])
+  );
+  const ligne = r.rows[0];
+  noter(
+    'la recherche par identifiant public trouve le compte',
+    r.rows.length === 1 && ligne?.user_id === USER_A && ligne?.nom === 'Apprenant A',
+    `${r.rows.length} ligne(s) — ${ligne?.nom ?? 'aucun nom'}`
+  );
+  noter(
+    'la recherche ne rend jamais le code d’invitation, qui est un secret',
+    ligne !== undefined && !('friend_code' in ligne),
+    Object.keys(ligne ?? {}).join(', ')
+  );
+  noter(
+    'la recherche dit que la demande n’a pas encore ete faite',
+    ligne !== undefined && ligne.deja_ami === false && ligne.demande_envoyee === false,
+    `deja_ami=${ligne?.deja_ami}, demande_envoyee=${ligne?.demande_envoyee}`
+  );
+
+  // L'identifiant se saisit avec ou sans arobase : c'est ainsi qu'on le recopie.
+  const avecArobase = await enTantQue(USER_C, (tx) =>
+    tx.query('select user_id from public.rechercher_par_identifiant($1::text)', ['@Apprenant_A'])
+  );
+  noter(
+    'la recherche tolere l’arobase et la casse',
+    avecArobase.rows.length === 1 && avecArobase.rows[0].user_id === USER_A,
+    `${avecArobase.rows.length} ligne(s)`
+  );
+}
+
+{
+  // L'interrupteur de partage. Tant qu'il est fermé, l'ami reçoit le nom, la
+  // couleur, et des zéros ACCOMPAGNÉS DU DRAPEAU — jamais des zéros seuls, qui
+  // se liraient « n'a pas encore commencé » alors que la vérité est « ne
+  // partage pas ».
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('update public.profiles set partage_progression = false where id = $1', [USER_B])
+  );
+
+  const r = await enTantQue(USER_A, (tx) =>
+    tx.query('select * from public.mes_amis($1::uuid, $2::date)', [USER_A, AUJOURDHUI])
+  );
+  const ami = r.rows[0];
+  noter(
+    'un ami qui ne partage pas sa progression est signale comme tel',
+    ami !== undefined && ami.partage === false,
+    `partage=${ami?.partage}`
+  );
+  noter(
+    'la progression d’un ami qui ne partage pas est rendue a zero',
+    ami !== undefined &&
+      Number(ami.versets_cette_semaine) === 0 &&
+      Number(ami.pages_cette_semaine) === 0 &&
+      Number(ami.jours_d_etude_7j) === 0 &&
+      ami.derniere_seance === null &&
+      ami.derniere_sourate === null,
+    `versets=${ami?.versets_cette_semaine}, derniere_seance=${jour(ami?.derniere_seance)}`
+  );
+
+  // On rouvre le partage : les épreuves suivantes n'ont pas à hériter de ce
+  // choix, et un banc qui laisse un état derrière lui finit par accuser le code.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('update public.profiles set partage_progression = true where id = $1', [USER_B])
+  );
+}
+
+// --- Le blocage ------------------------------------------------------------
+
+{
+  // Bloquer rompt l'amitié, et c'est ce qui ferme la discussion : le fil
+  // s'adosse à `amis`, et il n'existe donc pas de « discussion ouverte malgré
+  // le blocage ».
+  const fait = await enTantQueEtCommit(USER_A, (tx) =>
+    tx
+      .query('select public.bloquer_utilisateur($1::uuid, $2::uuid) as fait', [USER_A, USER_B])
+      .then((r) => r.rows[0].fait)
+  );
+
+  const amities = await db.query('select count(*)::int as n from public.amis');
+  const blocages = await db.query('select bloque_par, bloque from public.blocages');
+  noter(
+    'bloquer rompt l’amitie dans les deux sens',
+    fait === true && amities.rows[0].n === 0,
+    `fait=${fait}, ${amities.rows[0].n} amitie(s)`
+  );
+  noter(
+    'le blocage est une fleche, pas une paire',
+    blocages.rows.length === 1 &&
+      blocages.rows[0].bloque_par === USER_A &&
+      blocages.rows[0].bloque === USER_B,
+    `${blocages.rows.length} ligne(s)`
+  );
+}
+
+{
+  // Celui qui est bloqué ne voit RIEN du blocage : ni la ligne, ni le profil,
+  // ni la raison. Sa liste d'amis a simplement perdu quelqu'un.
+  const vu = await enTantQue(USER_B, async (tx) => {
+    const blocages = await tx.query('select count(*)::int as n from public.blocages');
+    const profil = await tx.query('select public_id from public.profiles where id = $1', [USER_A]);
+    const amis = await tx.query('select count(*)::int as n from public.amis');
+    return { blocages: blocages.rows[0].n, profil: profil.rows.length, amis: amis.rows[0].n };
+  });
+  noter(
+    'celui qui est bloque ne voit ni la ligne, ni le profil, ni l’amitie',
+    vu.blocages === 0 && vu.profil === 0 && vu.amis === 0,
+    `${vu.blocages} blocage(s) visible(s), ${vu.profil} profil(s), ${vu.amis} amitie(s)`
+  );
+
+  // Le bloqueur, lui, garde le nom de ceux qu'il a bloqués : une liste de
+  // blocages sans nom ne permettrait pas de débloquer la bonne personne.
+  const chezA = await enTantQue(USER_A, (tx) =>
+    tx.query('select * from public.mes_blocages($1::uuid)', [USER_A]).then((r) => r.rows)
+  );
+  noter(
+    'le bloqueur voit qui il a bloque, avec son nom',
+    chezA.length === 1 && chezA[0].bloque === USER_B && chezA[0].nom === 'Apprenant B',
+    `${chezA.length} ligne(s) — ${chezA[0]?.nom ?? 'aucun nom'}`
+  );
+}
+
+{
+  // Une demande ne passe plus, dans AUCUN des deux sens. C'est ce qui rend le
+  // blocage utile : sans cela, la personne bloquée réapparaîtrait dans la boîte
+  // de réception de quelqu'un qui ne veut plus la voir.
+  const parLeBloque = await tentative(USER_B, (tx) =>
+    tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_B, codeA])
+  );
+  noter(
+    'celui qui est bloque ne peut plus envoyer de demande',
+    parLeBloque.refus === true && parLeBloque.code === '42501',
+    `${parLeBloque.code ?? 'aucun refus'} — ${parLeBloque.message ?? ''}`
+  );
+
+  // Et la recherche par identifiant public ne le trouve plus : c'est le même
+  // silence, à l'endroit où l'on cherche quelqu'un.
+  const trouve = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.rechercher_par_identifiant($1::text)', ['apprenant_a'])
+  );
+  noter(
+    'la recherche ne trouve plus celui qui nous a bloques',
+    trouve.rows.length === 0,
+    `${trouve.rows.length} ligne(s)`
+  );
+}
+
+{
+  // Débloquer ne RECRÉE pas l'amitié. C'est un choix : la rétablir d'un geste
+  // ferait réapparaître une relation que l'autre n'a pas acceptée à nouveau.
+  const fait = await enTantQueEtCommit(USER_A, (tx) =>
+    tx
+      .query('select public.debloquer_utilisateur($1::uuid, $2::uuid) as fait', [USER_A, USER_B])
+      .then((r) => r.rows[0].fait)
+  );
+  const amities = await db.query('select count(*)::int as n from public.amis');
+  const blocages = await db.query('select count(*)::int as n from public.blocages');
+  noter(
+    'debloquer rend la parole, mais ne recree pas l’amitie',
+    fait === true && blocages.rows[0].n === 0 && amities.rows[0].n === 0,
+    `fait=${fait}, ${blocages.rows[0].n} blocage(s), ${amities.rows[0].n} amitie(s)`
+  );
+}
+
 {
   // Rompre la relation ferme les DEUX sens, puisqu'il n'y a qu'une ligne.
   //
-  // Cette épreuve s'exécute hors de `enTantQue` et COMMITE, et c'est
-  // nécessaire : rompre est une suppression, et l'observer depuis une
-  // transaction qui l'annule ne montrerait que le travail du harnais. Elle est
-  // la dernière du fichier, donc elle ne perturbe rien.
+  // L'amitié est d'abord reposée par le vrai geste — demande, puis acceptation
+  // — parce que le blocage l'a rompue plus haut. Sans cela, l'épreuve
+  // mesurerait l'absence d'une amitié qu'elle croit présente, et accuserait la
+  // politique, qui est juste.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_B, codeA])
+  );
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.repondre_demande_ami($1::uuid, $2::uuid, true) as fait', [USER_A, USER_B])
+  );
+
+  const posee = await db.query('select count(*)::int as n from public.amis');
+  noter('l’amitie se repose par demande puis acceptation', posee.rows[0].n === 1, `${posee.rows[0].n} ligne(s)`);
+
   const vueAvant = await enTantQue(USER_B, async (tx) => {
     const r = await tx.query(
       'select count(*)::int as n from public.learning_sessions where user_id = $1',
@@ -1338,7 +1677,12 @@ const [PAIRE_A, PAIRE_B] = [USER_A, USER_B].sort();
 // de poser l'amitié, sinon l'épreuve ne prouverait rien.
 
 {
-  await db.exec('delete from public.discussion_messages; delete from public.amis;');
+  await db.exec(
+    `delete from public.discussion_messages;
+     delete from public.amis;
+     delete from public.demandes_amis;
+     delete from public.blocages;`
+  );
 
   const refus = await tentative(USER_A, (tx) =>
     tx.query(
@@ -1354,9 +1698,9 @@ const [PAIRE_A, PAIRE_B] = [USER_A, USER_B].sort();
   );
 }
 
-// On pose l'amitié par le vrai geste : chacun saisit le code de l'autre. C'est
-// la fonction éprouvée plus haut, donc la relation du banc est celle qu'un
-// utilisateur obtiendrait.
+// On pose l'amitié par le vrai chemin, en DEUX gestes : B demande par le code de
+// A, puis A accepte. Ce sont les deux fonctions éprouvées plus haut, donc la
+// relation du banc est exactement celle qu'un utilisateur obtiendrait.
 //
 // Ce bloc COMMITE, et c'est indispensable : `enTantQue` annule toujours sa
 // transaction, si bien qu'une amitié posée par elle n'existerait pas pour les
@@ -1375,14 +1719,25 @@ const [PAIRE_A, PAIRE_B] = [USER_A, USER_B].sort();
     JSON.stringify(Object.keys(codeDe))
   );
 
-  await db.transaction(async (tx) => {
-    await tx.exec('set local role authenticated');
-    await tx.exec(`set local request.jwt.claims = '{"sub":"${USER_B}"}'`);
-    await tx.query('select public.ajouter_ami_par_code($1::uuid, $2::text)', [
+  // B demande. Une demande ne suffit pas : c'est le point du nouveau modèle, et
+  // l'épreuve le dit juste après.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_B, codeDe[USER_A]])
+  );
+  const apresDemande = await db.query('select count(*)::int as n from public.amis');
+  noter(
+    'une demande seule n’ouvre pas le fil',
+    apresDemande.rows[0].n === 0,
+    `${apresDemande.rows[0].n} amitie(s)`
+  );
+
+  // A accepte : c'est là que la relation naît.
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.repondre_demande_ami($1::uuid, $2::uuid, true) as fait', [
+      USER_A,
       USER_B,
-      codeDe[USER_A],
-    ]);
-  });
+    ])
+  );
 
   const n = await db.query('select count(*)::int as n from public.amis');
   noter('l’amitie est posee pour la suite', n.rows[0].n === 1, `${n.rows[0].n} ligne(s)`);
@@ -1779,6 +2134,221 @@ const [PAIRE_A, PAIRE_B] = [USER_A, USER_B].sort();
   noter('les messages sont tous encore la', restant.rows[0].n === 3, `${restant.rows[0].n} message(s)`);
 }
 
+// --- Ce qui reste a lire, et le temps reel ---------------------------------
+
+// Combien de messages VISIBLES chaque auteur a ecrits, lu dans la table.
+//
+// Le nombre attendu est LU, et non ecrit ici : une section precedente a retire
+// un message, et une constante deviendrait fausse a la premiere modification —
+// l'epreuve accuserait alors la fonction, qui est juste. C'est la meme regle
+// que pour « un ami voit exactement les seances de son ami ».
+const messagesVisiblesParAuteur = Object.fromEntries(
+  (
+    await db.query(
+      `select auteur, count(*)::int as n from public.discussion_messages
+        where retire_le is null and modere_le is null
+        group by auteur`
+    )
+  ).rows.map((r) => [r.auteur, r.n])
+);
+
+{
+  // Le compte des non-lus est donc ASYMETRIQUE, et c'est exactement ce qu'il
+  // doit etre : chacun ne compte que ce que l'AUTRE lui a ecrit.
+  const chezA = await enTantQue(USER_A, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_A]).then((r) => r.rows[0].n)
+  );
+  const chezB = await enTantQue(USER_B, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_B]).then((r) => r.rows[0].n)
+  );
+  noter(
+    'chacun ne compte que les messages visibles de l’autre',
+    chezA === (messagesVisiblesParAuteur[USER_B] ?? 0) &&
+      chezB === (messagesVisiblesParAuteur[USER_A] ?? 0) &&
+      chezB > 0,
+    `A : ${chezA} (B a ecrit ${messagesVisiblesParAuteur[USER_B] ?? 0}), ` +
+      `B : ${chezB} (A a ecrit ${messagesVisiblesParAuteur[USER_A] ?? 0})`
+  );
+
+  // Le detail par fil : une ligne, et elle nomme l'autre.
+  const parFil = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.non_lus_par_fil($1::uuid)', [USER_B]).then((r) => r.rows)
+  );
+  noter(
+    'le detail nomme l’autre et compte la meme chose que le total',
+    parFil.length === 1 && parFil[0].autre === USER_A && Number(parFil[0].non_lus) === chezB,
+    `${parFil.length} fil(s) — ${parFil[0]?.non_lus} contre ${chezB} au total`
+  );
+}
+
+{
+  // Marquer comme lu eteint le compteur, et ne touche pas celui de l'autre.
+  //
+  // L'ecriture COMMITE : elle doit survivre pour etre mesuree, et `enTantQue`
+  // l'annulerait.
+  const fait = await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.marquer_fil_lu($1::uuid, $2::uuid) as fait', [USER_B, USER_A])
+  );
+  noter('marquer un fil comme lu prend', fait.rows[0].fait === true, `${fait.rows[0].fait}`);
+
+  const chezB = await enTantQue(USER_B, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_B]).then((r) => r.rows[0].n)
+  );
+  const chezA = await enTantQue(USER_A, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_A]).then((r) => r.rows[0].n)
+  );
+  noter(
+    'marquer comme lu eteint SON compteur, et seulement le sien',
+    chezB === 0 && chezA === 1,
+    `B : ${chezB} (attendu 0), A : ${chezA} (attendu 1)`
+  );
+}
+
+{
+  // Un message arrive apres la marque : il rallume le compteur.
+  //
+  // C'est l'epreuve qui compte vraiment, parce qu'elle attrape l'erreur la plus
+  // facile a commettre ici — une marque posee avec l'heure de l'APPAREIL, en
+  // avance de quelques minutes, rendrait ce message invisible a jamais.
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'un mot de plus')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+
+  const chezB = await enTantQue(USER_B, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_B]).then((r) => r.rows[0].n)
+  );
+  noter(
+    'un message arrive apres la marque rallume le compteur',
+    chezB === 1,
+    `${chezB} non lu(s) — attendu 1`
+  );
+}
+
+{
+  // Un message RETIRE ne compte plus comme non lu. Compter une pierre tombale
+  // ferait clignoter une pastille pour quelque chose qui ne s'ouvre pas.
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.retirer_message((select max(id) from public.discussion_messages)) as fait')
+  );
+  const chezB = await enTantQue(USER_B, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_B]).then((r) => r.rows[0].n)
+  );
+  noter('un message retire ne compte plus comme non lu', chezB === 0, `${chezB} non lu(s)`);
+}
+
+// --- L'apercu des fils : ce que la liste des conversations montre ----------
+
+{
+  // Le dernier message du fil vient d'etre RETIRE par l'epreuve precedente. Un
+  // apercu qui montrerait son texte publierait ce que le fil ne montre plus —
+  // et a l'endroit ou on le voit le plus, puisqu'il s'affiche sans qu'on ouvre
+  // quoi que ce soit.
+  const chezB = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.apercu_fils($1::uuid)', [USER_B]).then((r) => r.rows)
+  );
+  noter(
+    'l apercu d un message retire ne rend pas son texte',
+    chezB.length === 1 && chezB[0].autre === USER_A && chezB[0].apercu === null,
+    `${chezB.length} fil(s) — apercu ${JSON.stringify(chezB[0] ? chezB[0].apercu : 'absent')}`
+  );
+}
+
+{
+  // Un mot de plus, et l'apercu suit — du bon cote. Le « de moi » n'est pas
+  // decoratif : c'est lui qui decide si la liste ecrit « Vous : ».
+  const ecrit = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'le dernier mot')
+       returning id`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+  const idDernier = ecrit.rows[0].id;
+
+  const chezB = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.apercu_fils($1::uuid)', [USER_B]).then((r) => r.rows)
+  );
+  const chezA = await enTantQue(USER_A, (tx) =>
+    tx.query('select * from public.apercu_fils($1::uuid)', [USER_A]).then((r) => r.rows)
+  );
+  noter(
+    'l apercu montre le dernier mot, et dit de qui il est',
+    chezB.length === 1 &&
+      chezB[0].apercu === 'le dernier mot' &&
+      chezB[0].de_moi === false &&
+      chezA.length === 1 &&
+      chezA[0].apercu === 'le dernier mot' &&
+      chezA[0].de_moi === true,
+    `B : ${JSON.stringify(chezB[0] && chezB[0].apercu)} de moi ${chezB[0] && chezB[0].de_moi}, ` +
+      `A : ${JSON.stringify(chezA[0] && chezA[0].apercu)} de moi ${chezA[0] && chezA[0].de_moi}`
+  );
+
+  // Masque, et l'apercu RECULE d'un cran au lieu de publier le texte masque.
+  // C'est l'epreuve qui compte : la liste est un second chemin vers le meme
+  // texte, et il est plus visible que le premier.
+  const masque = await enTantQueEtCommit(USER_ADMIN, (tx) =>
+    tx.query('select public.masquer_message($1::bigint) as fait', [idDernier])
+  );
+  const apresMasquage = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.apercu_fils($1::uuid)', [USER_B]).then((r) => r.rows)
+  );
+  noter(
+    'un message masque ne devient pas l apercu du fil',
+    masque.rows[0].fait === true &&
+      apresMasquage.length === 1 &&
+      apresMasquage[0].apercu === null,
+    `${apresMasquage.length} fil(s) — apercu ${JSON.stringify(apresMasquage[0] && apresMasquage[0].apercu)}`
+  );
+}
+
+{
+  // Un etranger n'a aucun apercu : la fonction est SECURITY INVOKER, donc les
+  // politiques decident — et il ne peut lire aucun de ces messages.
+  const chezC = await enTantQue(USER_C, (tx) =>
+    tx.query('select * from public.apercu_fils($1::uuid)', [USER_C]).then((r) => r.rows)
+  );
+  noter('un etranger n a aucun apercu de fil', chezC.length === 0, `${chezC.length} fil(s)`);
+}
+
+{
+  // La ligne de lecture de quelqu'un d'autre ne s'ecrit pas a distance : sans
+  // cette garde, on retirerait la pastille d'un autre, et il ne saurait jamais
+  // qu'on lui a ecrit.
+  const refus = await tentative(USER_C, (tx) =>
+    tx.query(
+      `insert into public.discussion_lectures (lecteur, autre, lu_le)
+       values ($1::uuid, $2::uuid, now())`,
+      [USER_B, USER_A]
+    )
+  );
+  noter(
+    'on n’ecrit pas la ligne de lecture de quelqu’un d’autre',
+    refus.refus === true && refus.code === '42501',
+    `${refus.code ?? 'aucun refus'} — ${refus.message ?? ''}`
+  );
+
+  // Et on ne la lit pas non plus.
+  const vue = await enTantQue(USER_C, (tx) =>
+    tx.query('select count(*)::int as n from public.discussion_lectures')
+  );
+  noter('on ne lit pas les lectures des autres', vue.rows[0].n === 0, `${vue.rows[0].n} ligne(s)`);
+}
+
+{
+  // Le fil s'adosse a l'amitie, et le temps reel n'y change rien : la
+  // publication diffuse ce que l'abonnement a deja le droit de lire. Un
+  // etranger ne compte donc aucun non-lu.
+  const chezC = await enTantQue(USER_C, (tx) =>
+    tx.query('select public.total_non_lus($1::uuid) as n', [USER_C]).then((r) => r.rows[0].n)
+  );
+  noter('un etranger ne compte aucun non-lu', chezC === 0, `${chezC} non lu(s)`);
+}
+
 // --- Rompre l'amitie ferme la discussion sans effacer les messages ---------
 
 {
@@ -1817,14 +2387,455 @@ const [PAIRE_A, PAIRE_B] = [USER_A, USER_B].sort();
   );
 
   // Le moderateur, lui, voit toujours — c'est ce qui rend la moderation
-  // possible apres coup, sans dependre de l'amitie.
+  // possible apres coup, sans dependre de l'amitie. Le nombre attendu est lu
+  // dans la table : les epreuves des non-lus en ajoutent un, et une constante
+  // ici deviendrait fausse sans que la politique y soit pour rien.
+  const enBase = await db.query('select count(*)::int as n from public.discussion_messages');
   const vueAdmin = await enTantQue(USER_ADMIN, (tx) =>
     tx.query('select count(*)::int as n from public.discussion_messages')
   );
   noter(
     'le moderateur voit le fil meme apres rupture',
-    vueAdmin.rows[0].n === 3,
-    `${vueAdmin.rows[0].n} message(s)`
+    vueAdmin.rows[0].n === enBase.rows[0].n && enBase.rows[0].n > 0,
+    `${vueAdmin.rows[0].n} vu(s) sur ${enBase.rows[0].n} en base`
+  );
+}
+
+
+// === Les notifications =====================================================
+//
+// Ce qui est éprouvé ici, et qui ne peut l'être nulle part ailleurs : les
+// DÉCLENCHEURS. Un envoi déclenché par le téléphone de l'expéditeur n'aurait pas
+// lieu s'il ferme l'application aussitôt après avoir écrit — c'est la raison
+// d'être de la boîte d'envoi, et c'est la base qui doit la remplir. Aucun test
+// unitaire ne peut le dire : il faut écrire un vrai message et regarder ce qui
+// apparaît.
+//
+// Les préférences sont éprouvées ICI aussi, et non côté application, parce que
+// c'est le déclencheur qui décide : une ligne qui n'existe pas est une garantie,
+// alors qu'une ligne filtrée plus tard ne serait qu'une convention.
+
+const CHEMIN_NOTIFICATIONS = fileURLToPath(new URL('supabase/notifications.sql', RACINE));
+const notifications = readFileSync(CHEMIN_NOTIFICATIONS, 'utf8');
+
+let premiereNotifications = null;
+try {
+  await db.exec(notifications);
+} catch (erreur) {
+  premiereNotifications = `${erreur.code ?? '?'} — ${erreur.message ?? erreur}`;
+}
+noter(
+  'les notifications s’appliquent après les discussions',
+  premiereNotifications === null,
+  premiereNotifications ?? ''
+);
+
+let secondeNotifications = null;
+try {
+  await db.exec(notifications);
+} catch (erreur) {
+  secondeNotifications = `${erreur.code ?? '?'} — ${erreur.message ?? erreur}`;
+}
+noter(
+  'les notifications se rejouent sans erreur',
+  secondeNotifications === null,
+  secondeNotifications ?? ''
+);
+
+// La section precedente a rompu l'amitie : on la retablit en DEUX temps, comme
+// le modele le demande. Une amitie posee directement ferait passer les epreuves
+// qui suivent pour une raison qui n'existe pas.
+{
+  await db.exec(
+    `delete from public.envois_notification;
+     delete from public.appareils;
+     delete from public.preferences_notifications;
+     delete from public.discussion_messages;
+     delete from public.amis;
+     delete from public.demandes_amis;
+     delete from public.blocages;`
+  );
+
+  const codeB = await enTantQue(USER_B, (tx) =>
+    tx.query('select public.obtenir_code_ami($1::uuid) as c', [USER_B]).then((r) => r.rows[0].c)
+  );
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.demander_ami_par_code($1::uuid, $2::text)', [USER_A, codeB])
+  );
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.repondre_demande_ami($1::uuid, $2::uuid, true) as fait', [
+      USER_B,
+      USER_A,
+    ])
+  );
+
+  const n = await db.query('select count(*)::int as n from public.amis');
+  noter('l’amitie est retablie pour les notifications', n.rows[0].n === 1, `${n.rows[0].n} ligne(s)`);
+
+  // La demande et l'acceptation ont deja rempli la boite : on la vide pour
+  // mesurer les epreuves suivantes une par une.
+  const posees = await db.query('select count(*)::int as n from public.envois_notification');
+  noter(
+    'une demande d’ami et son acceptation remplissent la boite d’envoi',
+    posees.rows[0].n === 2,
+    `${posees.rows[0].n} envoi(s) — attendu 2`
+  );
+
+  const vers = await db.query(
+    'select destinataire, genre from public.envois_notification order by id'
+  );
+  const genres = vers.rows.map((r) => r.genre).sort();
+  noter(
+    'la demande va au destinataire, et l’acceptation au demandeur',
+    genres.join(',') === 'demande_acceptee,demande_ami' &&
+      vers.rows[0].destinataire === USER_B &&
+      vers.rows[1].destinataire === USER_A,
+    vers.rows.map((r) => `${r.genre} -> ${r.destinataire?.slice(0, 8)}`).join(' | ')
+  );
+}
+
+// --- Le declencheur des messages -------------------------------------------
+
+{
+  await db.exec('delete from public.envois_notification;');
+
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'Assalamu alaykum, comment avance ta memorisation ?')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+
+  const boite = await db.query(
+    'select destinataire, acteur, genre, conversation_avec, corps from public.envois_notification'
+  );
+  noter(
+    'un message remplit la boite d’envoi du destinataire, cote serveur',
+    boite.rows.length === 1 &&
+      boite.rows[0].destinataire === USER_B &&
+      boite.rows[0].acteur === USER_A &&
+      boite.rows[0].genre === 'message' &&
+      boite.rows[0].conversation_avec === USER_A &&
+      boite.rows[0].corps === 'Assalamu alaykum, comment avance ta memorisation ?',
+    `${boite.rows.length} envoi(s)`
+  );
+}
+
+{
+  // Couper les messages : la ligne ne doit PAS exister. C'est une garantie,
+  // alors qu'une ligne ecrite puis filtree plus tard ne serait qu'une
+  // convention — et un correctif dans la fonction serveur la laisserait passer.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query(
+      `select public.enregistrer_preferences_notifications(
+         $1::uuid, false, true, true, true, true, false) as fait`,
+      [USER_B]
+    )
+  );
+  await db.exec('delete from public.envois_notification;');
+
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'un mot quand meme')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+
+  const boite = await db.query('select count(*)::int as n from public.envois_notification');
+  noter(
+    'couper les messages n’ecrit AUCUNE ligne dans la boite',
+    boite.rows[0].n === 0,
+    `${boite.rows[0].n} envoi(s)`
+  );
+
+  // Masquer le contenu, au contraire : la ligne existe, sans le texte.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query(
+      `select public.enregistrer_preferences_notifications(
+         $1::uuid, true, true, true, true, true, true) as fait`,
+      [USER_B]
+    )
+  );
+  await db.exec('delete from public.envois_notification;');
+
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'un texte qui ne doit pas sortir')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+
+  const masque = await db.query('select corps, genre from public.envois_notification');
+  noter(
+    'masquer le contenu laisse la ligne, mais PAS le texte',
+    masque.rows.length === 1 && masque.rows[0].corps === null && masque.rows[0].genre === 'message',
+    `${masque.rows.length} envoi(s), corps ${JSON.stringify(masque.rows[0]?.corps)}`
+  );
+}
+
+// --- La boite est fermee a tout le monde -----------------------------------
+
+{
+  // Aucune politique, donc aucune lecture : la boite n'est remplie que par des
+  // declencheurs, et videe que par la fonction serveur. Un utilisateur qui
+  // pourrait la lire verrait les messages qu'on s'apprete a lui envoyer, et
+  // celui qui pourrait y ecrire pourrait faire sonner n'importe qui.
+  const lecture = await enTantQue(USER_B, (tx) =>
+    tx.query('select count(*)::int as n from public.envois_notification')
+  );
+  noter('la boite d’envoi n’est lisible par personne', lecture.rows[0].n === 0, `${lecture.rows[0].n} ligne(s)`);
+
+  const ecriture = await tentative(USER_B, (tx) =>
+    tx.query(
+      `insert into public.envois_notification (destinataire, genre, corps)
+       values ($1::uuid, 'message', 'fabrique de toutes pieces')`,
+      [USER_A]
+    )
+  );
+
+  // Le privilège d'abord : chez Supabase, toute table de `public` reçoit les
+  // privilèges de table par défaut, donc `authenticated` PEUT écrire ici. Le
+  // vérifier dit que la porte fermée n'est pas un droit manquant — et il le
+  // fallait, car sans ce GRANT l'épreuve de lecture ci-dessus ne rendait pas
+  // zéro ligne : elle levait « permission denied for table », que `enTantQue`
+  // relaie, et le banc entier s'arrêtait là.
+  //
+  // Le refus ensuite, et surtout SA PHRASE. Les deux refus possibles — droit
+  // manquant et RLS — portent le même code SQLSTATE, 42501, et cela a été
+  // mesuré plutôt que supposé :
+  //
+  //   sans privilège, sans politique : 42501  permission denied for table t
+  //   avec privilège, sans politique : 42501  new row violates row-level
+  //                                           security policy for table "t"
+  //
+  // S'arrêter au code reviendrait donc à prendre l'un pour l'autre : l'épreuve
+  // serait verte pour une raison qui n'est pas celle qu'elle annonce. Et le jour
+  // où quelqu'un ajoute à cette table une politique permissive — un
+  // copier-coller d'une voisine — un banc qui se contente du code resterait
+  // vert, alors que le serveur, lui, aurait ouvert la boîte d'envoi à tout le
+  // monde.
+  const droit = await db.query(
+    `select has_table_privilege('authenticated', 'public.envois_notification', 'INSERT') as peut`
+  );
+  noter(
+    'on n’ecrit pas dans la boite d’envoi depuis l’application',
+    droit.rows[0].peut === true &&
+      ecriture.refus === true &&
+      /row-level security/i.test(ecriture.message ?? ''),
+    `privilege ${droit.rows[0].peut} ; refus ${ecriture.code ?? 'aucun'} ${ecriture.message ?? ''}`
+  );
+}
+
+// --- Les appareils ---------------------------------------------------------
+
+{
+  const pose = await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.enregistrer_appareil($1::uuid, $2::text, $3::text) as fait', [
+      USER_B,
+      'ExponentPushToken[celui-de-B]',
+      'ios',
+    ])
+  );
+  noter('on enregistre son propre appareil', pose.rows[0].fait === true, `${pose.rows[0].fait}`);
+
+  const vuParA = await enTantQue(USER_A, (tx) =>
+    tx.query('select count(*)::int as n from public.appareils')
+  );
+  noter(
+    'les appareils d’un autre ne se lisent pas',
+    vuParA.rows[0].n === 0,
+    `${vuParA.rows[0].n} ligne(s)`
+  );
+
+  const mauvais = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.enregistrer_appareil($1::uuid, $2::text, $3::text) as fait', [
+      USER_B,
+      'ExponentPushToken[usurpe]',
+      'ios',
+    ])
+  );
+  noter(
+    'on n’enregistre pas un appareil au nom d’un autre',
+    mauvais.rows[0].fait === false,
+    `${mauvais.rows[0].fait}`
+  );
+
+  const plateforme = await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query('select public.enregistrer_appareil($1::uuid, $2::text, $3::text) as fait', [
+      USER_B,
+      'ExponentPushToken[plateforme-inconnue]',
+      'windows',
+    ])
+  );
+  noter(
+    'une plateforme inconnue est refusee',
+    plateforme.rows[0].fait === false,
+    `${plateforme.rows[0].fait}`
+  );
+
+  // Le meme telephone, un autre compte : le jeton doit CHANGER DE MAIN.
+  //
+  // C'est le cas d'un telephone prete ou revendu. Sans ce deplacement, l'ancien
+  // compte continuerait de recevoir des notifications sur un appareil qui n'est
+  // plus le sien — et les lirait, puisque rien ne les lui retire.
+  const reprise = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.enregistrer_appareil($1::uuid, $2::text, $3::text) as fait', [
+      USER_A,
+      'ExponentPushToken[celui-de-B]',
+      'ios',
+    ])
+  );
+  const proprietaire = await db.query(
+    `select user_id from public.appareils where jeton = 'ExponentPushToken[celui-de-B]'`
+  );
+  noter(
+    'un appareil qui change de compte change de proprietaire',
+    reprise.rows[0].fait === true &&
+      proprietaire.rows.length === 1 &&
+      proprietaire.rows[0].user_id === USER_A,
+    `${proprietaire.rows.length} ligne(s)`
+  );
+
+  const retire = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.oublier_appareil($1::text) as fait', ['ExponentPushToken[celui-de-B]'])
+  );
+  noter('on retire son propre appareil', retire.rows[0].fait === true, `${retire.rows[0].fait}`);
+}
+
+// --- La prise des envois ---------------------------------------------------
+
+{
+  await db.exec('delete from public.envois_notification;');
+  await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `insert into public.discussion_messages (user_a, user_b, auteur, corps)
+       values ($1::uuid, $2::uuid, $3::uuid, 'a prendre')`,
+      [PAIRE_A, PAIRE_B, USER_A]
+    )
+  );
+
+  const premiere = await db.query('select * from public.reclamer_envois(10)');
+  noter(
+    'la prise rend les lignes en attente et les marque traitees',
+    premiere.rows.length === 1 && premiere.rows[0].traite_le !== null,
+    `${premiere.rows.length} prise(s)`
+  );
+
+  const seconde = await db.query('select * from public.reclamer_envois(10)');
+  noter(
+    'une seconde prise ne rend RIEN : pas de notification en double',
+    seconde.rows.length === 0,
+    `${seconde.rows.length} prise(s)`
+  );
+}
+
+// --- Les preferences -------------------------------------------------------
+
+{
+  const miennes = await enTantQue(USER_B, (tx) =>
+    tx.query('select * from public.mes_preferences_notifications($1::uuid)', [USER_B])
+  );
+  noter(
+    'mes preferences se lisent, avec les defauts poses',
+    miennes.rows.length === 1 && miennes.rows[0].messages === true && miennes.rows[0].masquer_contenu === true,
+    `${miennes.rows.length} ligne(s)`
+  );
+
+  // Les preferences de quelqu'un d'autre ne se lisent pas — meme par un ami.
+  // Savoir qu'un ami a coupe ses notifications, c'est savoir qu'il a lu et
+  // qu'il ne repond pas.
+  const cellesDUnAutre = await enTantQue(USER_A, (tx) =>
+    tx.query('select * from public.mes_preferences_notifications($1::uuid)', [USER_B])
+  );
+  noter(
+    'les preferences d’un autre ne se lisent pas',
+    cellesDUnAutre.rows.length === 0,
+    `${cellesDUnAutre.rows.length} ligne(s)`
+  );
+
+  const auNomDUnAutre = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query(
+      `select public.enregistrer_preferences_notifications(
+         $1::uuid, false, false, false, false, false, true) as fait`,
+      [USER_B]
+    )
+  );
+  noter(
+    'on n’ecrit pas les preferences d’un autre',
+    auNomDUnAutre.rows[0].fait === false,
+    `${auNomDUnAutre.rows[0].fait}`
+  );
+}
+
+// --- L'annonce d'une etape -------------------------------------------------
+
+{
+  await db.exec('delete from public.envois_notification;');
+
+  // B a garde les etapes partagees ; on remet ses preferences a plat d'abord,
+  // parce que l'epreuve precedente les a modifiees.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query(
+      `select public.enregistrer_preferences_notifications(
+         $1::uuid, true, true, true, true, true, false) as fait`,
+      [USER_B]
+    )
+  );
+
+  const annonce = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.annoncer_etape($1::uuid, $2::text) as n', [
+      USER_A,
+      'J’ai termine la sourate Al-Mulk',
+    ])
+  );
+  noter(
+    'une annonce previent ses amis',
+    Number(annonce.rows[0].n) === 1,
+    `${annonce.rows[0].n} ami(s)`
+  );
+
+  const suite = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.annoncer_etape($1::uuid, $2::text) as n', [USER_A, 'et une de plus'])
+  );
+  noter(
+    'une seconde annonce dans l’heure ne previent personne',
+    Number(suite.rows[0].n) === 0,
+    `${suite.rows[0].n} ami(s)`
+  );
+
+  const vide = await db.query(
+    `select count(*)::int as n from public.envois_notification where genre = 'progression'`
+  );
+  noter(
+    'le texte de l’annonce est range, borne a 140 signes',
+    vide.rows[0].n === 1,
+    `${vide.rows[0].n} annonce(s)`
+  );
+
+  // Et celui qui a coupe les etapes partagees ne recoit rien.
+  await enTantQueEtCommit(USER_B, (tx) =>
+    tx.query(
+      `select public.enregistrer_preferences_notifications(
+         $1::uuid, true, true, false, true, true, false) as fait`,
+      [USER_B]
+    )
+  );
+  await db.exec('delete from public.envois_notification;');
+
+  // L'annonce precedente a pose l'heure : on la retire pour que la borne
+  // horaire ne masque pas ce qu'on veut mesurer ici.
+  await db.exec(`delete from public.envois_notification where acteur = '${USER_A}'`);
+
+  const apres = await enTantQueEtCommit(USER_A, (tx) =>
+    tx.query('select public.annoncer_etape($1::uuid, $2::text) as n', [USER_A, 'encore une'])
+  );
+  noter(
+    'celui qui a coupe les etapes partagees n’est pas prevenu',
+    Number(apres.rows[0].n) === 0,
+    `${apres.rows[0].n} ami(s)`
   );
 }
 

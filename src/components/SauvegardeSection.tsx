@@ -31,11 +31,14 @@ import {
   reinitialiserMotDePasse,
   renvoyerConfirmation,
   seConnecter,
-  seDeconnecter,
   utilisateurCourant,
   type ResultatAuth,
   type Utilisateur,
 } from '@/lib/auth';
+// `quitterLeCompte` et non `seDeconnecter` : la déconnexion doit aussi retirer
+// le jeton de CET appareil du compte quitté. Sans cela, l'ancien compte
+// continuerait de recevoir ses notifications ici.
+import { quitterLeCompte } from '@/lib/sessionAppareil';
 import {
   restaurerDepuisCloud,
   sauvegarderMaintenant,
@@ -298,7 +301,7 @@ export function SauvegardeSection({ onDonneesChangees }: Props) {
           text: 'Se déconnecter',
           style: 'destructive',
           onPress: async () => {
-            await seDeconnecter();
+            await quitterLeCompte();
             setUtilisateur(null);
             setMessage({ texte: 'Vous êtes déconnecté.', ton: 'info' });
           },

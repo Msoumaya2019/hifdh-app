@@ -1,8 +1,8 @@
 // Layout racine de l'application
 // Charge les polices arabes, la palette choisie, et configure le SafeArea
 
-import { useEffect, useState } from 'react';
-import { Stack } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Font from 'expo-font';
 import { SplashScreen } from 'expo-router';
@@ -17,6 +17,8 @@ import {
   type NomPalette,
 } from '@/theme';
 import { FournisseurAudio } from '@/lib/audio/ContexteAudio';
+import { cibleDuLancement, configurerAffichage, ecouterLesAppuis } from '@/lib/push';
+import type { CibleNotification } from '@/lib/notifications';
 
 // Empêcher l'écran de démarrage de se cacher avant le chargement des polices
 SplashScreen.preventAutoHideAsync();
@@ -76,6 +78,58 @@ export default function RootLayout() {
     };
   }, []);
 
+  /**
+   * Où mène un appui sur une notification.
+   *
+   * La cible est décidée ailleurs — `cibleNotification`, dans
+   * `src/lib/notifications.ts` — parce qu'elle se teste sans téléphone, et
+   * qu'elle traite des données venues d'un service extérieur. Ici on ne fait
+   * que naviguer.
+   *
+   * `accueil` ne navigue pas : l'application s'ouvre déjà sur l'accueil, et un
+   * `push` vers la racine empilerait un second exemplaire de la même page — le
+   * retour ramènerait alors à un écran identique, ce qui donne l'impression que
+   * le bouton ne marche pas.
+   */
+  const ouvrirLaCible = useCallback((cible: CibleNotification) => {
+    if (cible.type === 'discussion') {
+      router.push({ pathname: '/discussion', params: { amiId: cible.amiId } });
+      return;
+    }
+    if (cible.type === 'amis') {
+      router.push('/amis');
+    }
+  }, []);
+
+  // Les notifications s'écoutent ICI, une fois pour toute l'application : un
+  // écouteur posé dans un écran mourrait avec lui, et l'appui reçu pendant
+  // qu'on lit le Coran ne mènerait nulle part.
+  //
+  // L'effet attend que la pile soit montée (`fontsLoaded` et `themePret`) :
+  // naviguer avant le premier rendu réel demanderait une route qui n'existe
+  // pas encore, et la navigation serait perdue sans message.
+  useEffect(() => {
+    if (!fontsLoaded || !themePret) return;
+
+    configurerAffichage();
+
+    // L'appui qui a LANCÉ l'application : au moment de l'appui, aucun écouteur
+    // n'existait encore, donc l'événement n'est pas dans le flux. On le demande
+    // explicitement, et après un court délai — la pile vient d'être montée, et
+    // une navigation immédiate peut précéder l'enregistrement des routes.
+    const minuterie = setTimeout(() => {
+      void cibleDuLancement().then((cible) => {
+        if (cible !== null) ouvrirLaCible(cible);
+      });
+    }, 400);
+
+    const retirer = ecouterLesAppuis(ouvrirLaCible);
+    return () => {
+      clearTimeout(minuterie);
+      retirer();
+    };
+  }, [fontsLoaded, themePret, ouvrirLaCible]);
+
   if (!fontsLoaded || !themePret) {
     return null;
   }
@@ -127,6 +181,28 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="discussion"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            {/* La liste des conversations. Elle est atteinte depuis la pastille
+                de l'accueil et depuis l'écran des amis, jamais depuis la barre
+                d'onglets : la spécification interdit d'y ajouter une sixième
+                entrée. */}
+            <Stack.Screen
+              name="messages"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            {/* Les deux réglages qui dépendent d'un serveur : le profil public
+                et les notifications. Ils sont déclarés ici parce qu'un appui
+                sur une notification peut mener à l'un comme à l'autre, et
+                qu'une route non déclarée afficherait « écran introuvable » au
+                moment précis où l'utilisateur attend que son appui fasse
+                quelque chose. */}
+            <Stack.Screen
+              name="profil-public"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            <Stack.Screen
+              name="notifications"
               options={{ presentation: 'card', headerShown: false }}
             />
             {/* Le lien de courriel — confirmation d'adresse ou réinitialisation de

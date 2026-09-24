@@ -13,6 +13,11 @@ fuseau, un fil affiché dans le désordre, un texte retiré qui réapparaît, un
 date « Hier » qui désigne aujourd'hui. Tous se lisent comme une ligne à peine
 bizarre, et aucun ne lève d'erreur.
 
+Il vise aussi les non-lus, ou trois défauts se logent sans rien lever : un
+compte que PostgREST rend en chaîne, une pastille qui affiche « 0 » au lieu de
+rien, et un fil JAMAIS OUVERT compté comme entièrement lu — parce que
+`created_at > NULL` n'est pas vrai, mais inconnu.
+
 Il vise aussi la promesse de FORME : que rien, dans la table, ne puisse
 accueillir un fichier. C'est une garantie qu'un ajout distrait retirerait sans
 qu'aucun test de comportement ne s'en aperçoive.
@@ -377,6 +382,178 @@ MUTATIONS = [
         "  const reponse = await borner(\n    ctx.client.from('discussion_messages').insert({\n      user_a: a,\n      user_b: b,\n      auteur: ctx.userId,\n      corps: preparerEnvoi(saisie),\n    })\n  );",
         "  const reponse = await borner(\n    ctx.client.from('discussion_messages').insert({\n      user_a: a,\n      user_b: b,\n      auteur: ctx.userId,\n      corps: saisie,\n    })\n  );",
         "le message part sans être préparé : caractères de contrôle inclus",
+    ),
+    # --- Les non-lus --------------------------------------------------------
+    #
+    # Ces mutations visent ce qui ne lève rien et ne se voit qu'à l'usage : un
+    # compte lu comme une chaîne, une pastille qui affiche zéro, un fil jamais
+    # ouvert compté comme lu. La dernière du lot — le `COALESCE` — est la plus
+    # coûteuse : sans lui, tout fil neuf est compté comme entièrement lu, ce qui
+    # est exactement l'inverse.
+    (
+        D,
+        "  const brut = typeof ligne.non_lus === 'number' ? ligne.non_lus : Number(ligne.non_lus ?? 0);",
+        "  const brut = ligne.non_lus as number;",
+        "un compte arrivé en chaîne n'est plus lu : trois messages non lus s'affichent zéro",
+    ),
+    (
+        D,
+        "    nonLus: Math.max(0, Math.round(brut)),",
+        "    nonLus: Math.round(brut),",
+        "un compte négatif n'est plus ramené à zéro",
+    ),
+    (
+        D,
+        "  if (!Number.isFinite(total) || total <= 0) return null;",
+        "  if (!Number.isFinite(total)) return null;",
+        "la pastille affiche « 0 » là où elle doit ne rien afficher",
+    ),
+    (
+        D,
+        "  return propre > 9 ? '9+' : String(propre);",
+        "  return String(propre);",
+        "la pastille montre un nombre à trois chiffres qui déborde de son icône",
+    ),
+    (
+        D,
+        "  return lignes.reduce((somme, ligne) => somme + ligne.nonLus, 0);",
+        "  return lignes.length;",
+        "le total compte les fils au lieu des messages",
+    ),
+    (
+        D,
+        "  if (jour === jourPrecedent(aujourdhui)) return 'Hier';",
+        "  if (false) return 'Hier';",
+        "la veille s'affiche en date au lieu de « Hier »",
+    ),
+    (
+        D,
+        "  if (jour === aujourdhui) return iso.length >= 16 ? iso.slice(11, 16) : '';",
+        "  if (jour === aujourdhui) return jour;",
+        "aujourd'hui s'affiche en date complète au lieu de l'heure",
+    ),
+    # --- L'aperçu des fils --------------------------------------------------
+    (
+        D,
+        "  if (apercu === null) return 'Aucun message';",
+        "  if (apercu === null) return '';",
+        "une conversation sans message n'annonce plus rien",
+    ),
+    (
+        D,
+        "  if (apercu.apercu === null) return 'Message retiré';",
+        "  if (false) return 'Message retiré';",
+        "un message retiré s'affiche comme un texte vide, au lieu de se dire retiré",
+    ),
+    (
+        D,
+        "  const propre = apercu.apercu.replace(/\\s+/g, ' ').trim();",
+        "  const propre = apercu.apercu;",
+        "un message multiligne occupe plusieurs lignes dans une liste qui n'en prévoit qu'une",
+    ),
+    (
+        D,
+        "    deMoi: ligne.de_moi === true,",
+        "    deMoi: true,",
+        "la liste précède d'un « Vous : » le message reçu",
+    ),
+    (
+        D,
+        "    if (da === null) return 1;",
+        "    if (da === null) return -1;",
+        "les amis sans conversation passent devant ceux qui ont un fil",
+    ),
+    (
+        D,
+        "  return [...amis].sort((a, b) => {",
+        "  return amis.sort((a, b) => {",
+        "le rangement des conversations modifie la liste reçue",
+    ),
+    # --- La couche réseau ---------------------------------------------------
+    (
+        S,
+        "  const brut = typeof appel.data === 'number' ? appel.data : Number(appel.data ?? 0);",
+        "  const brut = appel.data as number;",
+        "un total arrivé en chaîne n'est plus converti : la pastille de l'accueil s'éteint",
+    ),
+    (
+        S,
+        "  return ligne.user_a === amiId || ligne.user_b === amiId;",
+        "  return ligne.user_a === amiId;",
+        "un message où je suis `user_a` n'est plus reconnu comme appartenant au fil",
+    ),
+    (
+        S,
+        "  if (client === null) return () => {};",
+        "  if (client === null) return undefined as unknown as () => void;",
+        "sans client, l'abonnement ne rend rien à retirer : le démontage échoue",
+    ),
+    (
+        S,
+        "'marquer_fil_lu', {\n    p_moi: ctx.userId,\n    p_ami: amiId,\n  });",
+        "'marquer_fil_lu', {\n    p_moi: ctx.userId,\n    p_ami: amiId,\n    p_le: new Date().toISOString(),\n  });",
+        "l'heure de l'appareil repart dans la marque de lecture : un message à venir la rendrait invisible à jamais",
+    ),
+    (
+        S,
+        "      if (concerneLeFil(ligne as { user_a?: string | null; user_b?: string | null }, amiId)) {\n        surChangement();\n      }",
+        "      surChangement();",
+        "l'abonnement réveille l'écran pour les messages de tous les autres fils",
+    ),
+    # --- Les garanties de la base -------------------------------------------
+    (
+        "supabase/discussions.sql",
+        "    AND m.created_at > COALESCE(l.lu_le, '-infinity'::timestamptz)",
+        "    AND m.created_at > l.lu_le",
+        "un fil jamais ouvert est compté comme entièrement lu — exactement l'inverse",
+    ),
+    (
+        "supabase/discussions.sql",
+        "    AND m.auteur <> p_moi\n",
+        "",
+        "ses propres messages comptent comme non lus",
+    ),
+    (
+        "supabase/discussions.sql",
+        "    AND m.retire_le IS NULL\n",
+        "",
+        "un message retiré rallume la pastille pour une pierre tombale",
+    ),
+    (
+        "supabase/discussions.sql",
+        "  FOR INSERT TO authenticated\n  WITH CHECK (auth.uid() = lecteur);",
+        "  FOR INSERT TO authenticated\n  WITH CHECK (true);",
+        "on peut marquer comme lu le fil de quelqu'un d'autre, à distance",
+    ),
+    (
+        "supabase/discussions.sql",
+        "  ALTER PUBLICATION supabase_realtime ADD TABLE public.discussion_messages;",
+        "  -- publication retirée : la conversation ne se met plus à jour seule",
+        "sans publication, la conversation ne se rafraîchit plus toute seule",
+    ),
+    (
+        "supabase/discussions.sql",
+        "GRANT EXECUTE ON FUNCTION public.total_non_lus(UUID) TO authenticated;\n",
+        "",
+        "la pastille de l'accueil échoue en 42501, présenté comme un refus de droit",
+    ),
+    (
+        "supabase/discussions.sql",
+        "    WHERE (m.user_a = p_moi OR m.user_b = p_moi)\n      AND m.modere_le IS NULL",
+        "    WHERE (m.user_a = p_moi OR m.user_b = p_moi)",
+        "un message masqué par la modération devient l'aperçu du fil",
+    ),
+    (
+        "supabase/discussions.sql",
+        "      CASE WHEN m.retire_le IS NULL THEN m.corps ELSE NULL END AS apercu,",
+        "      m.corps AS apercu,",
+        "l'aperçu publie le texte d'un message retiré",
+    ),
+    (
+        "supabase/discussions.sql",
+        "GRANT EXECUTE ON FUNCTION public.apercu_fils(UUID) TO authenticated;\n",
+        "",
+        "l'aperçu des fils échoue en 42501, présenté comme un refus de droit",
     ),
 ]
 

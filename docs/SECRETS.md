@@ -5,8 +5,9 @@ cliquer**.
 
 ## 0. Ce qui vous revient, dans l'ordre
 
-Six gestes, et aucun ne peut être fait à votre place : ils demandent votre compte Supabase, votre
-identifiant Apple, vos réglages GitHub, votre hébergeur ou votre compte de courriel.
+Sept gestes, et aucun ne peut être fait à votre place : ils demandent votre compte Supabase, votre
+identifiant Apple, vos réglages GitHub, votre hébergeur ou votre compte de courriel. Le septième est
+facultatif.
 
 | # | À faire | Pourquoi vous seul | Section |
 | --- | --- | --- | --- |
@@ -16,6 +17,7 @@ identifiant Apple, vos réglages GitHub, votre hébergeur ou votre compte de cou
 | 4 | Installer l'application (Android ou iPhone) | se fait sur votre téléphone | §5 et §6 |
 | 5 | **Configurer l'envoi des courriels** | demande votre compte Brevo et votre projet Supabase | **§9** |
 | 6 | Retirer le secret `EXPO_TOKEN` | réglages du dépôt | §8 |
+| 7 | **Activer les notifications push** — facultatif | demande un compte Expo, un projet Firebase et un compte Apple Developer | **§10** |
 
 **L'ordre compte pour 1 → 2 → 3** : le tableau de bord lit `resume_apprenants` et
 `division_verifications`, que le point 1 crée, et il refuse d'entrer pour un compte qui n'est pas
@@ -24,6 +26,11 @@ administrateur — ce que le point 2 règle. Le point 4 est indépendant.
 **Le point 5 est le plus urgent** : tant qu'il n'est pas fait, aucun compte ne devient utilisable —
 le service de courriel intégré de Supabase refuse les adresses ordinaires — et « mot de passe
 oublié » ne peut servir à personne. Voir §9.
+
+**Le point 7 est le seul qui soit facultatif.** L'application fonctionne entièrement sans lui, et
+les notifications sont un confort, jamais une condition d'usage. Tant qu'il n'est pas fait, la base
+met bien les envois en file — un message reçu y écrit une ligne — mais personne ne vide cette file,
+donc aucun téléphone ne sonne. Voir §10.
 
 ## 1. Ce qui est déjà en place
 
@@ -35,7 +42,8 @@ oublié » ne peut servir à personne. Voir §9.
 | Administration Supabase | `supabase/administration.sql`, écrit — **pas encore appliqué** (§3) |
 | Flux de vérification | `ci.yml` : types, tests, données, bornes, falsificateurs, et la construction du tableau de bord |
 | Flux de compilation | `android-apk.yml`, `ios-unsigned.yml` |
-| Version publiée | `v1.7.0` — `hifdh-1.7.0.apk` et `hifdh-1.7.0-non-signe.ipa` |
+| Version publiée | `v1.9.0` — `hifdh-1.9.0.apk` et `hifdh-1.9.0-non-signe.ipa` |
+| Notifications push | `supabase/notifications.sql`, `supabase/functions/envoyer-notifications/`, `notifications.yml` — écrits, **pas encore activés** (§10) |
 
 ## 2. Les deux valeurs publiques du projet Supabase
 
@@ -456,6 +464,29 @@ courriels par heure**, ajustable ici. Le plafond réel reste celui de Brevo : 30
 refusé par Brevo n'apparaît nulle part côté Supabase, et un courriel jamais demandé n'apparaît nulle
 part côté Brevo. C'est ce qui distingue « parti mais perdu » de « jamais parti ».
 
+## 10. Les notifications push
+
+**Rien n'est nécessaire pour que l'application fonctionne.** Les notifications sont un confort,
+jamais une condition d'usage : tant que ce point n'est pas fait, la base met bien les envois en
+file, mais personne ne vide cette file, donc aucun téléphone ne sonne.
+
+Quatre choses manquent, et aucune ne peut être devinée depuis le code :
+
+| # | À faire | Ce que cela demande | Coût |
+| --- | --- | --- | --- |
+| 1 | Relier un projet Expo (`extra.eas.projectId`) | un compte Expo | gratuit |
+| 2 | Poser le secret partagé et déployer la fonction | votre projet Supabase, et `gh` | gratuit |
+| 3 | Android : la clé de service Firebase | un projet Firebase | gratuit |
+| 4 | iPhone : le compte Apple Developer et la clé APNs | votre identifiant Apple | **99 $ par an** |
+
+**Le point 4 est le seul qui coûte de l'argent**, et le seul que rien ne remplace : sans compte
+Apple Developer payant, aucun iPhone ne peut recevoir de notification — **quelle que soit la
+réussite de la compilation de l'IPA**. C'est précisément ce qu'il ne faut pas confondre.
+
+La marche à suivre, une étape à la fois, avec les commandes exactes et les pièges mesurés, est dans
+**`docs/notifications-push.md`**. Ce qui a été éprouvé et ce qui ne l'a pas été y est dit sans
+détour : le code est écrit et testé, et **aucun envoi réel n'a encore eu lieu**.
+
 ## Pourquoi pas EAS
 
 `eas build` exige un projet EAS enregistré (`extra.eas.projectId`) et un compte Expo. La chaîne
@@ -464,3 +495,10 @@ compilent, et `gh release` publie le fichier. C'est exactement ce que font les d
 
 Le fichier `eas.json` a été retiré pour cette raison : il décrivait une chaîne qui ne peut pas
 fonctionner ici, et sa présence laissait croire le contraire.
+
+**Une nuance depuis les notifications push (§10).** Un `extra.eas.projectId` fera son apparition
+dans `app.json`, et il faut savoir pourquoi : Expo en a besoin pour **attribuer un jeton de
+notification à un projet**, et son service refuse d'envoyer sans identifiants enregistrés chez lui.
+`eas-cli` sert alors de coffre à identifiants (`eas init`, `eas credentials`), pas de chaîne de
+compilation : `eas build` n'est jamais lancé, `eas.json` reste absent, et l'APK comme l'IPA
+continuent de sortir de GitHub Actions.

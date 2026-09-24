@@ -22,6 +22,19 @@
 //   - un flux qui publie une version (`gh release create`) déclare le droit
 //     d'écriture correspondant : sans lui, tout réussit jusqu'à la dernière
 //     étape, qui échoue alors en « HTTP 403 ».
+//   - la liste des flux attendus est FERMÉE dans les deux sens : un flux absent
+//     du dossier est signalé, et un flux présent mais non déclaré l'est aussi.
+//     C'est le seul contrôle de ce fichier dont l'absence d'un sujet
+//     produirait un vert — d'où la fermeture.
+//
+// PORTÉE, ET CE QU'ELLE EXCLUT
+// ----------------------------
+// `bash -n` analyse SANS évaluer les expansions. Ce contrôle attrape donc un
+// `then` manquant, un `fi` orphelin, une quote non fermée — pas une expansion
+// fautive : `echo ${a b}` est accepté à l'analyse et échoue à l'exécution. Une
+// faute de frappe dans `${CHEMIN}` ne sera signalée ni ici, ni par `tsc`, ni par
+// ESLint. Il ne voit pas non plus ce qui relève de l'exécution, par exemple un
+// `run:` multiligne dont la première commande en échec supprime les suivantes.
 
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -50,8 +63,31 @@ const DOSSIER = process.argv[2] ?? join(RACINE, '.github', 'workflows');
 // Node 24 tout en tournant encore sous Node 20.
 const VERSIONS_ARTEFACT_ABANDONNEES = ['v4', 'v5'];
 
+// LA LISTE DES FLUX EST FERMÉE, ET DANS LES DEUX SENS
+// ---------------------------------------------------
+// Ce contrôle est le SEUL lecteur du dossier `.github/workflows` : rien d'autre
+// dans la chaîne ne verrait la disparition d'un flux. Or un contrôle qui
+// découvre ses sujets par `readdir` mesure ce qui RESTE, jamais ce qui MANQUE —
+// c'est la définition d'un vert trompeur. Mesuré ailleurs : un flux écarté d'un
+// dossier de trois, et le contrôle annonçait « tout est valide », code 0.
+//
+// Le second sens compte autant que le premier : un flux PRÉSENT mais non
+// déclaré doit échouer lui aussi. Sans cela, une garde qui refuserait tout
+// passerait pour concluante.
+//
+// Le prix est une friction assumée : chaque flux nouveau se déclare ici. C'est
+// le seul endroit du dépôt où ce prix achète quelque chose, parce qu'il n'y a
+// pas de second lecteur pour retenir une disparition.
+const FLUX_ATTENDUS = ['android-apk.yml', 'ci.yml', 'ios-unsigned.yml', 'notifications.yml'];
+
 const problemes = [];
 const signaler = (fichier, message) => problemes.push(`${fichier} : ${message}`);
+
+// Le compte des vérifications RÉELLEMENT effectuées. Il est affiché même quand
+// tout va bien : un rapport qui annonce seulement « OK » ne dit pas s'il a
+// regardé quelque chose. Il se recoupe d'un coup d'œil avec le nombre de `run:`
+// du dépôt, qui est un plancher.
+let verifications = 0;
 
 /** Remplace les expressions `${{ … }}` par un jeton, pour éprouver le bash seul. */
 function sansExpressions(script) {
@@ -73,11 +109,25 @@ function verifierSyntaxeBash(fichier, nomEtape, script) {
   }
 }
 
-const fichiers = readdirSync(DOSSIER).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
+// `readdirSync` ne garantit aucun ordre : trier rend les messages comparables
+// d'une exécution à l'autre.
+const fichiers = readdirSync(DOSSIER)
+  .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+  .sort();
 
-if (fichiers.length === 0) {
-  console.error('Aucun flux trouvé dans .github/workflows.');
-  process.exit(1);
+// Les deux sens de la liste fermée. Un dossier vide ne produit donc plus un
+// message unique mais un refus par flux attendu, ce qui est plus utile : il
+// nomme ce qui manque.
+verifications += FLUX_ATTENDUS.length;
+for (const manquant of FLUX_ATTENDUS.filter((nom) => !fichiers.includes(nom))) {
+  signaler(manquant, '[flux-absent] flux attendu absent du dossier.');
+}
+for (const nonDeclare of fichiers.filter((nom) => !FLUX_ATTENDUS.includes(nom))) {
+  signaler(
+    nonDeclare,
+    '[flux-non-declare] flux présent dans le dossier mais absent de FLUX_ATTENDUS : ' +
+      'le déclarer, ou le retirer du dossier.'
+  );
 }
 
 for (const nomFichier of fichiers) {
@@ -87,10 +137,12 @@ for (const nomFichier of fichiers) {
   try {
     flux = yaml.load(contenu);
   } catch (erreur) {
+    verifications += 1;
     signaler(nomFichier, `le YAML ne s'analyse pas : ${erreur.message.split('\n')[0]}`);
     continue;
   }
 
+  verifications += 1;
   if (flux === null || typeof flux !== 'object' || !flux.jobs) {
     signaler(nomFichier, 'aucune section « jobs »');
     continue;
@@ -101,6 +153,7 @@ for (const nomFichier of fichiers) {
       signaler(nomFichier, `job « ${nomJob} » illisible`);
       continue;
     }
+    verifications += 1;
     if (typeof job['runs-on'] !== 'string' || job['runs-on'] === '') {
       signaler(nomFichier, `job « ${nomJob} » : « runs-on » manquant`);
     }
@@ -109,6 +162,7 @@ for (const nomFichier of fichiers) {
     const etapes = Array.isArray(job.steps) ? job.steps : [];
 
     for (const [index, etape] of etapes.entries()) {
+      verifications += 1;
       if (!etape || typeof etape !== 'object') {
         signaler(nomFichier, `job « ${nomJob} », étape ${index + 1} illisible`);
         continue;
@@ -116,6 +170,7 @@ for (const nomFichier of fichiers) {
       const nomEtape = etape.name ?? etape.uses ?? `étape ${index + 1}`;
 
       if (typeof etape.run === 'string') {
+        verifications += 1;
         verifierSyntaxeBash(nomFichier, nomEtape, etape.run);
 
         // Les variables EXPO_PUBLIC_* lues dans un script doivent venir du job.
@@ -123,6 +178,7 @@ for (const nomFichier of fichiers) {
           (m) => m[1]
         );
         for (const variable of new Set(lues)) {
+          verifications += 1;
           if (!(variable in variablesJob)) {
             signaler(
               nomFichier,
@@ -132,12 +188,15 @@ for (const nomFichier of fichiers) {
           }
         }
 
-        if (etape.run.includes('xcodebuild') && etape['working-directory'] !== undefined) {
-          signaler(
-            nomFichier,
-            `l'étape de compilation « ${nomEtape} » déclare un « working-directory », qui ` +
-              'doublerait le préfixe des chemins produits par le repérage.'
-          );
+        if (etape.run.includes('xcodebuild')) {
+          verifications += 1;
+          if (etape['working-directory'] !== undefined) {
+            signaler(
+              nomFichier,
+              `l'étape de compilation « ${nomEtape} » déclare un « working-directory », qui ` +
+                'doublerait le préfixe des chemins produits par le repérage.'
+            );
+          }
         }
 
         // Publier une version écrit dans le dépôt. Le jeton par défaut n'a que
@@ -146,6 +205,7 @@ for (const nomFichier of fichiers) {
         // `permissions` au niveau du job REMPLACE celui de la racine — c'est la
         // sémantique de GitHub, et la seule lecture correcte ici.
         if (/\bgh\s+release\s+create\b/.test(etape.run)) {
+          verifications += 1;
           const effectives = job.permissions ?? flux.permissions;
           const droitEcriture =
             effectives === 'write-all' ||
@@ -166,6 +226,7 @@ for (const nomFichier of fichiers) {
       if (typeof etape.uses === 'string') {
         const correspondance = /^actions\/upload-artifact@(.+)$/.exec(etape.uses);
         if (correspondance !== null) {
+          verifications += 1;
           const version = correspondance[1];
           if (VERSIONS_ARTEFACT_ABANDONNEES.includes(version)) {
             signaler(
@@ -181,10 +242,14 @@ for (const nomFichier of fichiers) {
 }
 
 if (problemes.length > 0) {
-  console.error(`${problemes.length} problème(s) dans les flux :\n`);
+  console.error(
+    `${problemes.length} problème(s) dans les flux ` +
+      `(${verifications} vérification(s) effectuée(s)) :\n`
+  );
   for (const probleme of problemes) console.error(`  - ${probleme}`);
   process.exit(1);
 }
 
 console.log(`${fichiers.length} flux analysés : ${fichiers.join(', ')}.`);
+console.log(`${verifications} vérification(s) effectuée(s).`);
 console.log('Aucun problème.');

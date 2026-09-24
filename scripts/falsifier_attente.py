@@ -180,16 +180,20 @@ MUTATIONS = [
     ),
     # Le `finally` ferme les trois issues, mais il ne les NOMME pas : un rejet
     # qui remonte part en rejet non traité, et l'écran se referme sans rien dire.
+    #
+    # L'ancre a été REPRISE le jour où ce bloc a été réécrit : le commentaire a
+    # été raccourci et le `setErreur(...)` ramené sur une ligne. La version
+    # précédente citait « La progression n'a pas pu être lue » et un appel sur
+    # trois lignes, qui n'existaient plus — le banc annonçait alors « ANCRE ...
+    # 0 occurrence(s) », c'est-à-dire qu'il ne mesurait plus rien. Une ancre se
+    # relit dans le fichier, jamais de mémoire.
     (
         "app/amis.tsx",
         "    } catch {\n"
         "      // Un REJET, lui, n'était rattrapé par rien : il partait en rejet non\n"
         "      // traité, aucune phrase n'était posée, et l'écran se refermait sans rien\n"
-        "      // dire. C'est le canal d'erreur de cet écran qui parle — le même que\n"
-        "      // celui des erreurs de lecture rendues par la base.\n"
-        "      setErreur(\n"
-        "        \"La progression n'a pas pu être lue. Vérifiez votre connexion, puis réessayez.\"\n"
-        "      );\n"
+        "      // dire.\n"
+        "      setErreur(\"La liste n'a pas pu être lue. Vérifiez votre connexion, puis réessayez.\");\n"
         "    } finally {",
         "    } finally {",
         "le rejet de la lecture n'est plus rattrapé sur l'écran des amis",

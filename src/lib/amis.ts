@@ -14,6 +14,18 @@ export type PointAmi = {
   userId: string;
   /** Nom affiché, ou un libellé neutre si le compte n'en a pas. */
   nom: string;
+  /** Identifiant public choisi par l'ami, ou null s'il n'en a pas. */
+  identifiantPublic: string | null;
+  /** Teinte de son avatar — jamais absente : une teinte de repli est posée. */
+  avatarCouleur: CouleurAvatar;
+  /**
+   * L'ami partage-t-il sa progression ?
+   *
+   * Ce drapeau n'est pas décoratif : sans lui, un ami qui ne partage pas
+   * s'afficherait « n'a pas encore commencé », ce qui serait un mensonge. Les
+   * zéros qui l'accompagnent ne veulent rien dire tout seuls.
+   */
+  partage: boolean;
   /** Versets mémorisés depuis lundi. */
   versetsCetteSemaine: number;
   /** Pages équivalentes depuis lundi — une demi-page compte 0,5. */
@@ -30,6 +42,9 @@ export type PointAmi = {
 export type LigneAmiBrute = {
   user_id?: string | null;
   nom?: string | null;
+  identifiant_public?: string | null;
+  avatar_couleur?: string | null;
+  partage?: boolean | null;
   versets_cette_semaine?: number | string | null;
   pages_cette_semaine?: number | string | null;
   derniere_seance?: string | null;
@@ -51,6 +66,12 @@ export function lirePointAmi(ligne: LigneAmiBrute): PointAmi | null {
   return {
     userId: ligne.user_id,
     nom: normaliserNom(ligne.nom),
+    identifiantPublic: normaliserIdentifiantPublic(ligne.identifiant_public),
+    avatarCouleur: couleurAvatar(ligne.avatar_couleur),
+    // Le partage est VRAI par défaut, comme la colonne en base : un champ
+    // absent — une passerelle plus ancienne, une colonne oubliée dans un
+    // `select` — ne doit pas éteindre l'affichage par accident.
+    partage: ligne.partage !== false,
     versetsCetteSemaine: entier(ligne.versets_cette_semaine),
     pagesCetteSemaine: nombre(ligne.pages_cette_semaine),
     derniereSeance: normaliserDate(ligne.derniere_seance),
@@ -102,6 +123,11 @@ function normaliserDate(valeur: string | null | undefined): string | null {
  * l'encouragement.
  */
 export function resumeActivite(point: PointAmi): string {
+  // Le partage passe AVANT le reste, et ce n'est pas un détail d'ordre : sans
+  // cette ligne, un ami qui ne partage pas serait décrit par des zéros, et
+  // l'écran écrirait « n'a pas encore commencé » — la seule phrase qu'il ne
+  // faut pas écrire, parce qu'elle est fausse et qu'elle décourage.
+  if (!point.partage) return 'Ne partage pas sa progression';
   if (point.versetsCetteSemaine === 0 && point.derniereSeance === null) {
     return "N'a pas encore commencé";
   }
@@ -119,6 +145,7 @@ export function resumeActivite(point: PointAmi): string {
  * exactement ce que la fonctionnalité ne doit pas devenir.
  */
 export function ouEnEst(point: PointAmi): string {
+  if (!point.partage) return 'Progression non partagée';
   if (point.derniereSourate === null) return 'Aucune séance enregistrée';
   const sourate = `sourate ${point.derniereSourate}`;
   if (point.derniereSeance === null) return `Travaille la ${sourate}`;
@@ -155,6 +182,255 @@ export function codePlausible(saisie: string): boolean {
   return /^[A-HJ-KM-NP-Z1-9]{10}$/.test(nettoyerCodeSaisi(saisie));
 }
 
+// === Le profil public ======================================================
+
+/**
+ * Les six teintes d'avatar, dans l'ordre où l'écran les propose.
+ *
+ * Cette liste est le miroir exact de la contrainte `profiles_avatar_couleur_valide`
+ * de `supabase/amis.sql`. Elle est courte et fermée pour la même raison qu'en
+ * base : une teinte libre produirait des couples illisibles, et l'écran ne
+ * saurait plus quel texte poser dessus.
+ */
+export const COULEURS_AVATAR = ['vert', 'bleu', 'rose', 'or', 'ardoise', 'olive'] as const;
+
+export type CouleurAvatar = (typeof COULEURS_AVATAR)[number];
+
+/** Le nom français d'une teinte, pour l'écran de réglages. */
+const NOMS_COULEURS: Record<CouleurAvatar, string> = {
+  vert: 'Vert',
+  bleu: 'Bleu',
+  rose: 'Rose',
+  or: 'Or',
+  ardoise: 'Ardoise',
+  olive: 'Olive',
+};
+
+export function nomCouleurAvatar(couleur: CouleurAvatar): string {
+  return NOMS_COULEURS[couleur];
+}
+
+export function estCouleurAvatar(valeur: unknown): valeur is CouleurAvatar {
+  return typeof valeur === 'string' && (COULEURS_AVATAR as readonly string[]).includes(valeur);
+}
+
+/**
+ * La teinte d'un avatar, jamais absente.
+ *
+ * Une teinte inconnue — une valeur écrite à la main en base, une teinte retirée
+ * plus tard — retombe sur la première au lieu de laisser un disque sans
+ * couleur, qui se lirait comme un chargement qui n'a pas abouti.
+ */
+export function couleurAvatar(valeur: string | null | undefined): CouleurAvatar {
+  return estCouleurAvatar(valeur) ? valeur : COULEURS_AVATAR[0];
+}
+
+/**
+ * Les une ou deux initiales d'un pseudonyme, pour dessiner l'avatar.
+ *
+ * `Array.from` plutôt que l'indexation : un pseudonyme peut commencer par un
+ * caractère hors du plan de base (un emoji, une lettre arabe ornée), qui
+ * occupe deux unités UTF-16. `mot[0]` en rendrait alors la moitié — un
+ * caractère de remplacement, ou rien.
+ */
+export function initiales(nom: string | null | undefined): string {
+  const mots = (typeof nom === 'string' ? nom : '')
+    .trim()
+    .split(/\s+/)
+    .filter((mot) => mot.length > 0);
+  if (mots.length === 0) return '?';
+  return mots
+    .slice(0, 2)
+    .map((mot) => Array.from(mot)[0] ?? '')
+    .join('')
+    .toUpperCase();
+}
+
+/**
+ * L'identifiant public, nettoyé avant d'être proposé ou envoyé.
+ *
+ * Trois nettoyages, et chacun répond à une saisie réelle : l'arobase que l'on
+ * recopie machinalement, les espaces d'un pseudonyme que l'on tape comme on
+ * l'écrit, et la casse — un identifiant public se dicte, donc il ne doit pas
+ * dépendre d'une majuscule.
+ */
+export function nettoyerIdentifiantPublic(saisie: string): string {
+  return saisie
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+/**
+ * Un identifiant public est-il plausible ?
+ *
+ * Miroir de la contrainte `profiles_public_id_format` : trois signes au
+ * minimum, trente au plus, une lettre d'abord. On le dit à l'écran avant
+ * d'envoyer, pour prévenir plutôt que de refuser.
+ */
+export function identifiantPlausible(saisie: string): boolean {
+  return /^[a-z][a-z0-9_]{2,29}$/.test(nettoyerIdentifiantPublic(saisie));
+}
+
+/** `apprenant_a` → `@apprenant_a`, pour l'affichage. Vide s'il n'y en a pas. */
+export function formaterIdentifiantPublic(valeur: string | null | undefined): string {
+  const propre = normaliserIdentifiantPublic(valeur);
+  return propre === null ? '' : `@${propre}`;
+}
+
+function normaliserIdentifiantPublic(valeur: string | null | undefined): string | null {
+  if (typeof valeur !== 'string') return null;
+  const propre = valeur.trim().toLowerCase();
+  return propre.length === 0 ? null : propre;
+}
+
+// === Les demandes ==========================================================
+
+/**
+ * Une demande d'ami, dans un sens ou dans l'autre.
+ *
+ * `recue` dit de quel côté on est. C'est la base qui le calcule — elle seule
+ * sait qui est `de` et qui est `vers` — et l'écran s'en sert pour ranger la
+ * ligne dans « Reçues » ou dans « Envoyées » sans refaire la comparaison.
+ */
+export type DemandeAmi = {
+  demandeur: string;
+  destinataire: string;
+  nom: string;
+  identifiantPublic: string | null;
+  avatarCouleur: CouleurAvatar;
+  createdAt: string | null;
+  recue: boolean;
+};
+
+export type LigneDemandeBrute = {
+  demandeur?: string | null;
+  destinataire?: string | null;
+  nom?: string | null;
+  identifiant_public?: string | null;
+  avatar_couleur?: string | null;
+  created_at?: string | null;
+  recue?: boolean | null;
+};
+
+/**
+ * L'identifiant de l'AUTRE, selon le côté où l'on est.
+ *
+ * Une seule fonction, appelée par les deux lectures : recalculer cette
+ * bascule dans chaque écran est exactement la forme où l'un des deux finit
+ * par se tromper de sens — et l'erreur serait invisible, puisqu'un
+ * identifiant est un identifiant.
+ */
+export function autrePartie(demande: DemandeAmi): string {
+  return demande.recue ? demande.demandeur : demande.destinataire;
+}
+
+export function lireDemande(ligne: LigneDemandeBrute): DemandeAmi | null {
+  if (typeof ligne.demandeur !== 'string' || ligne.demandeur.length === 0) return null;
+  if (typeof ligne.destinataire !== 'string' || ligne.destinataire.length === 0) return null;
+  return {
+    demandeur: ligne.demandeur,
+    destinataire: ligne.destinataire,
+    nom: normaliserNom(ligne.nom),
+    identifiantPublic: normaliserIdentifiantPublic(ligne.identifiant_public),
+    avatarCouleur: couleurAvatar(ligne.avatar_couleur),
+    createdAt: normaliserDate(ligne.created_at),
+    recue: ligne.recue === true,
+  };
+}
+
+/** Sépare une liste de demandes en deux, sans la parcourir deux fois. */
+export function repartirDemandes(demandes: DemandeAmi[]): {
+  recues: DemandeAmi[];
+  envoyees: DemandeAmi[];
+} {
+  const recues: DemandeAmi[] = [];
+  const envoyees: DemandeAmi[] = [];
+  for (const d of demandes) (d.recue ? recues : envoyees).push(d);
+  return { recues, envoyees };
+}
+
+// === Les blocages ==========================================================
+
+export type BlocageAmi = {
+  bloque: string;
+  nom: string;
+  identifiantPublic: string | null;
+  avatarCouleur: CouleurAvatar;
+  createdAt: string | null;
+};
+
+export type LigneBlocageBrute = {
+  bloque?: string | null;
+  nom?: string | null;
+  identifiant_public?: string | null;
+  avatar_couleur?: string | null;
+  created_at?: string | null;
+};
+
+export function lireBlocage(ligne: LigneBlocageBrute): BlocageAmi | null {
+  if (typeof ligne.bloque !== 'string' || ligne.bloque.length === 0) return null;
+  return {
+    bloque: ligne.bloque,
+    nom: normaliserNom(ligne.nom),
+    identifiantPublic: normaliserIdentifiantPublic(ligne.identifiant_public),
+    avatarCouleur: couleurAvatar(ligne.avatar_couleur),
+    createdAt: normaliserDate(ligne.created_at),
+  };
+}
+
+// === La recherche par identifiant public ===================================
+
+export type ProfilTrouve = {
+  userId: string;
+  nom: string;
+  identifiantPublic: string | null;
+  avatarCouleur: CouleurAvatar;
+  dejaAmi: boolean;
+  demandeEnvoyee: boolean;
+  demandeRecue: boolean;
+};
+
+export type LigneRechercheBrute = {
+  user_id?: string | null;
+  nom?: string | null;
+  identifiant_public?: string | null;
+  avatar_couleur?: string | null;
+  deja_ami?: boolean | null;
+  demande_envoyee?: boolean | null;
+  demande_recue?: boolean | null;
+};
+
+export function lireProfilTrouve(ligne: LigneRechercheBrute): ProfilTrouve | null {
+  if (typeof ligne.user_id !== 'string' || ligne.user_id.length === 0) return null;
+  return {
+    userId: ligne.user_id,
+    nom: normaliserNom(ligne.nom),
+    identifiantPublic: normaliserIdentifiantPublic(ligne.identifiant_public),
+    avatarCouleur: couleurAvatar(ligne.avatar_couleur),
+    dejaAmi: ligne.deja_ami === true,
+    demandeEnvoyee: ligne.demande_envoyee === true,
+    demandeRecue: ligne.demande_recue === true,
+  };
+}
+
+/**
+ * Ce qu'on peut faire d'un profil trouvé.
+ *
+ * L'ordre des cas n'est pas indifférent : « déjà ami » passe avant « demande
+ * en cours », parce qu'une amitié et une demande ne coexistent jamais — et si
+ * les deux étaient vrais par accident, c'est l'amitié qu'il faut montrer.
+ */
+export type SituationProfil = 'deja_ami' | 'demande_envoyee' | 'demande_recue' | 'libre';
+
+export function situationProfil(profil: ProfilTrouve): SituationProfil {
+  if (profil.dejaAmi) return 'deja_ami';
+  if (profil.demandeEnvoyee) return 'demande_envoyee';
+  if (profil.demandeRecue) return 'demande_recue';
+  return 'libre';
+}
+
 /**
  * Le message à montrer quand l'ajout échoue.
  *
@@ -170,4 +446,21 @@ export function messageErreurAmi(code: string | null, message: string | null): s
   if (code === '23505') return 'Vous êtes déjà amis.';
   const propre = (message ?? '').trim();
   return propre.length > 0 ? propre : "L'ajout n'a pas pu aboutir. Réessayez.";
+}
+
+/**
+ * Le message d'un refus d'envoi de demande.
+ *
+ * Il se distingue de `messageErreurAmi` sur un point, et ce point compte :
+ * `42501` y veut dire deux choses très différentes — « vous ne pouvez pas agir
+ * au nom d'un autre » (un mensonge sur l'identité, que l'utilisateur ne
+ * provoquera jamais) et « ce compte ne peut pas recevoir votre demande » (un
+ * blocage, ou un compte qui n'accepte rien). C'est la seconde que l'écran doit
+ * dire, et elle ne doit jamais laisser deviner un blocage : la personne bloquée
+ * n'apprend pas qu'elle l'est.
+ */
+export function messageRefusDemande(code: string | null, message: string | null): string {
+  if (code === '42501') return "Cette demande n'a pas pu être envoyée.";
+  if (code === '23505') return 'Vous êtes déjà amis.';
+  return messageErreurAmi(code, message);
 }

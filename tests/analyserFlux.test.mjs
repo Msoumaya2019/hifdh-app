@@ -4,21 +4,69 @@
 // flux volontairement fautif dans un dossier temporaire, et exige que le
 // contrôle le refuse. Un cas de référence vérifie qu'un flux correct passe :
 // sans lui, un contrôle qui refuse tout passerait pour un bon contrôle.
+//
+// Les trois derniers cas portent sur la LISTE FERMÉE des flux attendus. Ils ne
+// peuvent pas être obtenus en mutant les vrais fichiers, puisqu'ils portent sur
+// la présence ou l'absence d'un fichier, et non sur son contenu : ils copient le
+// dossier réel dans un dossier temporaire. C'est le seul contrôle du dépôt dont
+// l'absence d'un sujet produirait un vert, et donc le seul qu'un banc doive
+// atteindre ainsi.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ANALYSEUR = fileURLToPath(new URL('../scripts/analyser-flux.mjs', import.meta.url));
+const FLUX_REELS = fileURLToPath(new URL('../.github/workflows', import.meta.url));
 
+/** Recopie les vrais flux dans un dossier temporaire, un fichier par un fichier. */
+function copierLesVraisFlux(dossier) {
+  for (const nom of readdirSync(FLUX_REELS)) {
+    cpSync(join(FLUX_REELS, nom), join(dossier, nom));
+  }
+}
+
+/**
+ * Analyse un flux fautif, écrit dans un dossier qui porte par ailleurs les VRAIS
+ * flux du dépôt.
+ *
+ * POURQUOI LES VRAIS FLUX, ET NON UN SEUL FICHIER. La liste des flux attendus
+ * est fermée. Un dossier réduit au seul fichier fautif serait donc refusé pour
+ * DEUX raisons à la fois : le défaut visé, et l'absence des autres flux. Le
+ * contrôle sortirait en 1, le banc serait vert, et il n'aurait rien mesuré —
+ * exactement le piège que ce fichier existe pour éviter.
+ *
+ * Le flux fautif prend le nom d'un flux attendu (`ci.yml`), pour n'être
+ * lui-même signalé ni comme absent, ni comme non déclaré.
+ */
 function analyser(contenu) {
   const dossier = mkdtempSync(join(tmpdir(), 'flux-'));
   try {
-    writeFileSync(join(dossier, 'flux.yml'), contenu, 'utf8');
+    copierLesVraisFlux(dossier);
+    writeFileSync(join(dossier, 'ci.yml'), contenu, 'utf8');
+    const resultat = spawnSync(process.execPath, [ANALYSEUR, dossier], { encoding: 'utf8' });
+    return { code: resultat.status, sortie: `${resultat.stdout}${resultat.stderr}` };
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Analyse une copie des vrais flux, après l'avoir modifiée.
+ *
+ * Sert à la fermeture de la liste : c'est le seul contrôle du dépôt dont
+ * l'absence d'un sujet produirait un vert, et aucune mutation des vrais fichiers
+ * ne peut l'atteindre — d'où ce dossier temporaire.
+ */
+function analyserCopie(modifier) {
+  const dossier = mkdtempSync(join(tmpdir(), 'flux-'));
+  try {
+    copierLesVraisFlux(dossier);
+    modifier(dossier);
     const resultat = spawnSync(process.execPath, [ANALYSEUR, dossier], { encoding: 'utf8' });
     return { code: resultat.status, sortie: `${resultat.stdout}${resultat.stderr}` };
   } finally {
@@ -202,4 +250,39 @@ test('les vrais flux du dépôt passent le contrôle', () => {
   const resultat = spawnSync(process.execPath, [ANALYSEUR], { encoding: 'utf8' });
   assert.equal(resultat.status, 0, `${resultat.stdout}${resultat.stderr}`);
   assert.match(resultat.stdout, /Aucun problème/);
+});
+
+// ---------------------------------------------------------------------------
+// La fermeture de la liste des flux attendus.
+//
+// Ces trois cas ne peuvent PAS être obtenus en mutant les vrais fichiers : ils
+// portent sur l'absence ou sur l'ajout d'un fichier, pas sur son contenu. Un
+// dossier temporaire est donc le seul moyen de les éprouver.
+//
+// Le premier des trois est le témoin : sans lui, un contrôle qui refuserait
+// toute copie passerait pour concluant, et le refus des deux autres ne prouverait
+// rien.
+// ---------------------------------------------------------------------------
+
+test('la copie intacte des vrais flux passe : le refus vient du retrait, pas de la copie', () => {
+  const resultat = analyserCopie(() => {});
+  assert.equal(resultat.code, 0, resultat.sortie);
+});
+
+test('un flux attendu absent du dossier est refusé, et nommé', () => {
+  const resultat = analyserCopie((dossier) => rmSync(join(dossier, 'ci.yml')));
+  assert.equal(resultat.code, 1, resultat.sortie);
+  assert.match(resultat.sortie, /\[flux-absent\]/);
+  assert.match(resultat.sortie, /ci\.yml/);
+});
+
+test('un flux présent mais non déclaré est refusé, et nommé', () => {
+  // Le flux ajouté est VALIDE : sans cela, le refus viendrait de l'analyse du
+  // YAML ou de la syntaxe, et le banc mesurerait autre chose que la liste.
+  const resultat = analyserCopie((dossier) =>
+    writeFileSync(join(dossier, 'extra.yml'), FLUX_CORRECT, 'utf8')
+  );
+  assert.equal(resultat.code, 1, resultat.sortie);
+  assert.match(resultat.sortie, /\[flux-non-declare\]/);
+  assert.match(resultat.sortie, /extra\.yml/);
 });

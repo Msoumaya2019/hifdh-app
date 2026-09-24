@@ -95,8 +95,12 @@ MUTATIONS = [
     # --- La forme des lignes -------------------------------------------------
     (
         "src/lib/amis.ts",
-        "  if (typeof ligne.user_id !== 'string' || ligne.user_id.length === 0) return null;",
-        "",
+        # L'ancre porte la LIGNE DE SIGNATURE, et pas seulement la garde : depuis
+        # que `lireProfilTrouve` lit elle aussi un `user_id`, la garde seule
+        # existe en DEUX exemplaires et ne désigne plus rien. La signature, elle,
+        # n'appartient qu'à cette fonction.
+        "export function lirePointAmi(ligne: LigneAmiBrute): PointAmi | null {\n  if (typeof ligne.user_id !== 'string' || ligne.user_id.length === 0) return null;",
+        "export function lirePointAmi(ligne: LigneAmiBrute): PointAmi | null {",
         "une ligne sans identifiant devient un ami : on ne peut plus la retirer",
     ),
     (
@@ -161,6 +165,62 @@ MUTATIONS = [
         "  const propre = (message ?? '').trim();\n  return propre.length > 0 ? propre : \"L'ajout n'a pas pu aboutir. Réessayez.\";",
         "  return '';",
         "un code d'erreur inconnu laisse l'utilisateur sans phrase",
+    ),
+    # --- Le profil public ----------------------------------------------------
+    (
+        "src/lib/amis.ts",
+        "    partage: ligne.partage !== false,",
+        "    partage: ligne.partage === true,",
+        "un champ « partage » absent eteint l'affichage : l'ami passe pour inactif",
+    ),
+    (
+        "src/lib/amis.ts",
+        "  if (!point.partage) return 'Ne partage pas sa progression';\n",
+        "",
+        "un ami qui ne partage pas est decrit par des zeros : « n'a pas encore commence »",
+    ),
+    (
+        "src/lib/amis.ts",
+        "  return estCouleurAvatar(valeur) ? valeur : COULEURS_AVATAR[0];",
+        "  return valeur as CouleurAvatar;",
+        "une teinte inconnue passe telle quelle : l'avatar n'a plus de couleur",
+    ),
+    (
+        "src/lib/amis.ts",
+        "    .map((mot) => Array.from(mot)[0] ?? '')",
+        "    .map((mot) => mot[0] ?? '')",
+        "un signe hors du plan de base est coupe en deux : l'initiale devient un caractere de remplacement",
+    ),
+    (
+        "src/lib/amis.ts",
+        "    .replace(/\\s+/g, '_');",
+        "    .replace(/\\s+/g, '');",
+        "les espaces d'un identifiant sont supprimes au lieu d'etre lies : deux personnes se confondent",
+    ),
+    (
+        "src/lib/amis.ts",
+        "  return /^[a-z][a-z0-9_]{2,29}$/.test(nettoyerIdentifiantPublic(saisie));",
+        "  return /^[a-z0-9_]{3,30}$/.test(nettoyerIdentifiantPublic(saisie));",
+        "un identifiant commencant par un chiffre passe : il se confond avec un nombre",
+    ),
+    (
+        "src/lib/amis.ts",
+        "  return demande.recue ? demande.demandeur : demande.destinataire;",
+        "  return demande.recue ? demande.destinataire : demande.demandeur;",
+        "l'autre partie d'une demande est prise a l'envers : l'ecran nomme la mauvaise personne",
+    ),
+    (
+        "src/lib/amis.ts",
+        "  if (profil.dejaAmi) return 'deja_ami';\n  if (profil.demandeEnvoyee) return 'demande_envoyee';",
+        "  if (profil.demandeEnvoyee) return 'demande_envoyee';\n  if (profil.dejaAmi) return 'deja_ami';",
+        "l'amitie passe apres la demande : on propose d'ajouter quelqu'un qui l'est deja",
+    ),
+    # --- La garde du modele, dans le SQL ------------------------------------
+    (
+        "supabase/amis.sql",
+        "    IF NOT EXISTS (\n      SELECT 1 FROM public.demandes_amis WHERE de = p_de AND vers = p_moi\n    ) THEN\n      RETURN FALSE;\n    END IF;\n\n",
+        "",
+        "accepter ne verifie plus qu'une demande existe : on se lie a un inconnu sans rien avoir demande",
     ),
 ]
 

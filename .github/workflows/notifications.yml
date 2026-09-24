@@ -1,0 +1,87 @@
+name: Envoi des notifications
+
+# VIDE LA BOÎTE D'ENVOI, ET RIEN D'AUTRE.
+#
+# Ce flux ne décide de rien. Il appelle la fonction serveur, qui prend les
+# lignes en attente et les envoie. Toute la logique — qui reçoit quoi, et ce
+# qui ne doit pas sortir — vit dans la base et dans la fonction, jamais ici.
+#
+# POURQUOI UN ORDONNANCEUR, ET NON LE TÉLÉPHONE DE L'EXPÉDITEUR
+# -------------------------------------------------------------
+# Une notification déclenchée par l'appareil de celui qui écrit n'arriverait
+# pas s'il ferme l'application aussitôt après avoir appuyé sur « envoyer » —
+# ce qui est le geste le plus courant. La ligne est donc écrite par un
+# DÉCLENCHEUR de la base au moment de l'insertion, et ce flux se contente de
+# venir la chercher. Un message écrit puis l'application fermée est notifié.
+#
+# POURQUOI CINQ MINUTES
+# ---------------------
+# C'est la plus petite période que GitHub honore de façon fiable. Une
+# planification plus serrée est silencieusement arrondie, et surtout : elle
+# donnerait l'illusion d'un envoi immédiat alors que le délai réel ne bouge
+# pas. Cinq minutes est un délai honnête pour une messagerie entre amis, et il
+# est préférable à une promesse d'instantanéité qui ne serait pas tenue.
+#
+# TANT QUE LE SECRET N'EST PAS POSE, CE FLUX NE FAIT RIEN — ET LE DIT.
+# Il sort en succès avec une annotation, plutôt qu'en échec toutes les cinq
+# minutes : un flux rouge en permanence pour une fonctionnalité qui n'est pas
+# encore branchée apprendrait à ignorer le rouge, ce qui est pire que le bruit.
+# Le jour où le secret est posé, l'envoi fonctionne sans modifier ce fichier.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+# Le jeton n'a besoin que de lire le dépôt : aucun artefact, aucune release.
+permissions:
+  contents: read
+
+jobs:
+  vider-la-boite:
+    name: Vider la boîte d'envoi
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Appeler la fonction d'envoi
+        env:
+          # L'adresse du projet est une VARIABLE, et non un secret : elle est
+          # déjà publique — elle est compilée dans l'application distribuée.
+          SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+          # Le secret partagé, lui, ne doit jamais entrer dans un binaire : il
+          # est ce qui empêche n'importe qui de faire sonner les téléphones de
+          # tous les utilisateurs.
+          NOTIFICATIONS_SECRET: ${{ secrets.NOTIFICATIONS_SECRET }}
+        run: |
+          set -u
+
+          manque=""
+          if [ -z "${SUPABASE_URL}" ]; then
+            manque="la variable EXPO_PUBLIC_SUPABASE_URL"
+          fi
+          if [ -z "${NOTIFICATIONS_SECRET}" ]; then
+            manque="${manque:+${manque} et }le secret NOTIFICATIONS_SECRET"
+          fi
+
+          if [ -n "${manque}" ]; then
+            echo "::notice title=Notifications non configurées::Aucun envoi n'a été tenté : il manque ${manque}. La marche à suivre est dans docs/notifications-push.md."
+            exit 0
+          fi
+
+          # `--fail-with-body` : un refus de la fonction (401 sur un mauvais
+          # secret, 503 sur une configuration incomplète) doit rendre ce flux
+          # rouge, avec le corps de la réponse dans le journal. Un `curl` sans
+          # cette option sortirait en succès sur une erreur serveur, et le flux
+          # annoncerait « vert » sans qu'aucune notification ne soit partie.
+          curl \
+            --silent \
+            --show-error \
+            --fail-with-body \
+            --max-time 120 \
+            --retry 2 \
+            --retry-delay 5 \
+            -X POST "${SUPABASE_URL}/functions/v1/envoyer-notifications" \
+            -H "x-notifications-secret: ${NOTIFICATIONS_SECRET}" \
+            -H 'Content-Type: application/json' \
+            -d '{}'

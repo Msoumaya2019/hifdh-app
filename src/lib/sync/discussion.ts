@@ -19,11 +19,18 @@ import { utilisateurCourant } from '@/lib/auth';
 import { getClientDonnees, type ClientSupabase } from '@/lib/supabase';
 
 import {
+  lireApercu,
   lireMessage,
+  lireNonLus,
   messageErreurDiscussion,
   preparerEnvoi,
+  totalDesNonLus,
+  type ApercuFil,
+  type LigneApercuBrute,
   type LigneMessageBrute,
+  type LigneNonLusBrute,
   type MessageDiscussion,
+  type NonLusFil,
 } from '@/lib/discussion';
 
 export type ResultatFil =
@@ -215,6 +222,203 @@ async function gesteDeModeration(fonction: string, messageId: number): Promise<R
   return { statut: 'ok', fait: appel.data === true };
 }
 
+// === Les non-lus et les aperçus ============================================
+
+export type ResultatNonLus =
+  | { statut: 'ok'; fils: NonLusFil[]; total: number }
+  | { statut: 'indisponible' }
+  | { statut: 'non_authentifie' }
+  | { statut: 'refuse'; code: string | null; message: string }
+  | { statut: 'erreur'; message: string };
+
+export type ResultatApercus =
+  | { statut: 'ok'; apercus: ApercuFil[] }
+  | { statut: 'indisponible' }
+  | { statut: 'non_authentifie' }
+  | { statut: 'refuse'; code: string | null; message: string }
+  | { statut: 'erreur'; message: string };
+
+export type ResultatTotal =
+  | { statut: 'ok'; total: number }
+  | { statut: 'indisponible' }
+  | { statut: 'non_authentifie' }
+  | { statut: 'refuse'; code: string | null; message: string }
+  | { statut: 'erreur'; message: string };
+
+/**
+ * Ce qui reste à lire, fil par fil, et le total.
+ *
+ * Le total est calculé ICI, à partir des lignes reçues, et non demandé à
+ * `total_non_lus` : l'écran des messages a déjà les lignes sous la main, et un
+ * second aller-retour pour une addition serait un aller-retour de trop. La
+ * fonction SQL reste, elle, pour la pastille de l'accueil — qui n'a aucune
+ * raison de charger les lignes détaillées pour afficher un nombre.
+ *
+ * Une seule addition existe côté client, `totalDesNonLus` : c'est elle qui
+ * porte la règle, ici comme ailleurs.
+ */
+export async function mesNonLus(): Promise<ResultatNonLus> {
+  const ctx = await contexte();
+  if ('refus' in ctx) return refuser(ctx.refus);
+
+  const appel = await appelerRpc(ctx.client, 'non_lus_par_fil', { p_moi: ctx.userId });
+  if ('erreur' in appel) return refuserAppel(appel);
+
+  const lignes: LigneNonLusBrute[] = Array.isArray(appel.data)
+    ? (appel.data as LigneNonLusBrute[])
+    : [];
+  const fils = lignes.map(lireNonLus).filter((f): f is NonLusFil => f !== null);
+  return { statut: 'ok', fils, total: totalDesNonLus(fils) };
+}
+
+/**
+ * Le seul total, pour la pastille de l'accueil.
+ *
+ * Une fonction à part, et non `mesNonLus().total` : l'accueil affiche un
+ * nombre, il n'a donc aucune raison de charger une ligne par conversation pour
+ * l'obtenir. C'est la base qui compte, et c'est la même fonction qui sert
+ * partout — donc le même nombre.
+ */
+export async function totalNonLus(): Promise<ResultatTotal> {
+  const ctx = await contexte();
+  if ('refus' in ctx) return refuser(ctx.refus);
+
+  const appel = await appelerRpc(ctx.client, 'total_non_lus', { p_moi: ctx.userId });
+  if ('erreur' in appel) return refuserAppel(appel);
+
+  // Un `INTEGER` revient en nombre, mais rien ne l'empêche de revenir en chaîne
+  // selon la passerelle — c'est le même piège que pour les comptes par fil, et
+  // il se traite de la même façon.
+  const brut = typeof appel.data === 'number' ? appel.data : Number(appel.data ?? 0);
+  return { statut: 'ok', total: Number.isFinite(brut) ? Math.max(0, Math.round(brut)) : 0 };
+}
+
+/** Le dernier message visible de chaque fil, pour la liste des conversations. */export async function mesApercus(): Promise<ResultatApercus> {
+  const ctx = await contexte();
+  if ('refus' in ctx) return refuser(ctx.refus);
+
+  const appel = await appelerRpc(ctx.client, 'apercu_fils', { p_moi: ctx.userId });
+  if ('erreur' in appel) return refuserAppel(appel);
+
+  const lignes: LigneApercuBrute[] = Array.isArray(appel.data)
+    ? (appel.data as LigneApercuBrute[])
+    : [];
+  const apercus = lignes.map(lireApercu).filter((a): a is ApercuFil => a !== null);
+  return { statut: 'ok', apercus };
+}
+
+/**
+ * Marque un fil comme lu.
+ *
+ * Aucun horodatage n'est transmis : la fonction SQL date avec `NOW()`, et
+ * c'est la seule forme qui protège d'un téléphone à l'heure fausse. Le
+ * paramètre n'existe pas, donc l'erreur n'est pas possible.
+ */
+export async function marquerFilLu(amiId: string): Promise<ResultatGeste> {
+  const ctx = await contexte();
+  if ('refus' in ctx) return refuser(ctx.refus);
+
+  const appel = await appelerRpc(ctx.client, 'marquer_fil_lu', {
+    p_moi: ctx.userId,
+    p_ami: amiId,
+  });
+  if ('erreur' in appel) return refuserAppel(appel);
+  return { statut: 'ok', fait: appel.data === true };
+}
+
+// === Le temps réel ========================================================
+
+/**
+ * La règle d'appartenance d'une ligne à un fil, et elle est PURE.
+ *
+ * Realtime ne sait filtrer que sur une colonne à la fois, et la paire d'un fil
+ * est ordonnée sur deux. On s'abonne donc sans filtre serveur, et on garde ici
+ * — ce qui laisse passer les messages de tous mes fils, et pas seulement celui
+ * qui est ouvert.
+ *
+ * Ce tri suffit, et pour une raison qu'il faut dire : une ligne dont l'un des
+ * deux membres est `amiId` et que JE peux lire ne peut avoir que moi pour
+ * second membre, puisque les politiques RLS ne laissent lire que ses propres
+ * fils. Il n'y a donc pas besoin de connaître mon identifiant pour trancher.
+ */
+export function concerneLeFil(
+  ligne: { user_a?: string | null; user_b?: string | null },
+  amiId: string
+): boolean {
+  if (amiId.length === 0) return false;
+  return ligne.user_a === amiId || ligne.user_b === amiId;
+}
+
+/** Le canal Realtime, réduit à ce qu'on lui demande. */
+interface CanalRealtime {
+  on(
+    type: 'postgres_changes',
+    filtre: Record<string, unknown>,
+    rappel: (charge: { new?: unknown }) => void
+  ): CanalRealtime;
+  subscribe(): CanalRealtime;
+}
+
+/**
+ * S'abonne aux messages qui me concernent, et rend de quoi se désabonner.
+ *
+ * SANS FILTRE SERVEUR, et c'est délibéré : Realtime ne sait filtrer que sur une
+ * colonne, alors qu'un fil se définit par une paire. Filtrer sur `user_a`
+ * laisserait passer mes fils avec d'autres amis ; filtrer sur `user_b` en
+ * laisserait passer d'autres encore. Le tri se fait donc à l'arrivée, par
+ * `concerneLeFil` — une fonction pure, éprouvée sans réseau.
+ *
+ * Ce que Realtime diffuse obéit aux MÊMES politiques RLS que le reste : on ne
+ * reçoit donc rien d'un fil qu'on n'a pas le droit de lire. L'abonnement
+ * n'ouvre rien, il évite seulement d'attendre.
+ */
+export function abonnerFil(amiId: string, surChangement: () => void): () => void {
+  return abonner(
+    `discussion:fil:${amiId}`,
+    (ligne) => {
+      if (concerneLeFil(ligne as { user_a?: string | null; user_b?: string | null }, amiId)) {
+        surChangement();
+      }
+    }
+  );
+}
+
+/** S'abonne à tous mes fils — c'est ce qu'il faut pour une pastille de non-lus. */
+export function abonnerFils(surChangement: () => void): () => void {
+  return abonner('discussion:mes-fils', () => surChangement());
+}
+
+/**
+ * Le corps commun des deux abonnements.
+ *
+ * Rend toujours une fonction de retrait, même quand il n'y a rien à retirer :
+ * un écran qui appelle ceci dans un `useEffect` attend une fonction, et lui
+ * rendre `undefined` ferait échouer le nettoyage au démontage — un défaut qui
+ * ne se voit qu'en changeant d'écran.
+ */
+function abonner(nom: string, surLigne: (ligne: unknown) => void): () => void {
+  const client = getClientDonnees();
+  if (client === null) return () => {};
+
+  const elargi = client as unknown as ClientDiscussion;
+  const canal = elargi
+    .channel(nom)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'discussion_messages' },
+      (charge) => surLigne(charge.new)
+    )
+    .subscribe();
+
+  return () => {
+    // `removeChannel` rend une promesse, et rien n'attend son issue : le canal
+    // est retiré du côté client de toute façon. On ne la laisse pas pour autant
+    // « non gérée » — une promesse rejetée sans preneur ferait remonter une
+    // erreur que personne ne peut expliquer.
+    void Promise.resolve(elargi.removeChannel(canal)).catch(() => undefined);
+  };
+}
+
 // === Le client élargi, local à ce module ===================================
 
 interface ErreurSupabase {
@@ -294,4 +498,6 @@ interface ClientDiscussion {
       error: ErreurSupabase | null;
     }>;
   };
+  channel(nom: string): CanalRealtime;
+  removeChannel(canal: CanalRealtime): PromiseLike<unknown>;
 }

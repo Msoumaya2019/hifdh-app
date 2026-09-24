@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { SauvegardeSection } from '@/components/SauvegardeSection';
 import { AmisSection } from '@/components/AmisSection';
+import { ReglagesCompteSection } from '@/components/ReglagesCompteSection';
 import {
   colors,
   fontSizes,
@@ -290,6 +291,8 @@ export default function ProfilScreen() {
 
         {/* Suivi entre amis */}
         <AmisSection />
+
+        <ReglagesCompteSection />
 
         {/* À propos */}
         <Text style={styles.sectionTitle}>À propos</Text>

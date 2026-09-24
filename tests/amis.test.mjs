@@ -17,15 +17,29 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  autrePartie,
   codePlausible,
+  couleurAvatar,
+  COULEURS_AVATAR,
   formaterCodeAmi,
   formaterDateCourte,
+  formaterIdentifiantPublic,
+  identifiantPlausible,
+  initiales,
+  lireBlocage,
+  lireDemande,
   lirePointAmi,
+  lireProfilTrouve,
   messageErreurAmi,
+  messageRefusDemande,
   nettoyerCodeSaisi,
+  nettoyerIdentifiantPublic,
+  nomCouleurAvatar,
   normaliserNom,
   ouEnEst,
+  repartirDemandes,
   resumeActivite,
+  situationProfil,
 } from '@/lib/amis';
 
 const RACINE = fileURLToPath(new URL('..', import.meta.url));
@@ -270,5 +284,196 @@ test('l’autorisation n’est pas verifiee dans le service : elle reste en base
     /if\s*\(\s*amiId\s*===\s*ctx\.userId\s*\)/,
     'le refus d’une action sur soi-même vient de la base, pas du client'
   );
-  assert.match(source, /ajouter_ami_par_code/, 'l’ajout passe par la fonction SQL dédiée');
+  assert.match(source, /demander_ami_par_code/, 'l’ajout passe par la fonction SQL dédiée');
+  // Et l'ancien nom ne doit plus subsister : `ajouter_ami_par_code` créait la
+  // relation sans acceptation. Le garder ici, même appelé, aurait laissé
+  // croire à l'écran qu'une amitié est faite là où une demande part.
+  assert.doesNotMatch(
+    source,
+    /'ajouter_ami_par_code'/,
+    'la fonction qui liait sans demander n’est plus appelée'
+  );
+});
+
+test('le code SQL d’un refus remonte jusqu’a l’ecran', () => {
+  const source = readFileSync(join(RACINE, 'src/lib/sync/amis.ts'), 'utf8');
+  // Sans le code, l'écran ne lit que le texte — que la base peut reformuler
+  // sans prévenir. « Ce code n'existe pas » se mettrait alors à ressembler à
+  // « la base est en panne », et l'utilisateur chercherait au mauvais endroit.
+  assert.match(source, /code:\s*codeErreur\(/, 'le code est conservé à côté du message');
+  assert.match(source, /function codeErreur/, 'le code se lit sous ses deux noms');
+  assert.match(source, /details\?\.match/, 'le code peut venir de « details » selon la passerelle');
+});
+
+// === Le profil public =======================================================
+
+test('une ligne sans « partage » est traitee comme partagee', () => {
+  // Le defaut de la colonne est VRAI, et le defaut de lecture doit dire la
+  // meme chose. Un champ absent — une passerelle plus ancienne, une colonne
+  // oubliee dans un `select` — ne doit pas eteindre l'affichage par accident.
+  const point = lirePointAmi({ user_id: 'a' });
+  assert.equal(point.partage, true);
+});
+
+test('une ligne qui ne partage pas est lue comme telle', () => {
+  const point = lirePointAmi({ user_id: 'a', partage: false, versets_cette_semaine: 0 });
+  assert.equal(point.partage, false);
+});
+
+test('un ami qui ne partage pas est dit tel quel, jamais « n’a pas commence »', () => {
+  // C'est la phrase qui ne doit pas sortir : elle est fausse (il a peut-etre
+  // beaucoup avance) et elle decourage, ce qui est le contraire du but.
+  const point = lirePointAmi({ user_id: 'a', partage: false });
+  assert.equal(resumeActivite(point), 'Ne partage pas sa progression');
+  assert.equal(ouEnEst(point), 'Progression non partagée');
+});
+
+test('les initiales tiennent en deux signes, et jamais en vide', () => {
+  assert.equal(initiales('Aicha Benali'), 'AB');
+  assert.equal(initiales('Mohamed'), 'M');
+  assert.equal(initiales('   '), '?');
+  assert.equal(initiales(null), '?');
+  // Un signe hors du plan de base occupe DEUX unites UTF-16 : `mot[0]` en
+  // rendrait la moitie, c'est-a-dire un caractere de remplacement.
+  assert.equal(initiales('\u{1F600} Karim'), '\u{1F600}K');
+});
+
+test('une teinte inconnue retombe sur la premiere, jamais sur rien', () => {
+  assert.equal(couleurAvatar('rose'), 'rose');
+  assert.equal(couleurAvatar('turquoise'), COULEURS_AVATAR[0]);
+  assert.equal(couleurAvatar(null), COULEURS_AVATAR[0]);
+  assert.equal(couleurAvatar(undefined), COULEURS_AVATAR[0]);
+  assert.equal(nomCouleurAvatar('or'), 'Or');
+});
+
+test('l’identifiant public se nettoie comme on le recopie', () => {
+  assert.equal(nettoyerIdentifiantPublic('@Mohamed_Ali'), 'mohamed_ali');
+  assert.equal(nettoyerIdentifiantPublic('  Aicha  '), 'aicha');
+  assert.equal(nettoyerIdentifiantPublic('Mohamed Ali'), 'mohamed_ali');
+});
+
+test('un identifiant public n’est plausible que sous sa forme reelle', () => {
+  assert.equal(identifiantPlausible('aicha'), true);
+  assert.equal(identifiantPlausible('@Aicha_2019'), true);
+  // Trois signes au minimum : en dessous, un identifiant n'est plus distinctif.
+  assert.equal(identifiantPlausible('ab'), false);
+  // Une lettre d'abord : sinon un identifiant se confond avec un nombre.
+  assert.equal(identifiantPlausible('1aicha'), false);
+  assert.equal(identifiantPlausible('aicha!'), false);
+  assert.equal(identifiantPlausible('a'.repeat(31)), false);
+});
+
+test('l’identifiant public s’affiche avec son arobase', () => {
+  assert.equal(formaterIdentifiantPublic('aicha'), '@aicha');
+  assert.equal(formaterIdentifiantPublic(null), '');
+  assert.equal(formaterIdentifiantPublic(''), '');
+});
+
+// === Les demandes et les blocages ===========================================
+
+const DEMANDE_RECUE = {
+  demandeur: '11111111-1111-1111-1111-111111111111',
+  destinataire: '22222222-2222-2222-2222-222222222222',
+  nom: 'Aicha',
+  avatar_couleur: 'rose',
+  created_at: '2026-09-22T10:00:00Z',
+  recue: true,
+};
+
+test('une demande se lit, et son identifiant horodate perd son heure', () => {
+  const demande = lireDemande(DEMANDE_RECUE);
+  assert.notEqual(demande, null);
+  assert.equal(demande.nom, 'Aicha');
+  assert.equal(demande.avatarCouleur, 'rose');
+  assert.equal(demande.createdAt, '2026-09-22');
+  assert.equal(demande.recue, true);
+});
+
+test('l’autre partie d’une demande depend du cote ou l’on est', () => {
+  const recue = lireDemande(DEMANDE_RECUE);
+  const envoyee = lireDemande({ ...DEMANDE_RECUE, recue: false });
+  // Se tromper de cote ne leverait rien : un identifiant est un identifiant,
+  // et l'ecran afficherait simplement la mauvaise personne.
+  assert.equal(autrePartie(recue), DEMANDE_RECUE.demandeur);
+  assert.equal(autrePartie(envoyee), DEMANDE_RECUE.destinataire);
+});
+
+test('les demandes se repartissent en deux sections', () => {
+  const a = lireDemande(DEMANDE_RECUE);
+  const b = lireDemande({ ...DEMANDE_RECUE, recue: false });
+  const { recues, envoyees } = repartirDemandes([a, b]);
+  assert.equal(recues.length, 1);
+  assert.equal(envoyees.length, 1);
+  assert.equal(recues[0].recue, true);
+});
+
+test('une demande sans les deux identifiants ne devient pas une ligne', () => {
+  assert.equal(lireDemande({ demandeur: 'a' }), null);
+  assert.equal(lireDemande({ destinataire: 'b' }), null);
+  assert.equal(lireDemande({}), null);
+});
+
+test('un blocage se lit avec le nom de celui qu’on a bloque', () => {
+  const blocage = lireBlocage({ bloque: 'b', nom: 'Karim', avatar_couleur: 'bleu' });
+  assert.notEqual(blocage, null);
+  assert.equal(blocage.bloque, 'b');
+  assert.equal(blocage.nom, 'Karim');
+  assert.equal(lireBlocage({}), null);
+});
+
+test('un profil trouve se range dans une seule situation, dans le bon ordre', () => {
+  const base = { user_id: 'a', nom: 'Aicha' };
+  assert.equal(situationProfil(lireProfilTrouve(base)), 'libre');
+  assert.equal(
+    situationProfil(lireProfilTrouve({ ...base, demande_envoyee: true })),
+    'demande_envoyee'
+  );
+  assert.equal(situationProfil(lireProfilTrouve({ ...base, demande_recue: true })), 'demande_recue');
+  // « deja ami » passe avant tout le reste : si les deux etaient vrais par
+  // accident, c'est l'amitie qu'il faut montrer, parce qu'elle rend le bouton
+  // inutile.
+  assert.equal(
+    situationProfil(lireProfilTrouve({ ...base, deja_ami: true, demande_envoyee: true })),
+    'deja_ami'
+  );
+});
+
+test('un refus de demande ne dit jamais que l’on est bloque', () => {
+  // 42501 couvre deux choses : « vous mentez sur votre identite » et « ce
+  // compte ne peut pas recevoir votre demande ». Dire la seconde sans jamais
+  // laisser deviner un blocage est exactement ce qu'il faut.
+  const phrase = messageRefusDemande('42501', 'raw');
+  assert.ok(phrase.length > 0);
+  assert.doesNotMatch(phrase, /bloqu/i);
+  assert.equal(messageRefusDemande('23505', 'raw'), 'Vous êtes déjà amis.');
+  // Un code inconnu retombe sur le message general, jamais sur du vide.
+  assert.ok(messageRefusDemande(null, 'Failed to fetch').length > 0);
+});
+
+// === La garde qui tient le modele, dans le SQL ==============================
+
+test('accepter une demande exige qu’une demande existe', () => {
+  const source = readFileSync(join(RACINE, 'supabase/amis.sql'), 'utf8');
+  const corps = source.slice(source.indexOf('FUNCTION public.repondre_demande_ami'));
+  const bloc = corps.slice(0, corps.indexOf('$$;'));
+  // Sans cette garde, la politique d'insertion de `amis` acceptait d'elle-meme
+  // la paire (moi, cible) : on se liait a un inconnu sans que rien n'ait ete
+  // demande. La politique ne peut pas le voir — elle ne connait que la ligne
+  // ecrite, pas l'histoire qui l'a precedee.
+  assert.match(bloc, /IF NOT EXISTS \(\s*SELECT 1 FROM public\.demandes_amis/, 'la demande doit exister');
+  assert.match(bloc, /RETURN FALSE/, 'une demande absente rend un refus, pas une amitie');
+});
+
+test('bloquer rompt l’amitie, et le blocage est une fleche', () => {
+  const source = readFileSync(join(RACINE, 'supabase/amis.sql'), 'utf8');
+  const corps = source.slice(source.indexOf('FUNCTION public.bloquer_utilisateur'));
+  const bloc = corps.slice(0, corps.indexOf('$$;'));
+  assert.match(bloc, /DELETE FROM public\.amis/, 'bloquer rompt l’amitie');
+  assert.match(bloc, /DELETE FROM public\.demandes_amis/, 'bloquer efface les demandes en attente');
+  // L'ordre compte : le blocage d'abord. Si l'identite est fausse, on echoue
+  // avant d'avoir rompu quoi que ce soit.
+  assert.ok(
+    bloc.indexOf('INSERT INTO public.blocages') < bloc.indexOf('DELETE FROM public.amis'),
+    'le blocage s’ecrit avant la rupture'
+  );
 });

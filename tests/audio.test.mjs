@@ -33,6 +33,8 @@ import {
   urlAudioVersetId,
 } from '@/lib/audio/recitateurs';
 import {
+  NOMBRES_REPETITION,
+  PAUSES_SECONDES,
   REPETITION_MAX,
   REPETITION_PAR_DEFAUT,
   libelleCompteur,
@@ -172,6 +174,42 @@ test('un rang de verset hors de sa sourate est refusé', () => {
 });
 
 // === 2. Le réglage des répétitions ==========================================
+
+test('les valeurs offertes à l’écran sont celles de la spécification', () => {
+  // L'écran des réglages ne choisit rien : il parcourt ces deux listes, dans
+  // `LecteurAudio.tsx`. Retirer une valeur ne casse donc RIEN — pas de test
+  // rouge, pas d'erreur, pas de trace : l'écran propose simplement un choix en
+  // moins, et l'apprenant qui cherche « 2 » ne le trouve pas. C'est le défaut
+  // muet que ce test existe pour attraper.
+  //
+  // La spécification demande 1, 2, 3, 5, 10, un nombre libre, et l'infini ; et
+  // pour les pauses : aucune, 2 s, 5 s, 10 s.
+  assert.deepEqual([...NOMBRES_REPETITION], [1, 2, 3, 5, 10]);
+  assert.deepEqual([...PAUSES_SECONDES], [0, 2, 5, 10]);
+
+  // L'ordre compte aussi : c'est celui dans lequel les boutons s'affichent.
+  // Des valeurs justes mais désordonnées feraient sauter les boutons.
+  assert.deepEqual(
+    [...NOMBRES_REPETITION].sort((a, b) => a - b),
+    [...NOMBRES_REPETITION],
+    'les nombres offerts doivent monter'
+  );
+  assert.deepEqual(
+    [...PAUSES_SECONDES].sort((a, b) => a - b),
+    [...PAUSES_SECONDES],
+    'les pauses offertes doivent monter'
+  );
+
+  // La borne de la saisie libre, elle, doit accepter l'exemple même de la
+  // spécification — « 20 » répétitions. Une borne plus basse le refuserait, et
+  // la saisie retomberait en silence sur une autre valeur.
+  assert.ok(
+    REPETITION_MAX >= 20,
+    `la borne ${REPETITION_MAX} refuse l’exemple « 20 » de la spécification`
+  );
+  assert.equal(nombreBorne(20), 20);
+  assert.equal(lireRepetition({ nombre: 20 }).nombre, 20);
+});
 
 test('le réglage relu du disque est toujours utilisable', () => {
   assert.deepEqual(lireRepetition(undefined), REPETITION_PAR_DEFAUT);

@@ -19,6 +19,11 @@ hifdh-app/
 │   ├── onboarding.tsx      # Questionnaire initial (4 questions)
 │   ├── lecteur.tsx         # Lecteur du Coran (page du moushaf)
 │   ├── ecouter.tsx         # Sélection manuelle d'un passage à écouter
+│   ├── amis.tsx            # Mes amis : demandes reçues, envoyées, ajout, blocage
+│   ├── messages.tsx        # Liste des conversations, avec les non-lus
+│   ├── discussion.tsx      # Une conversation, en temps réel
+│   ├── profil-public.tsx   # Pseudonyme, identifiant public, partage
+│   ├── notifications.tsx   # Les six interrupteurs, et l'autorisation du système
 │   └── _layout.tsx         # Layout racine
 ├── src/
 │   ├── theme/              # Design system (couleurs, typographie)
@@ -40,14 +45,20 @@ hifdh-app/
 ├── assets/                 # Polices de texte (Amiri) et images
 ├── pages-moushaf/          # Les 604 images du moushaf (112,7 Mo), copiées à l'octet
 │   └── EMPREINTES.txt                # Le SHA-256 de chaque page (`sha256sum -c`)
-├── supabase/               # Schéma SQL Supabase
+├── supabase/               # Schéma SQL Supabase, et la fonction d'envoi
 │   ├── schema.sql                    # Tables, politiques RLS (rejouable)
-│   └── administration.sql            # Rôles, vérification des toumoun (rejouable)
+│   ├── administration.sql            # Rôles, vérification des toumoun (rejouable)
+│   ├── amis.sql                      # Profils publics, demandes, amitiés, blocages
+│   ├── discussions.sql               # Messages, modération, non-lus, temps réel
+│   ├── notifications.sql             # Appareils, préférences, boîte d'envoi
+│   └── functions/
+│       └── envoyer-notifications/    # Vider la boîte d'envoi (Deno, service_role)
 ├── scripts/                # Vérifications exécutables (schéma, flux, données)
 ├── tests/                  # Tests (node:test)
 ├── .github/workflows/      # CI/CD GitHub Actions
 └── docs/                   # Documentation
     ├── SECRETS.md              # Configuration, compilation, installation
+    ├── notifications-push.md   # Ce qui manque pour que les notifications partent
     ├── mise-en-page-moushaf.md # La mise en page confrontée aux images (mesuré)
     └── divisions-estimees.md   # Les limites non vérifiées (engendré)
 ```
@@ -186,6 +197,7 @@ npm run falsifier:layout   # éprouve les contrôles de mise en page
 npm run falsifier:moushaf  # éprouve les contrôles de la page du moushaf et de ses ornements
 npm run falsifier:renforcement  # éprouve les contrôles de « À renforcer »
 npm run falsifier:audio    # éprouve les contrôles du lecteur audio et du surlignage
+npm run falsifier:notifications  # éprouve les décisions, la fonction d'envoi, la déconnexion
 npm run engendrer:routes   # régénère les types de routes d'Expo Router (après un écran neuf)
 ```
 

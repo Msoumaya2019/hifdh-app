@@ -372,6 +372,21 @@ jobs:
       - name: Falsifier les contrôles des liens de courriel
         run: npm run falsifier:lien
 
+      # Les notifications : le module des décisions, et la cible d'un appui.
+      #
+      # Le défaut le plus coûteux de cette partie ne se voit pas à l'usage : le
+      # module des décisions doit n'IMPORTER RIEN. Un seul import d'Expo le
+      # rendrait inéprouvable, et il continuerait de fonctionner sur l'appareil —
+      # on ne perdrait pas la fonctionnalité, on perdrait le moyen de la
+      # vérifier. C'est la mutation qui compte le plus ici.
+      #
+      # Le second point est la cible d'un appui sur une notification : les
+      # données reçues viennent du réseau et ne sont pas fiables. Une cible
+      # construite à moitié ouvrirait un écran de discussion sans destinataire —
+      # un écran vide, sans erreur, et sans rien pour l'expliquer.
+      - name: Falsifier les contrôles des notifications
+        run: npm run falsifier:notifications
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

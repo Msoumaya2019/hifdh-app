@@ -351,3 +351,213 @@ function entierPositif(valeur: number | string | null | undefined): number | nul
   if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return null;
   return n;
 }
+
+// === Les non-lus ===========================================================
+//
+// Ce que la base rend est un compte PAR FIL, et un total. La décision qui vit
+// ici est petite mais elle compte : ce qu'on fait d'un zéro, et ce qu'on écrit
+// au-delà de neuf.
+
+/** Ce qui reste à lire dans un fil, et quand le dernier message est arrivé. */
+export type NonLusFil = {
+  /** L'identifiant de l'autre participant. */
+  autre: string;
+  /** Nombre de messages visibles de l'autre, non encore lus. */
+  nonLus: number;
+  /** Date du dernier de ces messages, ou null. */
+  dernierLe: string | null;
+};
+
+export type LigneNonLusBrute = {
+  autre?: string | null;
+  non_lus?: number | string | null;
+  dernier_le?: string | null;
+};
+
+/**
+ * Lit une ligne de non-lus.
+ *
+ * `non_lus` revient parfois en chaîne — c'est le cas de tout ce que PostgREST
+ * sérialise depuis un `BIGINT` ou un `NUMERIC`. Une chaîne comparée à un nombre
+ * échoue en silence, et un `"2"` affiché tel quel passe encore : c'est
+ * exactement le genre de défaut qui ne se voit pas sur un téléphone.
+ */
+export function lireNonLus(ligne: LigneNonLusBrute): NonLusFil | null {
+  if (typeof ligne.autre !== 'string' || ligne.autre.length === 0) return null;
+  const brut = typeof ligne.non_lus === 'number' ? ligne.non_lus : Number(ligne.non_lus ?? 0);
+  if (!Number.isFinite(brut)) return null;
+  return {
+    autre: ligne.autre,
+    nonLus: Math.max(0, Math.round(brut)),
+    dernierLe: typeof ligne.dernier_le === 'string' && ligne.dernier_le.length >= 10
+      ? ligne.dernier_le
+      : null,
+  };
+}
+
+/**
+ * Indexe les non-lus par ami.
+ *
+ * La liste des conversations parcourt les amis, et chacun cherche son compte.
+ * Un `find` dans le tableau donnerait le même résultat en O(n²), ce qui ne se
+ * voit pas à trois amis et se voit à trois cents.
+ */
+export function indexerNonLus(lignes: NonLusFil[]): Record<string, NonLusFil> {
+  const index: Record<string, NonLusFil> = {};
+  for (const ligne of lignes) index[ligne.autre] = ligne;
+  return index;
+}
+
+export function totalDesNonLus(lignes: NonLusFil[]): number {
+  return lignes.reduce((somme, ligne) => somme + ligne.nonLus, 0);
+}
+
+/**
+ * La pastille : ce qu'on écrit dessus, ou `null` pour « rien ».
+ *
+ * `null` et non « 0 » : une pastille qui affiche zéro est un signe qui ne dit
+ * rien et qui attire l'œil — le contraire de ce qu'on veut d'une notification.
+ *
+ * Et « 9+ » au-delà de neuf : une pastille de trois chiffres déborde de son
+ * icône, se fait couper, et devient illisible. Le chiffre exact n'a d'ailleurs
+ * aucune valeur ici — « il y a beaucoup à lire » est toute l'information.
+ */
+export function badgeNonLus(total: number): string | null {
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const propre = Math.round(total);
+  return propre > 9 ? '9+' : String(propre);
+}
+
+/**
+ * La date d'aperçu d'une conversation, en trois formes seulement.
+ *
+ * « 14:32 » aujourd'hui, « Hier », « 22/09 » au-delà. Une date complète dans une
+ * liste occupe la moitié de la largeur pour dire ce que trois signes suffisent
+ * à dire — et l'année, dans un fil qui vient de s'ouvrir, n'apprend rien.
+ *
+ * `aujourdhui` est un PARAMÈTRE, comme partout dans ce dépôt : c'est ce qui
+ * rend la fonction éprouvable sans dépendre de l'horloge de la machine.
+ */
+export function formaterApercuDate(iso: string | null, aujourdhui: string): string {
+  if (iso === null || iso.length < 10) return '';
+  const jour = iso.slice(0, 10);
+  if (jour === aujourdhui) return iso.length >= 16 ? iso.slice(11, 16) : '';
+  if (jour === jourPrecedent(aujourdhui)) return 'Hier';
+  const [, mois, numero] = jour.split('-');
+  if (!mois || !numero) return '';
+  return `${numero}/${mois}`;
+}
+
+// === L'aperçu des fils =====================================================
+//
+// Ce qu'une liste de conversations doit dire, et rien de plus : qui a écrit en
+// dernier, et quoi. Le texte vient de `apercu_fils`, qui applique déjà les
+// règles de visibilité du fil — un message masqué n'y est pas, un message
+// retiré y est sans son texte.
+
+/** Le dernier message visible d'un fil, tel qu'il s'aperçoit dans la liste. */
+export type ApercuFil = {
+  /** L'identifiant de l'autre participant. */
+  autre: string;
+  /** Date du dernier message visible, ou null. */
+  dernierLe: string | null;
+  /**
+   * Son texte, ou `null` s'il a été retiré.
+   *
+   * `null` et non une chaîne vide : la base distingue « retiré » de « vide »,
+   * et cette distinction est la seule information qu'une pierre tombale porte.
+   */
+  apercu: string | null;
+  /** Le message est-il de moi ? */
+  deMoi: boolean;
+};
+
+export type LigneApercuBrute = {
+  autre?: string | null;
+  dernier_le?: string | null;
+  apercu?: string | null;
+  de_moi?: boolean | null;
+};
+
+export function lireApercu(ligne: LigneApercuBrute): ApercuFil | null {
+  if (typeof ligne.autre !== 'string' || ligne.autre.length === 0) return null;
+  return {
+    autre: ligne.autre,
+    dernierLe:
+      typeof ligne.dernier_le === 'string' && ligne.dernier_le.length >= 10
+        ? ligne.dernier_le
+        : null,
+    apercu: typeof ligne.apercu === 'string' ? ligne.apercu : null,
+    // Un `de_moi` absent vaut FAUX : la ligne ne peut venir que de la base, et
+    // supposer « de moi » ferait précéder d'un « Vous : » le message d'un autre
+    // — une petite phrase fausse, mais fausse.
+    deMoi: ligne.de_moi === true,
+  };
+}
+
+export function indexerApercus(lignes: ApercuFil[]): Record<string, ApercuFil> {
+  const index: Record<string, ApercuFil> = {};
+  for (const ligne of lignes) index[ligne.autre] = ligne;
+  return index;
+}
+
+/**
+ * La phrase d'aperçu, telle qu'elle s'affiche.
+ *
+ * Elle reprend mot pour mot ce que dit le fil : « Message retiré » y est la
+ * même phrase, et c'est voulu — deux formulations pour une même chose feraient
+ * douter qu'il s'agit de la même.
+ *
+ * Les blancs sont RAMENÉS À UN SEUL, et les retours à la ligne disparaissent :
+ * un message écrit en trois paragraphes occuperait sinon trois lignes dans une
+ * liste qui n'en prévoit qu'une, et la troncature se ferait au hasard.
+ */
+export function apercuTexte(apercu: ApercuFil | null): string {
+  if (apercu === null) return 'Aucun message';
+  if (apercu.apercu === null) return 'Message retiré';
+  const propre = apercu.apercu.replace(/\s+/g, ' ').trim();
+  return apercu.deMoi ? `Vous : ${propre}` : propre;
+}
+
+/**
+ * Les conversations, du plus récent au plus ancien.
+ *
+ * Les amis sans fil viennent APRÈS, et dans l'ordre où la base les a rendus :
+ * un ami avec qui l'on n'a jamais parlé n'est pas une conversation, et le
+ * mettre en tête parce qu'il n'a pas de date serait le contraire de ce qu'on
+ * cherche en ouvrant cet écran.
+ *
+ * Le tri est STABLE — garanti par la spécification ECMAScript — donc les amis
+ * sans date gardent leur ordre. C'est ce qui permet de ne pas avoir à les
+ * trier une seconde fois, et de ne pas écrire ici une règle qui appartient à
+ * `mes_amis`.
+ *
+ * La fonction est générique sur la seule chose qu'elle utilise : l'identifiant.
+ * Elle ne connaît donc pas `PointAmi`, et reste éprouvable sans rien importer.
+ */
+export function rangerConversations<T extends { userId: string }>(
+  amis: T[],
+  apercus: Record<string, ApercuFil>,
+  nonLus: Record<string, NonLusFil>
+): T[] {
+  const date = (ami: T): string | null => {
+    const apercu = apercus[ami.userId];
+    if (apercu !== undefined && apercu.dernierLe !== null) return apercu.dernierLe;
+    // Un fil sans aperçu mais avec des non-lus ne devrait pas exister — on ne
+    // peut pas avoir de message non lu sans message. On le date tout de même,
+    // par prudence : une pastille allumée sur une ligne rangée en bas se
+    // chercherait.
+    const compte = nonLus[ami.userId];
+    return compte !== undefined && compte.nonLus > 0 ? compte.dernierLe : null;
+  };
+
+  return [...amis].sort((a, b) => {
+    const da = date(a);
+    const db = date(b);
+    if (da === null && db === null) return 0;
+    if (da === null) return 1;
+    if (db === null) return -1;
+    if (da === db) return 0;
+    return da < db ? 1 : -1;
+  });
+}

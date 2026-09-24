@@ -102,3 +102,17 @@ __pycache__/
 # source constante de conflits a chaque mise a jour d'Expo.
 /ios/
 /android/
+
+# Le compte de service Firebase, qui ouvre l'envoi vers Android.
+#
+# Ce fichier est une CLE PRIVEE : il permet d'envoyer des notifications a
+# n'importe quelle application du projet Firebase. Il se depose dans EAS
+# (`eas credentials`, ou l'interface du projet), JAMAIS dans le depot — ce
+# depot est public.
+#
+# A ne pas confondre avec `google-services.json`, qui contient des identifiants
+# publics et peut, lui, etre versionne. Le nom du fichier exclu est celui que
+# Google genere ; il est repete ici sous ses deux formes usuelles parce que
+# c'est exactement le genre de fichier qu'on depose « juste le temps de tester ».
+firebase-service-account*.json
+*-firebase-adminsdk-*.json

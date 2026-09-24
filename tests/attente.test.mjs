@@ -373,28 +373,69 @@ test('la couche des amis borne tous ses appels, y compris la lecture de session'
     'le délai dépassé doit devenir un refus explicite'
   );
 
-  // Les cinq entrées passent par `refuser`, qui sait traduire les trois refus.
+  // Chaque lecture de session doit traduire son refus — et le compte se DÉDUIT.
+  //
+  // La première écriture de ce contrôle attendait « cinq fonctions », en dur. Le
+  // jour où la couche des amis en a compté treize — blocage, recherche,
+  // annulation — le test est tombé : non parce qu'une traduction manquait, mais
+  // parce qu'un nombre écrit à la main avait vieilli. Un garde-fou qui compte
+  // doit comparer deux choses qui DOIVENT s'égaler, jamais un nombre et une
+  // constante. Ici : autant de traductions que de lectures de session.
+  const lectures = source.match(/await contexte\(\)/g) ?? [];
   const refus = source.match(/if \('refus' in ctx\) return refuser\(ctx\.refus\);/g) ?? [];
-  assert.equal(refus.length, 5, `les cinq fonctions doivent traduire le refus, ${refus.length} trouvée(s)`);
+  assert.ok(lectures.length > 0, 'la couche des amis doit lire la session');
+  assert.equal(
+    refus.length,
+    lectures.length,
+    `chaque lecture de session doit traduire son refus : ${refus.length} traduction(s) pour ${lectures.length} lecture(s)`
+  );
 
   // Les appels RPC passent tous par le helper borné. Compté, et non cherché
   // une fois : le falsificateur a montré qu'un `borner` retiré de `appelerRpc`
-  // — le chemin de quatre appels sur cinq — laissait le fichier vert si l'on
-  // se contentait de vérifier la présence du helper.
+  // laissait le fichier vert si l'on se contentait de vérifier la présence du
+  // helper.
   assert.match(
     source,
     /const reponse = await borner\(client\.rpc\(fonction, parametres\)\);/,
     'le helper RPC doit lui-même être borné'
   );
 
-  const rpc = source.match(/await appelerRpc\(/g) ?? [];
-  assert.equal(rpc.length, 4, `les quatre RPC doivent passer par le helper, ${rpc.length} trouvé(s)`);
+  // Et aucun appel direct ne doit vivre ailleurs que dans ce helper : on exige
+  // qu'il y en ait EXACTEMENT UN — celui du helper — donc zéro appel direct,
+  // quel que soit le nombre de fonctions ajoutées ensuite.
+  const rpcDirects = source.match(/client\.rpc\(/g) ?? [];
+  assert.equal(
+    rpcDirects.length,
+    1,
+    `un seul client.rpc( doit exister — celui du helper borné — ${rpcDirects.length} trouvé(s)`
+  );
+
+  // Même raisonnement pour la lecture de session : elle ne doit exister qu'une
+  // fois, dans `contexte()`, et c'est là qu'elle est bornée.
+  const lecturesSession = source.match(/utilisateurCourant\(\)/g) ?? [];
+  assert.equal(
+    lecturesSession.length,
+    1,
+    `une seule lecture de session doit exister — celle de contexte(), bornée — ${lecturesSession.length} trouvée(s)`
+  );
 
   // La suppression est un appel réseau comme un autre : `from().delete()`.
   assert.match(
     source,
     /await borner\(client\.from\('amis'\)\.delete\(\)/,
     'la suppression doit être bornée elle aussi'
+  );
+
+  // Et aucune autre requête directe ne doit y échapper. Là encore le compte se
+  // déduit : autant de `borner(client.from(` que de `client.from(`, quel qu'en
+  // soit le nombre. Écrire « deux » en dur aurait le même défaut que le « cinq »
+  // corrigé plus haut.
+  const requetes = source.match(/client\.from\(/g) ?? [];
+  const requetesBornees = source.match(/borner\(\s*client\.from\(/g) ?? [];
+  assert.equal(
+    requetesBornees.length,
+    requetes.length,
+    `tout client.from( doit être borné : ${requetesBornees.length} borné(s) sur ${requetes.length}`
   );
 
   // Et un délai dépassé ne doit pas être présenté comme un refus métier :

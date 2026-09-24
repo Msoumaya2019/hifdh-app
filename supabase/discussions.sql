@@ -607,3 +607,249 @@ GRANT EXECUTE ON FUNCTION public.retirer_message(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.masquer_message(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.demasquer_message(BIGINT) TO authenticated;
 
+
+-- ============================================================================
+-- 7. Ce qui reste à lire, et le temps réel
+--
+-- Deux ajouts, et ils vont ensemble : un compteur de non-lus n'a d'intérêt que
+-- s'il se met à jour sans qu'on rouvre l'écran, et le temps réel sans compteur
+-- ne dirait pas *combien* de choses attendent.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- La table des lectures
+-- ----------------------------------------------------------------------------
+--
+-- UNE LIGNE PAR LECTEUR ET PAR FIL, et non une ligne par fil avec deux
+-- colonnes. Les deux formes tiennent dans une table, mais elles ne se
+-- comportent pas pareil : avec deux colonnes (`lu_par_a`, `lu_par_b`), chaque
+-- personne écrit dans la MOITIÉ d'une ligne que l'autre possède aussi — et
+-- deux écritures concurrentes sur la même ligne se bloquent, pour rien.
+-- Séparer les lecteurs sépare aussi les écritures.
+--
+-- Le couple est ORDONNÉ (lecteur, autre) et non canonique : on ne lit que son
+-- propre côté, il n'y a donc rien à ranger. C'est le contraire de `amis`, où
+-- l'ordre canonique est ce qui rend la réciprocité structurelle — et la
+-- différence est voulue, parce que la question posée n'est pas la même.
+CREATE TABLE IF NOT EXISTS public.discussion_lectures (
+  lecteur UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  autre UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  lu_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (lecteur, autre),
+  CONSTRAINT discussion_lectures_pas_soi_meme CHECK (lecteur <> autre)
+);
+
+ALTER TABLE public.discussion_lectures ENABLE ROW LEVEL SECURITY;
+
+-- On ne lit et n'écrit que SA propre ligne. La politique d'insertion exige en
+-- plus que `lecteur` soit bien l'appelant : sans cette seconde condition, on
+-- pourrait marquer comme lu le fil de quelqu'un d'autre, et lui retirer sa
+-- pastille de non-lus à distance.
+DROP POLICY IF EXISTS "Lectures : la mienne" ON public.discussion_lectures;
+CREATE POLICY "Lectures : la mienne" ON public.discussion_lectures
+  FOR SELECT TO authenticated
+  USING (auth.uid() = lecteur);
+
+DROP POLICY IF EXISTS "Lectures : j'ecris la mienne" ON public.discussion_lectures;
+CREATE POLICY "Lectures : j'ecris la mienne" ON public.discussion_lectures
+  FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = lecteur);
+
+DROP POLICY IF EXISTS "Lectures : je remets a jour la mienne" ON public.discussion_lectures;
+CREATE POLICY "Lectures : je remets a jour la mienne" ON public.discussion_lectures
+  FOR UPDATE TO authenticated
+  USING (auth.uid() = lecteur)
+  WITH CHECK (auth.uid() = lecteur);
+
+-- Pas de politique de suppression : une lecture n'a aucune raison de
+-- disparaître, et sa disparition remettrait à non-lu tout un fil ancien.
+
+-- ----------------------------------------------------------------------------
+-- Marquer un fil comme lu
+-- ----------------------------------------------------------------------------
+--
+-- SECURITY INVOKER, donc les politiques portent l'autorisation : l'écriture
+-- n'atteint que la ligne dont `lecteur` vaut `auth.uid()`.
+--
+-- `p_moi` est un paramètre et non `auth.uid()` lu dans le corps, pour la même
+-- raison que partout ailleurs : un corps SECURITY INVOKER n'a pas USAGE sur le
+-- schéma `auth`, et l'appel y échoue en 42501.
+--
+-- L'horodatage est `NOW()` — le début de la transaction — et non l'heure de
+-- l'appareil. Un téléphone à l'heure fausse, en avance de quelques minutes,
+-- marquerait comme lus des messages qui n'existent pas encore ; et le premier
+-- message arrivé ensuite serait invisible à jamais, puisqu'il serait plus
+-- ancien que la marque. C'est le serveur qui date, parce que c'est lui qui
+-- date les messages.
+CREATE OR REPLACE FUNCTION public.marquer_fil_lu(p_moi UUID, p_ami UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_moi IS NULL OR p_ami IS NULL OR p_moi = p_ami THEN
+    RETURN FALSE;
+  END IF;
+
+  INSERT INTO public.discussion_lectures (lecteur, autre, lu_le)
+  VALUES (p_moi, p_ami, NOW())
+  ON CONFLICT (lecteur, autre) DO UPDATE SET lu_le = NOW();
+
+  RETURN TRUE;
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Ce qui reste à lire
+-- ----------------------------------------------------------------------------
+--
+-- Une ligne par fil qui a au moins un message non lu. Les fils entièrement lus
+-- ne sont pas rendus : la liste des conversations s'affiche à partir des amis,
+-- et une seconde liste de lignes vides ne ferait qu'ajouter des jointures à
+-- recoller côté client.
+--
+-- Le compte EXCLUT les messages retirés et masqués, et ce n'est pas un détail
+-- de confort : compter une pierre tombale comme un message à lire ferait
+-- clignoter une pastille pour quelque chose qui ne s'ouvre pas.
+--
+-- Un fil sans ligne de lecture est ENTIÈREMENT non lu : c'est le cas d'un fil
+-- jamais ouvert, et c'est bien ce qu'on veut montrer. D'où le `COALESCE` sur
+-- une date très ancienne plutôt qu'un `NULL` — un `NULL` rendrait la
+-- comparaison fausse, donc zéro non-lu, c'est-à-dire exactement l'inverse.
+CREATE OR REPLACE FUNCTION public.non_lus_par_fil(p_moi UUID)
+RETURNS TABLE (
+  autre UUID,
+  non_lus INTEGER,
+  dernier_le TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    CASE WHEN m.user_a = p_moi THEN m.user_b ELSE m.user_a END AS autre,
+    COUNT(*)::INTEGER AS non_lus,
+    MAX(m.created_at) AS dernier_le
+  FROM public.discussion_messages m
+  LEFT JOIN public.discussion_lectures l
+    ON l.lecteur = p_moi
+   AND l.autre = CASE WHEN m.user_a = p_moi THEN m.user_b ELSE m.user_a END
+  WHERE (m.user_a = p_moi OR m.user_b = p_moi)
+    AND m.auteur <> p_moi
+    AND m.retire_le IS NULL
+    AND m.modere_le IS NULL
+    AND m.created_at > COALESCE(l.lu_le, '-infinity'::timestamptz)
+  GROUP BY 1
+  ORDER BY 3 DESC;
+$$;
+
+-- Le total, pour la pastille de l'écran d'accueil.
+--
+-- Une fonction à part plutôt qu'une somme faite par le client : la pastille
+-- s'affiche sur l'écran d'accueil, qui n'a aucune raison de charger la liste
+-- détaillée de tous les fils pour afficher un nombre. Et c'est la base qui
+-- compte, donc le nombre est le même partout.
+CREATE OR REPLACE FUNCTION public.total_non_lus(p_moi UUID)
+RETURNS INTEGER
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(SUM(n.non_lus), 0)::INTEGER
+  FROM public.non_lus_par_fil(p_moi) n;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- L'aperçu des fils
+-- ----------------------------------------------------------------------------
+--
+-- Une ligne par fil qui contient au moins un message visible, avec le DERNIER
+-- de ces messages. C'est ce qui donne à la liste des conversations autre chose
+-- qu'une suite de noms — et c'est la seule information qu'on y cherche du
+-- regard : « qui m'a écrit, et quand ».
+--
+-- `DISTINCT ON` plutôt qu'une fonction de fenêtrage : Postgres sait prendre la
+-- première ligne de chaque groupe selon un ordre donné, et le faire ici évite
+-- de rendre tout l'historique au client pour n'en garder qu'une ligne par fil.
+-- Un fil de deux mille messages coûte alors le même prix qu'un fil de deux.
+--
+-- Les règles de visibilité sont CELLES DE `lire_fil`, et elles doivent le
+-- rester : un message masqué par la modération ne s'aperçoit pas, et un message
+-- retiré s'aperçoit comme retiré — `apercu` est alors NULL, exactement comme
+-- `corps` l'est dans le fil. Laisser passer l'un ou l'autre ferait apparaître
+-- dans la liste un texte que la conversation refuse de montrer.
+--
+-- Le texte n'est PAS tronqué ici. Couper une chaîne en SQL coupe des octets,
+-- donc des graphèmes : un extrait d'arabe vocalisé peut se retrouver terminé au
+-- milieu d'un signe, et s'afficher avec un carré vide. C'est l'affichage qui
+-- tronque — `numberOfLines={1}` — et il le fait sur des caractères entiers.
+--
+-- L'ordre extérieur est la récence : la liste des conversations se lit du plus
+-- récent au plus ancien, et `DISTINCT ON` impose le sien (le groupe d'abord).
+CREATE OR REPLACE FUNCTION public.apercu_fils(p_moi UUID)
+RETURNS TABLE (
+  autre UUID,
+  dernier_le TIMESTAMPTZ,
+  apercu TEXT,
+  de_moi BOOLEAN
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT dedans.autre, dedans.dernier_le, dedans.apercu, dedans.de_moi
+  FROM (
+    SELECT DISTINCT ON (CASE WHEN m.user_a = p_moi THEN m.user_b ELSE m.user_a END)
+      CASE WHEN m.user_a = p_moi THEN m.user_b ELSE m.user_a END AS autre,
+      m.created_at AS dernier_le,
+      CASE WHEN m.retire_le IS NULL THEN m.corps ELSE NULL END AS apercu,
+      (m.auteur = p_moi) AS de_moi
+    FROM public.discussion_messages m
+    WHERE (m.user_a = p_moi OR m.user_b = p_moi)
+      AND m.modere_le IS NULL
+    ORDER BY
+      CASE WHEN m.user_a = p_moi THEN m.user_b ELSE m.user_a END,
+      m.created_at DESC,
+      m.id DESC
+  ) AS dedans
+  ORDER BY dedans.dernier_le DESC;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Le temps réel
+-- ----------------------------------------------------------------------------
+--
+-- La table des messages rejoint la publication `supabase_realtime`, ce qui est
+-- la seule chose qu'un abonnement client ne peut pas faire lui-même : Realtime
+-- ne diffuse que les tables PUBLIÉES, et l'ajout se fait normalement à la main
+-- dans le tableau de bord.
+--
+-- Le faire ici, et pas dans une case à cocher, a une raison précise : la
+-- configuration devient une ligne du dépôt, donc une ligne qu'on peut relire,
+-- comparer et rejouer. Une case cochée dans un tableau de bord ne laisse aucune
+-- trace, et la question « pourquoi je ne reçois rien ? » se cherche alors dans
+-- le code, où la réponse n'est pas.
+--
+-- Ce que Realtime diffuse obéit aux MÊMES politiques RLS : la publication
+-- n'ouvre rien, elle rend seulement observable ce que l'abonnement a déjà le
+-- droit de lire. Un fil fermé reste fermé.
+--
+-- `WHEN OTHERS` : PGlite n'a pas de publication, et le banc d'épreuve doit
+-- pouvoir jouer ce fichier sans mourir sur une ligne qui ne le concerne pas.
+-- C'est la même raison que pour pgcrypto dans `amis.sql` — un échec ici
+-- empêcherait la création des tables qui suivent, pour une commodité.
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.discussion_messages;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Publication supabase_realtime indisponible (%) : a ajouter depuis le tableau de bord.', SQLERRM;
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Les droits
+-- ----------------------------------------------------------------------------
+
+GRANT SELECT, INSERT, UPDATE ON public.discussion_lectures TO authenticated;
+GRANT EXECUTE ON FUNCTION public.marquer_fil_lu(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.non_lus_par_fil(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.total_non_lus(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.apercu_fils(UUID) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

@@ -25,19 +25,28 @@ import { fileURLToPath } from 'node:url';
 
 import {
   LONGUEUR_MESSAGE_MAX,
+  apercuTexte,
+  badgeNonLus,
   caracteresRestants,
   compterMessages,
   filVide,
+  formaterApercuDate,
   formaterEnvoi,
+  indexerApercus,
+  indexerNonLus,
   jourPrecedent,
+  lireApercu,
   lireMessage,
+  lireNonLus,
   messageErreurDiscussion,
   preparerEnvoi,
+  rangerConversations,
   rangerFil,
   refusEnvoi,
   resumerFil,
   separateurDeJour,
   texteAffiche,
+  totalDesNonLus,
 } from '@/lib/discussion';
 
 // === Conversion des lignes ==================================================
@@ -467,4 +476,235 @@ test('le champ de saisie ne laisse pas joindre un fichier', () => {
       `l’écran ne doit pas importer « ${composant} »`
     );
   }
+});
+
+// === Les non-lus ============================================================
+//
+// Ce que ces épreuves gardent, et qui ne se voit pas à la lecture :
+//
+//   1. `non_lus` revient parfois en CHAÎNE. Un `COUNT(*)` traverse PostgREST en
+//      texte, comme `id`. Une chaîne comparée à un nombre ne lève rien : elle
+//      est simplement fausse. Et un `"2"` affiché tel quel passe encore — c'est
+//      le genre de défaut qui ne se voit que sur un téléphone, chez quelqu'un
+//      qui a trois messages non lus et qui en voit zéro.
+//
+//   2. La pastille rend `null` et non « 0 ». Un zéro affiché est un signe qui
+//      ne dit rien et qui attire l'œil. `null` veut dire « rien à montrer »,
+//      et c'est ce que l'écran teste.
+//
+//   3. Un fil jamais ouvert n'a AUCUNE ligne de lecture. Le compte vient donc
+//      d'un `COALESCE(l.lu_le, '-infinity')` côté base — et si cette ligne
+//      manquait, le fil entier serait compté comme lu, exactement l'inverse.
+
+test('lireNonLus lit un compte rendu en nombre', () => {
+  const lu = lireNonLus({ autre: 'ami-1', non_lus: 3, dernier_le: '2026-09-23T14:32:11Z' });
+  assert.notEqual(lu, null);
+  assert.equal(lu.autre, 'ami-1');
+  assert.equal(lu.nonLus, 3);
+  assert.equal(lu.dernierLe, '2026-09-23T14:32:11Z');
+});
+
+test('lireNonLus lit un compte rendu en CHAINE — le cas de PostgREST', () => {
+  const lu = lireNonLus({ autre: 'ami-1', non_lus: '7' });
+  assert.notEqual(lu, null);
+  assert.equal(lu.nonLus, 7);
+  assert.equal(typeof lu.nonLus, 'number');
+});
+
+test('lireNonLus refuse une ligne sans autre participant', () => {
+  assert.equal(lireNonLus({ non_lus: 4 }), null);
+  assert.equal(lireNonLus({ autre: '', non_lus: 4 }), null);
+  assert.equal(lireNonLus({ autre: null, non_lus: 4 }), null);
+});
+
+test('lireNonLus refuse un compte qui n’est pas un nombre', () => {
+  assert.equal(lireNonLus({ autre: 'ami-1', non_lus: 'beaucoup' }), null);
+  assert.equal(lireNonLus({ autre: 'ami-1', non_lus: Number.NaN }), null);
+});
+
+test('lireNonLus ne rend jamais un compte negatif', () => {
+  const lu = lireNonLus({ autre: 'ami-1', non_lus: -4 });
+  assert.notEqual(lu, null);
+  assert.equal(lu.nonLus, 0);
+});
+
+test('lireNonLus met a null une date trop courte pour etre lue', () => {
+  assert.equal(lireNonLus({ autre: 'ami-1', non_lus: 1, dernier_le: '2026-09' }).dernierLe, null);
+  assert.equal(lireNonLus({ autre: 'ami-1', non_lus: 1 }).dernierLe, null);
+  assert.equal(lireNonLus({ autre: 'ami-1', non_lus: 1, dernier_le: null }).dernierLe, null);
+});
+
+test('indexerNonLus range chaque fil sous son participant', () => {
+  const index = indexerNonLus([
+    { autre: 'a', nonLus: 2, dernierLe: null },
+    { autre: 'b', nonLus: 0, dernierLe: null },
+  ]);
+  assert.equal(Object.keys(index).length, 2);
+  assert.equal(index.a.nonLus, 2);
+  assert.equal(index.b.nonLus, 0);
+});
+
+test('totalDesNonLus additionne les fils', () => {
+  assert.equal(
+    totalDesNonLus([
+      { autre: 'a', nonLus: 2, dernierLe: null },
+      { autre: 'b', nonLus: 3, dernierLe: null },
+    ]),
+    5
+  );
+  assert.equal(totalDesNonLus([]), 0);
+});
+
+test('badgeNonLus ne montre rien plutot qu’un zero', () => {
+  assert.equal(badgeNonLus(0), null);
+  assert.equal(badgeNonLus(-2), null);
+});
+
+test('badgeNonLus compte jusqu’a neuf, puis abrege', () => {
+  assert.equal(badgeNonLus(1), '1');
+  assert.equal(badgeNonLus(9), '9');
+  assert.equal(badgeNonLus(10), '9+');
+  assert.equal(badgeNonLus(42), '9+');
+});
+
+test('formaterApercuDate dit l’heure pour aujourd’hui', () => {
+  assert.equal(formaterApercuDate('2026-09-23T14:32:11Z', '2026-09-23'), '14:32');
+});
+
+test('formaterApercuDate dit Hier, et la date au-dela', () => {
+  assert.equal(formaterApercuDate('2026-09-22T09:05:00Z', '2026-09-23'), 'Hier');
+  assert.equal(formaterApercuDate('2026-09-05T09:05:00Z', '2026-09-23'), '05/09');
+});
+
+test('formaterApercuDate ne rend rien sans date', () => {
+  assert.equal(formaterApercuDate(null, '2026-09-23'), '');
+  assert.equal(formaterApercuDate('2026-09', '2026-09-23'), '');
+});
+
+test('formaterApercuDate passe correctement le 1er du mois', () => {
+  // Le cas qui casse un « jour - 1 » naïf : le 1er septembre, hier est le
+  // 31 août, et un calcul par soustraction rendrait le 0 septembre.
+  assert.equal(formaterApercuDate('2026-08-31T20:00:00Z', '2026-09-01'), 'Hier');
+});
+
+// === L'aperçu des fils ======================================================
+
+test('lireApercu lit une ligne de la base', () => {
+  const apercu = lireApercu({
+    autre: 'ami-1',
+    dernier_le: '2026-09-23T14:32:11Z',
+    apercu: 'Assalamu alaykum',
+    de_moi: false,
+  });
+  assert.notEqual(apercu, null);
+  assert.equal(apercu.autre, 'ami-1');
+  assert.equal(apercu.apercu, 'Assalamu alaykum');
+  assert.equal(apercu.deMoi, false);
+});
+
+test('lireApercu distingue un message retire d’un message vide', () => {
+  // C'est toute l'information qu'une pierre tombale porte, et la seule chose
+  // qui la distingue d'une ligne sans texte. La confondre avec une chaîne vide
+  // ferait disparaître la mention « Message retiré » de la liste.
+  const retire = lireApercu({ autre: 'ami-1', dernier_le: '2026-09-23T14:32:11Z', apercu: null });
+  assert.notEqual(retire, null);
+  assert.equal(retire.apercu, null);
+
+  const vide = lireApercu({ autre: 'ami-1', dernier_le: '2026-09-23T14:32:11Z', apercu: '' });
+  assert.notEqual(vide, null);
+  assert.equal(vide.apercu, '');
+});
+
+test('lireApercu refuse une ligne sans autre participant', () => {
+  assert.equal(lireApercu({ apercu: 'coucou' }), null);
+  assert.equal(lireApercu({ autre: '', apercu: 'coucou' }), null);
+});
+
+test('lireApercu ne s’attribue pas le message d’un autre', () => {
+  // `de_moi` absent vaut FAUX. Supposer le contraire ferait précéder d'un
+  // « Vous : » le message reçu — une petite phrase fausse, mais fausse.
+  const apercu = lireApercu({ autre: 'ami-1', apercu: 'coucou' });
+  assert.equal(apercu.deMoi, false);
+  assert.equal(apercuTexte(apercu), 'coucou');
+});
+
+test('apercuTexte dit ce qu’il y a à dire, et rien de plus', () => {
+  assert.equal(apercuTexte(null), 'Aucun message');
+  assert.equal(
+    apercuTexte({ autre: 'a', dernierLe: null, apercu: null, deMoi: false }),
+    'Message retiré'
+  );
+  assert.equal(
+    apercuTexte({ autre: 'a', dernierLe: null, apercu: 'salam', deMoi: true }),
+    'Vous : salam'
+  );
+});
+
+test('apercuTexte ramene un message multiligne a une seule ligne', () => {
+  // Un message écrit en trois paragraphes occuperait sinon trois lignes dans
+  // une liste qui n'en prévoit qu'une, et la troncature se ferait au hasard.
+  const texte = apercuTexte({
+    autre: 'a',
+    dernierLe: null,
+    apercu: 'Bismillah\n\n  comment   avance\n ta mémorisation ?',
+    deMoi: false,
+  });
+  assert.equal(texte, 'Bismillah comment avance ta mémorisation ?');
+  assert.doesNotMatch(texte, /\n/);
+});
+
+test('indexerApercus range chaque apercu sous son fil', () => {
+  const index = indexerApercus([
+    { autre: 'a', dernierLe: null, apercu: 'un', deMoi: false },
+    { autre: 'b', dernierLe: null, apercu: 'deux', deMoi: false },
+  ]);
+  assert.equal(Object.keys(index).length, 2);
+  assert.equal(index.a.apercu, 'un');
+  assert.equal(index.b.apercu, 'deux');
+});
+
+test('rangerConversations met les fils recents en tete', () => {
+  const amis = [{ userId: 'a' }, { userId: 'b' }, { userId: 'c' }];
+  const rangees = rangerConversations(
+    amis,
+    {
+      a: { autre: 'a', dernierLe: '2026-09-20T10:00:00Z', apercu: 'un', deMoi: false },
+      c: { autre: 'c', dernierLe: '2026-09-23T10:00:00Z', apercu: 'trois', deMoi: false },
+    },
+    {}
+  );
+  assert.deepEqual(rangees.map((r) => r.userId), ['c', 'a', 'b']);
+});
+
+test('rangerConversations laisse les amis sans fil a la fin, dans leur ordre', () => {
+  // Un ami avec qui l'on n'a jamais parlé n'est pas une conversation : le
+  // mettre en tête parce qu'il n'a pas de date serait le contraire de ce qu'on
+  // cherche en ouvrant cet écran. Et l'ordre reçu est conservé — c'est la
+  // stabilité du tri, et c'est `mes_amis` qui décide de cet ordre.
+  const amis = [{ userId: 'z' }, { userId: 'y' }, { userId: 'x' }];
+  const rangees = rangerConversations(amis, {}, {});
+  assert.deepEqual(rangees.map((r) => r.userId), ['z', 'y', 'x']);
+});
+
+test('rangerConversations ne modifie pas la liste recue', () => {
+  const amis = [{ userId: 'a' }, { userId: 'b' }];
+  const rangees = rangerConversations(
+    amis,
+    { b: { autre: 'b', dernierLe: '2026-09-23T10:00:00Z', apercu: 'deux', deMoi: false } },
+    {}
+  );
+  assert.deepEqual(amis.map((a) => a.userId), ['a', 'b']);
+  assert.deepEqual(rangees.map((r) => r.userId), ['b', 'a']);
+});
+
+test('rangerConversations remonte un fil dont les non-lus n’ont pas d’apercu', () => {
+  // Ce cas ne devrait pas exister — on ne peut pas avoir de message non lu
+  // sans message. On le date tout de même : une pastille allumée sur une ligne
+  // rangée en bas se chercherait.
+  const rangees = rangerConversations(
+    [{ userId: 'a' }, { userId: 'b' }],
+    { b: { autre: 'b', dernierLe: '2026-09-23T10:00:00Z', apercu: 'deux', deMoi: false } },
+    { a: { autre: 'a', nonLus: 3, dernierLe: '2026-09-24T09:00:00Z' } }
+  );
+  assert.deepEqual(rangees.map((r) => r.userId), ['a', 'b']);
 });

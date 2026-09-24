@@ -614,3 +614,55 @@ indépendants.
 Le réglage a été **constaté** sur le projet, en lecture seule, par
 `GET /auth/v1/settings` : `mailer_autoconfirm: false`, c'est-à-dire confirmation
 exigée. C'est la cause directe du blocage à l'inscription.
+
+## 8. Notifications push (Expo, FCM, APNs)
+
+Les notifications sont un **confort**, jamais une condition d'usage : refuser
+l'autorisation, ou n'avoir aucun jeton enregistré, ne retire aucune
+fonctionnalité de l'application.
+
+### Ce qui sort de l'appareil, et quand
+
+L'application ne transmet que deux choses : un **jeton d'appareil** (fourni par
+le service d'Expo) et l'**identifiant du compte** auquel il appartient. Ce jeton
+ne dit rien de la personne, et il est retiré à la déconnexion — sans quoi le
+compte quitté continuerait de faire sonner un téléphone qui n'est plus le sien.
+
+Aucun contenu de message ne quitte l'appareil de l'expéditeur en dehors du texte
+qu'il a écrit. **Rien n'est composé par une intelligence artificielle** : les
+titres et les corps de notification sont des phrases écrites dans le code
+(`supabase/functions/envoyer-notifications/index.ts`), choisies selon la
+catégorie. Le corps d'un message reçu **est** le message, et il n'est joint que
+si la personne n'a pas demandé à masquer le contenu — auquel cas la ligne
+correspondante est écrite **sans texte**, et non écrite puis filtrée.
+
+### Les services tiers
+
+| Service | Rôle | Ce qui le concerne |
+| --- | --- | --- |
+| **Expo Push Service** (`exp.host`) | achemine l'envoi vers Apple et Google | reçoit le jeton et le texte à afficher |
+| **Google Firebase Cloud Messaging** | livraison sur Android | exige un projet Firebase et une clé de compte de service |
+| **Apple Push Notification service** | livraison sur iOS | exige un compte Apple Developer **payant** et une clé APNs |
+
+Les conditions d'utilisation de ces services sont celles de leurs éditeurs, et
+elles peuvent changer. Elles n'ont pas été recopiées ici : ce document dit
+seulement quels services sont employés, pour que la vérification soit possible.
+
+### Ce qui n'est pas encore en place
+
+Le code est écrit et éprouvé, mais **aucun envoi réel n'a eu lieu** : il manque
+un projet Expo relié, un secret partagé, un projet Firebase et un compte Apple
+Developer. La marche à suivre, dans l'ordre, est dans
+`docs/notifications-push.md`.
+
+### Les clés qui ne doivent jamais être versionnées
+
+- le **JSON de compte de service** de Firebase — clé privée, exclue par
+  `.gitignore` ;
+- la clé `service_role` de Supabase — elle ne vit que dans la fonction serveur ;
+- le secret partagé `NOTIFICATIONS_SECRET` — il vit dans les secrets GitHub et
+  dans ceux de Supabase.
+
+Un contrôle automatique (`tests/notifications_envoi.test.mjs`) parcourt tout
+`src/` et tout `app/` et **échoue** si une clé ou le nom de la variable
+`SUPABASE_SERVICE_ROLE_KEY` y apparaît.

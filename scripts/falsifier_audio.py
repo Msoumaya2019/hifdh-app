@@ -43,6 +43,7 @@ E = "src/lib/audio/etatLecture.ts"
 S = "src/lib/audio/suiviRecitation.ts"
 C = "src/components/LecteurPageMoushaf.tsx"
 L = "app/lecteur.tsx"
+R = "src/lib/audio/repetitions.ts"
 
 
 def executer_tests():
@@ -229,6 +230,29 @@ MUTATIONS = [
         "        onToucherVerset={modeSelection ? toucherVerset : undefined}",
         "        onToucherVerset={toucherVerset}",
         "l'écran transmet toujours le geste : le mode ne sert plus à rien",
+    ),
+    # --- Les valeurs offertes à l'écran --------------------------------------
+    # Ces trois mutations ne cassent aucun calcul : elles retirent un choix de la
+    # liste que l'écran parcourt. Rien ne lève, rien ne rougit — l'apprenant qui
+    # cherche « 2 répétitions » ou « 2 secondes de pause » ne les trouve pas, et
+    # c'est tout. C'est le défaut le plus silencieux de cette fonctionnalité.
+    (
+        R,
+        "export const NOMBRES_REPETITION = [1, 2, 3, 5, 10] as const;",
+        "export const NOMBRES_REPETITION = [1, 3, 5, 10] as const;",
+        "un nombre offert disparaît : « 2 répétitions » n'est plus proposé",
+    ),
+    (
+        R,
+        "export const PAUSES_SECONDES = [0, 2, 5, 10] as const;",
+        "export const PAUSES_SECONDES = [0, 5, 10] as const;",
+        "la pause de 2 secondes disparaît de l'écran",
+    ),
+    (
+        R,
+        "export const REPETITION_MAX = 100;",
+        "export const REPETITION_MAX = 10;",
+        "la borne de saisie refuse l'exemple « 20 » de la spécification",
     ),
 ]
 
