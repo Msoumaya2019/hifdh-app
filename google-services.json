@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "913810145925",
+    "project_id": "hifdh-app-c503f",
+    "storage_bucket": "hifdh-app-c503f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:913810145925:android:efa8ae681db4f560b71fec",
+        "android_client_info": {
+          "package_name": "com.hifdh.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDT_vRYcen5G4_0jscCuu3fzXGAxAOZMFo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
