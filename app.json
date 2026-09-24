@@ -52,9 +52,14 @@
     "experiments": {
       "typedRoutes": true
     },
-    "extra": {},
+    "extra": {
+      "eas": {
+        "projectId": "3ac8b0ac-2a7f-4cc9-8ab4-56759c3aee41"
+      }
+    },
     "runtimeVersion": {
       "policy": "appVersion"
-    }
+    },
+    "owner": "mchiker"
   }
 }

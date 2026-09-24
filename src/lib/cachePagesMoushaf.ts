@@ -1,27 +1,63 @@
 // Le cache des images de pages, sur le disque de l'appareil.
 //
-// POURQUOI UN CACHE NOUS-MÊMES
-// ----------------------------
-// Le composant `Image` de React Native garde bien un cache mémoire, mais il ne
-// survit pas à la fermeture de l'application, et sa politique de rétention n'est
-// pas garantie. Les pages du moushaf sont consultées en boucle — on revient cent
-// fois sur les mêmes pages pendant qu'on mémorise — donc on veut une copie
-// **durable** : téléchargée une fois, gardée sur le disque, réutilisée sans
-// réseau.
+// LES PAGES SONT EMBARQUEES — CE MODULE SERT A LES RESOUDRE
+// ---------------------------------------------------------
+// Depuis que les 604 pages sont **dans** l'application (`actifsPagesMoushaf.ts`),
+// il n'y a plus rien a telecharger : `Asset.downloadAsync()` rend, pour un actif
+// embarque, un chemin `file://` local, disponible des l'installation et sans
+// reseau. La page s'affiche donc immediatement, y compris la premiere fois.
 //
-// C'est aussi ce qui rend l'application utilisable hors connexion après une
-// première visite, ce qu'un cache mémoire ne permet pas.
+// Ce module reste, et garde trois roles :
 //
-// LA FORME DU CHARGEMENT
-// ----------------------
-// Une table des téléchargements en cours, pour que deux demandes de la même
-// page ne téléchargent qu'une fois, et un `Set` des pages déjà prêtes. Un échec
-// rend `null` — jamais une exception : une page qu'on ne peut pas montrer ne
-// doit pas faire tomber le lecteur.
+//   1. **resoudre** l'actif embarque en chemin affichable (`assurerPage`) ;
+//   2. **retomber** sur la source distante si l'actif n'est pas joignable — cas
+//      d'un binaire ou l'empaquetage aurait omis l'image. Une page qu'on peut
+//      voir reste preferable a un ecran d'echec ;
+//   3. **liberer** la place qu'un ancien telechargement avait prise dans le cache
+//      (`viderCachePages`), puisque plus rien n'y est ecrit.
+//
+// L'ORDRE DES REPLIS, ET POURQUOI IL EST CELUI-LA
+// -----------------------------------------------
+//     actif embarque  ->  disque (ancien cache)  ->  adresse distante  ->  echec
+//
+// L'actif d'abord parce qu'il est local, immediat et sans reseau. Le disque
+// ensuite, parce qu'une version precedente de l'application y a peut-etre laisse
+// des pages — il ne faut pas les ignorer, mais elles ne sont qu'un secours. Le
+// reseau en dernier : c'est le seul cas qui demande une connexion, et il ne
+// devrait plus se produire.
+//
+// POURQUOI UN CACHE N'ETAIT NECESSAIRE AVANT
+// ------------------------------------------
+// Les pages etaient servies depuis le depot, et le composant `Image` de React
+// Native ne garde son cache memoire que le temps d'une session. On voulait donc
+// une copie **durable**, telechargee une fois. Ce besoin disparait avec
+// l'embarquement : la page est deja sur l'appareil, dans le paquet.
+//
+// ATTENTION — `cacheDirectory` PEUT ETRE `null`, ET C'EST ARRIVE
+// -------------------------------------------------------------
+// `expo-file-system` resout son module natif ainsi :
+//
+//     requireOptionalNativeModule('ExponentFileSystem') ?? ExponentFileSystemShim
+//
+// ou `ExponentFileSystemShim` declare `cacheDirectory: null`. Autrement dit, sur
+// un binaire ou la couche native n'est pas joignable, `cacheDirectory` vaut
+// `null` **sans lever**. Un `?? ''` construit alors un chemin **relatif sans
+// schema** (`pages-moushaf/page-1.png`), que `downloadAsync` refuse — et le
+// `catch` du telechargement transformait ce refus en « verifie ta connexion ».
+// C'est exactement le defaut signale sur appareil : le message accusait le
+// reseau alors que la cause etait un chemin sans `file://`.
+//
+// On distingue donc trois cas, et `null` n'est plus confondu avec « pas de
+// dossier » : soit le dossier existe, soit on sait pourquoi il n'existe pas.
+//
+// Ce piege ne mord plus sur l'affichage — l'actif embarque ne passe pas par le
+// disque — mais il mord encore sur `viderCachePages`. Les gardes restent.
 
 import { useEffect, useState } from 'react';
+import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system';
 
+import { actifDePage } from '@/lib/actifsPagesMoushaf';
 import { getMushafPageImage, pageValide } from '@/lib/pagesMoushaf';
 
 /**
@@ -94,16 +130,61 @@ const pretes = new Set<number>();
 const enCours = new Map<number, Promise<string | null>>();
 
 /**
- * Le chemin local de l'image d'une page, en la téléchargeant si besoin.
+ * Les chemins deja resolus, par page.
  *
- * Rend `null` si la page est hors bornes ou si le téléchargement échoue.
- * Deux appels pour la même page ne téléchargent qu'une fois.
+ * Il faut retenir **le chemin** et pas seulement « cette page est prete » :
+ * l'actif embarque et l'adresse distante ne se lisent pas pareil, et rendre le
+ * mauvais apres avoir marque la page prete ferait afficher une page vide.
+ */
+const memoires = new Map<number, string>();
+
+/** Marquer une page resolue, en retenant par quelle voie. */
+function retenir(page: number, chemin: string): void {
+  memoires.set(page, chemin);
+  pretes.add(page);
+}
+
+/**
+ * Le chemin local de l'ACTIF EMBARQUE d'une page, ou `null`.
  *
- * NB : le repli sur l'URL distante est délibéré. Une page qu'on ne peut pas
- * mettre en cache reste une page qu'on peut **voir** : le composant `Image` de
- * React Native a son propre cache réseau et n'a pas besoin du système de
- * fichiers. Refuser l'affichage faute de cache serait le pire des deux mondes —
- * l'utilisateur perd la page alors que le réseau répondait.
+ * C'est la voie normale, et la seule qui n'ait besoin ni de reseau ni de disque
+ * inscriptible : les 604 pages sont dans le paquet de l'application.
+ *
+ * `Asset.fromModule` peut lever sur un module qui n'est pas un actif — cela
+ * n'arrive pas pour les 604 `require` engendres, mais la fonction est appelee
+ * avec ce que lui rend `actifDePage`, qui ne rend `null` que hors bornes. On
+ * attrape donc quand meme : un binaire mal empaquete doit degrader l'affichage,
+ * pas faire tomber l'ecran.
+ *
+ * `downloadAsync` sur un actif **embarque** est une operation locale : elle
+ * recopie l'actif depuis le paquet vers un fichier que `Image` sait lire, et
+ * rend immediatement. C'est la raison pour laquelle on l'appelle ici plutot que
+ * de lire `actif.localUri` directement — sur certaines versions, `localUri` est
+ * `null` tant que l'actif n'a pas ete « telecharge ».
+ */
+async function cheminActifEmbarque(page: number): Promise<string | null> {
+  const module = actifDePage(page);
+  if (module === null) return null;
+  try {
+    const actif = Asset.fromModule(module);
+    await actif.downloadAsync();
+    return actif.localUri ?? actif.uri ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Le chemin local de l'image d'une page, en la resolvant si besoin.
+ *
+ * Rend `null` si la page est hors bornes ou si AUCUNE voie n'a abouti. Deux
+ * appels pour la meme page ne font qu'un seul travail.
+ *
+ * L'ordre des replis est decrit en tete de fichier : actif embarque, puis
+ * disque, puis adresse distante. Le repli sur l'adresse distante est delibere :
+ * une page qu'on ne peut pas obtenir autrement reste une page qu'on peut
+ * **voir**, et le composant `Image` de React Native a son propre cache reseau.
+ * Refuser l'affichage serait le pire des deux mondes.
  */
 export async function assurerPage(page: number): Promise<string | null> {
   if (!pageValide(page)) return null;
@@ -111,46 +192,43 @@ export async function assurerPage(page: number): Promise<string | null> {
   const url = getMushafPageImage(page);
   if (url === null) return null;
 
-  // Pas de cache disque disponible : on rend l'URL distante. `Image` l'affiche
-  // et la garde dans son propre cache. Ce n'est pas durable entre deux
-  // lancements, mais c'est infiniment mieux qu'un écran d'échec.
-  if (DOSSIER === null) return url;
-
-  const local = cheminLocal(page);
-  if (local === null) return url;
-  if (pretes.has(page)) return local;
+  if (pretes.has(page)) {
+    // Deja resolue : on sait par quelle voie, elle est memorisee juste apres.
+    return memoires.get(page) ?? (await cheminActifEmbarque(page)) ?? url;
+  }
 
   const deja = enCours.get(page);
   if (deja !== undefined) return deja;
 
   const promesse = (async (): Promise<string | null> => {
     try {
-      await preparerDossier();
-
-      // Déjà sur le disque ? On ne retélécharge pas. `getInfoAsync` avec
-      // `size` est nécessaire : sans option, la réponse ne porte pas la taille
-      // et un fichier vide passerait pour un fichier valide. Le type `FileInfo`
-      // est une union discriminée par `exists`, et `size` n'existe que du côté
-      // « existe » — d'où le test, qui est aussi la garde contre le fichier vide.
-      const info = await FileSystem.getInfoAsync(local, { size: true });
-      if (info.exists && info.size > 0) {
-        pretes.add(page);
-        return local;
+      // 1. L'actif embarque. C'est la voie normale, et elle ne depend de rien.
+      const embarque = await cheminActifEmbarque(page);
+      if (embarque !== null) {
+        retenir(page, embarque);
+        return embarque;
       }
 
-      await FileSystem.downloadAsync(url, local);
+      // 2. Un telechargement d'une version precedente, s'il est encore la.
+      //    On ne l'ecrit plus, mais on ne jette pas ce qui existe : c'est une
+      //    page deja sur l'appareil, et la relire ne coute rien.
+      if (DOSSIER !== null) {
+        const local = cheminLocal(page);
+        if (local !== null) {
+          const info = await FileSystem.getInfoAsync(local, { size: true });
+          if (info.exists && info.size > 0) {
+            retenir(page, local);
+            return local;
+          }
+        }
+      }
 
-      // Un téléchargement interrompu laisse un fichier vide ou tronqué : on le
-      // vérifie avant de le déclarer prêt, sinon la page resterait blanche pour
-      // toujours, sans nouvelle tentative.
-      const apres = await FileSystem.getInfoAsync(local, { size: true });
-      if (!apres.exists || apres.size === 0) return url;
-
-      pretes.add(page);
-      return local;
+      // 3. L'adresse distante, en dernier recours.
+      retenir(page, url);
+      return url;
     } catch {
-      // Panne réseau, disque plein, ou chemin refusé : on ne marque pas la page
-      // comme prête, mais on rend l'URL pour que la page s'affiche quand même.
+      // Aucune voie n'a abouti proprement : on rend l'adresse distante pour que
+      // la page s'affiche quand meme si le reseau repond.
       return url;
     } finally {
       enCours.delete(page);
@@ -162,23 +240,28 @@ export async function assurerPage(page: number): Promise<string | null> {
 }
 
 /**
- * Vrai si l'image de cette page est déjà **sur le disque**.
+ * Vrai si l'image de cette page a **deja ete resolue** — actif embarque ou
+ * disque, peu importe : ce qui compte est qu'un chemin soit connu.
  *
- * Faux quand le cache disque est indisponible : il n'y a alors rien sur le
- * disque, et `cheminLocal` rend `null`. Cette condition est écrite ici plutôt
- * que laissée implicite, parce que le succès de la page ne dépend pas d'elle :
- * une page sans cache disque s'affiche par son URL, et confondre « pas en
- * cache » avec « pas affichable » ramènerait exactement le défaut corrigé.
+ * Sert a sauter le travail de resolution, et a savoir si la place doit etre
+ * reservee par un indicateur d'attente. La question « par quelle voie ? » ne se
+ * pose pas ici : `assurerPage` la tranche, et memorise la reponse.
  */
 export function pageEnCache(page: number): boolean {
-  return DOSSIER !== null && pretes.has(page);
+  return pretes.has(page);
 }
 
 /**
- * Supprimer les images mises en cache, pour libérer de la place.
+ * Supprimer les images qu'un ANCIEN telechargement avait laissees, pour liberer
+ * de la place.
  *
- * Rend le nombre d'octets récupérés, ou `0` si le calcul échoue. Ne touche
- * qu'au dossier des pages : aucune donnée de l'utilisateur n'est concernée.
+ * Ne touche ni au paquet de l'application — les pages embarquees ne se
+ * suppriment pas —, ni aux donnees de l'utilisateur. Sur une installation
+ * recente, il n'y a rien a supprimer et la fonction rend `0`.
+ *
+ * Elle oublie aussi les chemins memorises : sans cela, une page resterait
+ * marquee resolue en pointant vers un fichier qu'on vient d'effacer, et
+ * s'afficherait vide jusqu'au prochain lancement.
  */
 export async function viderCachePages(): Promise<number> {
   if (DOSSIER === null) return 0;
@@ -196,6 +279,7 @@ export async function viderCachePages(): Promise<number> {
     }
     await FileSystem.deleteAsync(DOSSIER, { idempotent: true });
     pretes.clear();
+    memoires.clear();
     dossierPret.fait = false;
     return octets;
   } catch {
@@ -222,7 +306,9 @@ export interface EtatPage {
  */
 export function usePageMoushaf(page: number, tentative = 0): EtatPage {
   const [etat, setEtat] = useState<EtatPage>(() => ({
-    chemin: pageEnCache(page) ? cheminLocal(page) : null,
+    // Une page deja resolue rend son chemin immediatement — c'est ce qui fait
+    // qu'une page deja vue ne repasse pas par l'indicateur d'attente.
+    chemin: pageEnCache(page) ? memoires.get(page) ?? null : null,
     chargement: !pageEnCache(page),
     echec: false,
   }));
@@ -236,7 +322,7 @@ export function usePageMoushaf(page: number, tentative = 0): EtatPage {
     }
 
     if (pageEnCache(page)) {
-      setEtat({ chemin: cheminLocal(page), chargement: false, echec: false });
+      setEtat({ chemin: memoires.get(page) ?? null, chargement: false, echec: false });
       return;
     }
 

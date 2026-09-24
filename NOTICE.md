@@ -196,9 +196,10 @@ celui de Tanzil, et la police ne fait que le dessiner.
 
 L'affichage « page du moushaf » montre l'**image** de la page imprimée, et non
 une composition de cette page. Les 604 images sont **rangées dans ce dépôt**,
-sous `pages-moushaf/`, et servies depuis ce dépôt. Elles ne sont pas embarquées
-dans l'application : elles sont téléchargées à la demande, puis gardées dans le
-cache local de l'appareil.
+sous `pages-moushaf/`, et **embarquées dans l'application** : elles s'affichent
+immédiatement, dès l'installation, sans aucun réseau. Le dépôt reste la source
+de vérité des octets, et jsDelivr n'est plus appelé que comme **repli**, si un
+binaire n'avait pas empaqueté ses images.
 
 - **Œuvre** : les pages du moushaf de Madine, narration Hafs 'an Asim, 604 pages
   (1 à 604, sans page manquante), telles qu'elles sont imprimées — cadre,
@@ -223,17 +224,26 @@ cache local de l'appareil.
   couleurs (599 fichiers en 4 bits, 5 en 8 bits). Réduire la résolution les
   **alourdit** — 1440 px donne 256 Ko par page contre 148 Ko à 1920 px — parce que
   l'anti-aliasing ajoute des couleurs et détruit les aplats que le filtre PNG
-  compresse. Les originaux sont donc aussi le plus petit choix fidèle.
+  compresse. Les originaux sont donc aussi le plus petit choix fidèle, et ils
+  sont embarqués tels quels.
 - **Code** : `src/lib/pagesMoushaf.ts` — `getMushafPageImage(page)` est le seul
-  point de contact avec cette source ; `SOURCE_PAGES` en est le seul endroit à
-  modifier pour en changer.
-- **Servi depuis ce dépôt.** L'application lit les pages à l'adresse
-  `https://cdn.jsdelivr.net/gh/Msoumaya2019/hifdh-app@main/pages-moushaf/pageNNN.png`.
-  Deux conséquences, dites ici parce qu'elles ne se voient nulle part ailleurs :
-  le dépôt doit rester **public**, et la branche servie est **`main`**. Renommer
-  le dépôt, le rendre privé ou renommer la branche couperait les 604 pages d'un
-  coup — sans erreur de compilation. Changer de branche servie est une
-  modification de `SOURCE_PAGES.base`.
+  point de contact avec la source distante ; `SOURCE_PAGES` en est le seul endroit
+  à modifier pour en changer. `src/lib/actifsPagesMoushaf.ts` est la **table
+  engendrée** des 604 `require`, par `scripts/engendrer_actifs_pages.py`.
+- **Embarquement, et ce qu'il coûte.** C'est une **décision de produit** : la
+  page doit s'afficher dès l'installation, hors connexion, et sans attente même
+  la première fois. Le prix est explicite et mesuré : les 112,7 Mio de pages
+  entrent dans l'**APK** comme dans l'**IPA**, qui passent d'environ 102 à
+  environ 215 Mo. Metro résout un `require` d'actif **littéralement**, au moment
+  de l'empaquetage : un chemin calculé ne serait pas résolu, d'où une table
+  engendrée et non écrite à la main.
+- **Le dépôt reste la source des octets.** L'application ne lit plus les pages à
+  l'adresse `https://cdn.jsdelivr.net/gh/Msoumaya2019/hifdh-app@main/pages-moushaf/pageNNN.png`
+  que si l'actif embarqué manque. Deux conséquences, dites ici parce qu'elles ne
+  se voient nulle part ailleurs : le dépôt doit rester **public**, et la branche
+  citée est **`main`**. Renommer le dépôt, le rendre privé ou renommer la branche
+  ne couperait plus l'affichage — l'actif est local — mais retirerait le repli.
+  Changer de branche servie est une modification de `SOURCE_PAGES.base`.
 - **Le poids du dépôt est une contrainte de service, pas une coquetterie.** La
   documentation de jsDelivr borne un paquet à **150 Mo**, et un fichier isolé à
   **20 Mo** ; son API de liste, elle, refuse au-delà de **50 Mo**. Les trois
@@ -244,18 +254,21 @@ cache local de l'appareil.
   documentée — les 604 pages étaient pourtant bien servies, mesuré une à une.
   **Avant d'ajouter des fichiers lourds, mesurer** : `git ls-files` puis la somme
   des tailles, jamais `du` sur un dossier partiel.
-- **Cache** : `src/lib/cachePagesMoushaf.ts` — une page téléchargée est écrite
-  sur le disque et n'est plus retéléchargée.
-- **Repli** : si le cache disque n'est pas disponible sur l'appareil — le module
-  natif de fichiers peut être absent, et `cacheDirectory` vaut alors `null` sans
-  lever — l'image n'est **pas** cachée : c'est l'adresse distante qui est rendue,
-  et l'`Image` de React Native l'affiche avec son propre cache réseau. Une panne
-  du cache ne doit jamais retirer la page à la personne qui la lit.
+- **Résolution d'une page** : `src/lib/cachePagesMoushaf.ts`. L'ordre est
+  **actif embarqué → disque (ancien téléchargement) → adresse distante**. L'actif
+  d'abord parce qu'il est local et immédiat ; le disque ensuite, pour ne pas
+  ignorer ce qu'une version précédente y avait laissé ; le réseau en dernier,
+  parce que c'est le seul cas qui demande une connexion.
+- **Repli** : une page qu'aucune voie locale n'atteint reste affichable par son
+  adresse distante — l'`Image` de React Native a son propre cache réseau. Une
+  panne du disque ou de l'empaquetage ne doit jamais retirer la page à la
+  personne qui la lit.
 - **Vérification** : `npm run verifier:pages-moushaf` (et son falsificateur
   `npm run falsifier:pages-moushaf`). Le contrôle lit l'en-tête des **604**
   fichiers sur le disque, compare leur format à celui que le code réserve, exige
-  que le nom servi soit celui du fichier rangé, et vérifie qu'aucun module ne
-  réclame ces pages — les embarquer doublerait le poids de l'application. Avec
+  que le nom servi soit celui du fichier rangé, exige que la table engendrée
+  réclame les 604 pages **dans l'ordre**, qu'aucun autre module ne les réclame,
+  et que la résolution passe par l'actif embarqué **avant** le réseau. Avec
   `--reseau`, il interroge en plus la source pour seize pages.
 
 ### Ce qui a été mesuré sur ces pages

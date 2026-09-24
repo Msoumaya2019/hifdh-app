@@ -17,10 +17,15 @@ depot. Six choses peuvent mal tourner, et aucune ne se voit a la compilation :
      doit etre le rapport REEL des fichiers. Sinon la page saute quand l'image
      arrive, et les boutons se deplacent sous le doigt ;
   5. **une adresse ecrite ailleurs** que dans `pagesMoushaf.ts` — la source doit
-     rester remplaçable en un seul endroit ;
-  6. **les pages embarquees dans l'application** — elles pesent 112,7 Mo et sont
-     servies, non embarquees. Un `require` sur ce dossier ferait doubler le poids
-     de l'APK en silence. C'est une decision, et elle s'ecrit ici.
+     rester remplaçable en un seul endroit. C'est aussi ce qui garantit que la
+     table des actifs embarques reste la SEULE a reclamer les pages ;
+  6. **les pages embarquees sans que rien ne le dise** — elles pesent 112,7 Mo et
+     entrent dans l'APK comme dans l'IPA, qui passent d'environ 102 a environ
+     215 Mo. C'est une **decision** : la page s'affiche des l'installation, sans
+     reseau. Ce qui est controle n'est donc pas l'embarquement lui-meme, mais le
+     fait qu'il reste **explicite et complet** : une seule table le porte, elle
+     reclame les 604 pages dans l'ordre, et le module qui les resout passe par
+     l'actif embarque AVANT le reseau.
 
 CE QUI N'EST PAS EPROUVE ICI
 ----------------------------
@@ -28,6 +33,10 @@ Que les 604 adresses repondent vraiment. Cela demande Internet, et un controle
 qui echoue hors ligne n'apprend rien sur le code. C'est l'objet de l'option
 `--reseau`, qui interroge la source page par page et **compte** ce qu'il a
 verifie — un controle qui n'annonce pas sa couverture ne couvre rien.
+
+NB : depuis que les pages sont embarquees, `--reseau` sert surtout a verifier le
+REPLI. Le chemin normal ne touche pas au reseau, donc ce controle peut echouer
+sur une machine hors ligne sans que l'application en souffre.
 
 USAGE
     python scripts/verifier_pages_moushaf.py            # statique, hors ligne
@@ -308,21 +317,103 @@ def verifier_sans_reseau() -> list[str]:
             + ", ".join(adresses_ailleurs)
         )
 
-    # 8. LES PAGES NE SONT PAS EMBARQUEES. Elles pesent 112,7 Mo et sont servies
-    #    depuis le depot : un `require` sur ce dossier les ferait entrer dans
-    #    l'APK, qui passerait de 102 a environ 215 Mo sans que rien ne le dise.
-    #    C'est une decision de produit, et ce controle la tient.
-    requires = []
+    # 8. LES PAGES SONT EMBARQUEES, ET C'EST UNE DECISION TENUE ICI.
+    #
+    #    Elles pesent 112,7 Mo et entrent dans l'APK comme dans l'IPA, qui
+    #    passent d'environ 102 a environ 215 Mo. C'etait l'inverse avant : un
+    #    controle interdisait le `require`, au motif que l'alourdissement serait
+    #    silencieux. La decision a change — la page doit s'afficher des
+    #    l'installation, sans reseau —, et le controle change avec elle.
+    #
+    #    Ce qu'il garde, et qui n'a pas change : l'alourdissement ne doit pas
+    #    etre SILENCIEUX. Trois choses sont donc exigees ensemble :
+    #
+    #      a) les pages sont reclamees par la table engendree, et par elle seule
+    #         (`actifsPagesMoushaf.ts`) — un `require` pose ailleurs, dans un
+    #         ecran ou un composant, remettrait la decision hors du controle ;
+    #      b) la table reclame les 604 pages, dans l'ordre, sans doublon ;
+    #      c) le module qui les resolve passe bien par l'actif embarque AVANT le
+    #         reseau — sans quoi l'embarquement ne servirait a rien.
+    #
+    #    (b) et (c) sont lus sur le disque et sur le code, donc une page
+    #    renommee, une ligne perdue ou un ordre casse se voient ici.
+    TABLE_ACTIFS = RACINE / "src" / "lib" / "actifsPagesMoushaf.ts"
+    attendus_ordre = [f"page{n:03d}.png" for n in range(1, TOTAL_PAGES + 1)]
+
+    #    Le code du module qui resout les pages, sans ses commentaires : c'est lui
+    #    qu'on interroge ci-dessous, et en 12.
+    cache_code = sans_commentaires(lire(CACHE))
+
+    if not TABLE_ACTIFS.exists():
+        problemes.append(
+            "la table des actifs embarques est absente "
+            f"({TABLE_ACTIFS.relative_to(RACINE).as_posix()}) : les pages ne "
+            "seraient pas dans l'application, et l'affichage dependrait du reseau"
+        )
+    else:
+        table = TABLE_ACTIFS.read_text(encoding="utf-8")
+        reclamees = re.findall(
+            r"require\('\.\./\.\./pages-moushaf/([^']+)'\)", table
+        )
+        if reclamees != attendus_ordre:
+            manquantes = [n for n in attendus_ordre if n not in set(reclamees)]
+            en_trop = [n for n in reclamees if n not in set(attendus_ordre)]
+            doublons = sorted({n for n in reclamees if reclamees.count(n) > 1})
+            detail = []
+            if manquantes:
+                detail.append(f"{len(manquantes)} page(s) non reclamee(s), dont {manquantes[0]}")
+            if en_trop:
+                detail.append(f"{len(en_trop)} nom(s) inattendu(s), dont {en_trop[0]}")
+            if doublons:
+                detail.append(f"{len(doublons)} doublon(s), dont {doublons[0]}")
+            if not detail:
+                detail.append(
+                    f"les {len(reclamees)} pages sont la, mais l'ORDRE differe : "
+                    "l'indice d'une page ne serait plus le sien, et une page "
+                    "s'afficherait a la place d'une autre"
+                )
+            problemes.append(
+                "la table des actifs ne reclame pas les 604 pages dans l'ordre : "
+                + " ; ".join(detail)
+            )
+
+    #    (a) Aucun `require` sur les pages en dehors de la table engendree.
+    requires_ailleurs = []
     for f in list((RACINE / "src").rglob("*.ts")) + list(
         (RACINE / "src").rglob("*.tsx")
     ):
+        if f.resolve() == TABLE_ACTIFS.resolve():
+            continue
         t = sans_commentaires(f.read_text(encoding="utf-8"))
         if re.search(r"require\([^)]*pages-moushaf/", t):
-            requires.append(f.relative_to(RACINE).as_posix())
-    if requires:
+            requires_ailleurs.append(f.relative_to(RACINE).as_posix())
+    if requires_ailleurs:
         problemes.append(
-            "les pages sont reclamees par un module : elles seraient embarquees "
-            "dans l'application (environ +113 Mo) : " + ", ".join(requires)
+            "des pages sont reclamees hors de la table engendree : l'embarquement "
+            "echappe au controle : " + ", ".join(requires_ailleurs)
+        )
+
+    #    (c) L'actif embarque est essaye AVANT le disque et AVANT le reseau.
+    #        On ancre sur l'appel en position de premiere voie, et sur le fait que
+    #        la fonction rend un chemin local : un module qui reclamerait les pages
+    #        sans jamais les afficher ne servirait a rien.
+    if not re.search(
+        r"const embarque = await cheminActifEmbarque\(page\);\s*\n\s*"
+        r"if \(embarque !== null\) \{",
+        cache_code,
+    ):
+        problemes.append(
+            "cachePagesMoushaf n'essaie pas l'actif embarque en premier : "
+            "l'affichage attendrait le reseau alors que la page est dans "
+            "l'application"
+        )
+    if "async function cheminActifEmbarque" not in cache_code:
+        problemes.append(
+            "cachePagesMoushaf ne sait pas resoudre un actif embarque"
+        )
+    if "actifDePage(" not in cache_code:
+        problemes.append(
+            "cachePagesMoushaf ne passe pas par la table des actifs engendree"
         )
 
     # 9. Les fichiers binaires ne doivent pas subir de conversion de fin de
@@ -352,7 +443,7 @@ def verifier_sans_reseau() -> list[str]:
     if 'resizeMode="contain"' not in lecteur:
         problemes.append("l'image n'est pas en resizeMode=\"contain\" : elle serait deformee")
 
-    # 12. LE CACHE DISQUE N'EST PAS TOUJOURS DISPONIBLE, ET LE CODE DOIT LE SAVOIR.
+    # 12. LE DISQUE N'EST PAS TOUJOURS DISPONIBLE, ET LE CODE DOIT LE SAVOIR.
     #
     #    Defaut mesure sur appareil : `expo-file-system` resout son module natif
     #    par `requireOptionalNativeModule('ExponentFileSystem') ?? shim`, et le
@@ -362,18 +453,18 @@ def verifier_sans_reseau() -> list[str]:
     #    ta connexion ». La page ne s'affichait donc jamais, et le message
     #    accusait le reseau a tort.
     #
-    #    Trois choses doivent donc tenir, et aucune ne se voit a la compilation :
-    #    on ne fabrique pas de chemin avec un repli vide, on ne confond pas
-    #    « pas de cache » avec « pas de reseau », et une page qu'on ne peut pas
-    #    mettre en cache reste affichable par son adresse distante.
-    cache_code = sans_commentaires(lire(CACHE))
+    #    Depuis que les pages sont embarquees, ce piege ne mord plus sur
+    #    l'affichage — l'actif ne passe pas par le disque. Il mord encore sur les
+    #    deux usages qui subsistent : lire une page qu'un ancien telechargement
+    #    avait laissee, et vider ce dossier. Les gardes restent donc, et aucune
+    #    ne doit fabriquer de chemin avec un repli vide.
     if "?? ''" in cache_code:
         problemes.append(
             "cachePagesMoushaf fabrique un chemin avec un repli vide : "
             "cacheDirectory peut etre null, et le chemin serait alors sans schema"
         )
     #    Meme piege que ci-dessus, et mesure : `DOSSIER === null` apparait dans
-    #    quatre gardes. Chercher la seule chaine reste donc vert meme si
+    #    plusieurs gardes. Chercher la seule chaine reste donc vert meme si
     #    `cheminLocal` cesse de rendre `null` — mutation faite, et NON detectee.
     #    On ancre sur la LIGNE qui decide, pas sur le motif nu.
     if not re.search(
@@ -384,26 +475,27 @@ def verifier_sans_reseau() -> list[str]:
             "cheminLocal fabrique un chemin meme sans cache disque : "
             "un cache indisponible serait rapporte comme une panne reseau"
         )
-    #    Le repli doit etre la GARDE elle-meme, pas un `return url;` quelconque :
-    #    ce motif apparait quatre fois dans le fichier. Un controle qui cherche la
-    #    seule instruction reste vert meme si la garde rend `null` — mesure : la
-    #    mutation « le repli sur l'adresse distante est retire » n'etait PAS
-    #    detectee. On ancre donc sur la condition ET sur ce qu'elle rend.
-    if not re.search(r"if \(DOSSIER === null\) return url;", cache_code):
+    #    Le repli final, quand aucune voie locale n'aboutit, doit rendre l'ADRESSE
+    #    DISTANTE. On ancre sur le CODE — la memorisation suivie du retour — et
+    #    jamais sur un commentaire : `sans_commentaires` les a retirees, donc une
+    #    ancre posee sur eux ne peut pas tenir. Deux `return url;` existent dans
+    #    le fichier : celui de la voie normale, et celui du `catch` d'urgence. Le
+    #    `catch` ne memorise pas — la page n'y est pas resolue —, donc exiger les
+    #    deux instructions ensemble distingue les deux sans ambiguite.
+    if not re.search(r"retenir\(page, url\);\s*\n\s*return url;", cache_code):
         problemes.append(
-            "cachePagesMoushaf ne retombe pas sur l'adresse distante quand le cache "
-            "disque est absent : une page s'afficherait en echec alors que la "
+            "cachePagesMoushaf ne retombe pas sur l'adresse distante quand aucune "
+            "voie locale n'aboutit : une page s'afficherait en echec alors que la "
             "source repond"
         )
-    #    `pageEnCache` decide si le chargement doit etre SAUTE. Sans la garde du
-    #    cache disque, elle pourrait repondre « oui » alors que `cheminLocal` ne
-    #    peut offrir aucun chemin : le chargement serait saute, `cheminLocal`
-    #    rendrait `null`, et la page s'afficherait en echec -- le defaut meme
-    #    qu'on vient de corriger, par une autre porte.
-    if not re.search(r"return DOSSIER !== null && pretes\.has\(page\);", cache_code):
+    #    `pageEnCache` decide si la resolution est SAUTEE. Elle doit repondre
+    #    d'apres les chemins REELLEMENT resolus, et non d'apres le seul disque :
+    #    une page servie par l'actif embarque serait sinon declaree non prete a
+    #    chaque affichage, et repasserait par l'indicateur d'attente.
+    if not re.search(r"export function pageEnCache\(page: number\): boolean \{\s*\n\s*return pretes\.has\(page\);", cache_code):
         problemes.append(
-            "pageEnCache ne verifie pas que le cache disque existe : une page "
-            "serait declaree prete alors qu'aucun chemin local n'existe"
+            "pageEnCache ne repond pas d'apres les chemins resolus : une page "
+            "embarquee serait rapportee comme non prete"
         )
 
     return problemes
@@ -470,7 +562,8 @@ def main() -> int:
     else:
         print(
             f"[OK ] les {TOTAL_PAGES} pages sont sur le disque, au format annonce, "
-            "servies depuis un seul endroit, et non embarquees"
+            "embarquees dans l'application par la table engendree, et resolues "
+            "avant tout appel au reseau"
         )
 
     if avec_reseau:

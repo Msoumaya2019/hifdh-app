@@ -36,6 +36,7 @@ AUTRE = RACINE / "src/lib/progress.ts"
 CACHE = RACINE / "src/lib/cachePagesMoushaf.ts"
 GITATTRIBUTES = RACINE / ".gitattributes"
 PAGES = RACINE / "pages-moushaf"
+TABLE_ACTIFS = RACINE / "src/lib/actifsPagesMoushaf.ts"
 
 
 def sha(p: Path) -> str:
@@ -96,9 +97,28 @@ MUTATIONS = [
         "export const RATIO_PAGE_PAR_DEFAUT = 1.65;",
     ),
     (
-        # Les pages sont reclamees par un module : elles entreraient dans
-        # l'APK, qui passerait de 102 a environ 215 Mo.
-        "un module reclame une page, qui serait embarquee",
+        # La table engendree perd une page : la 300 ne serait plus dans
+        # l'application, et l'indice des suivantes glisserait d'un rang — une
+        # page s'afficherait a la place d'une autre, sans que rien ne le dise.
+        "la table des actifs perd une page",
+        TABLE_ACTIFS,
+        "  require('../../pages-moushaf/page300.png'),\n",
+        "",
+    ),
+    (
+        # Deux pages permutees : les 604 sont la, donc un controle qui ne
+        # compterait que les noms resterait vert. L'ORDRE est ce qui fait qu'un
+        # indice designe la bonne page.
+        "deux pages de la table sont permutees",
+        TABLE_ACTIFS,
+        "  require('../../pages-moushaf/page001.png'),\n  require('../../pages-moushaf/page002.png'),",
+        "  require('../../pages-moushaf/page002.png'),\n  require('../../pages-moushaf/page001.png'),",
+    ),
+    (
+        # Les pages reclamees HORS de la table engendree : l'embarquement
+        # echapperait au controle, et une page pourrait entrer dans le paquet
+        # sans que rien ne dise d'ou elle vient.
+        "un module reclame une page hors de la table engendree",
         AUTRE,
         "import type {",
         "const PAGE_EMBARQUEE = require('../../pages-moushaf/page001.png');\nimport type {",
@@ -153,22 +173,34 @@ MUTATIONS = [
         "return `${DOSSIER}page-${page}.png`;",
     ),
     (
-        # Le repli sur l'adresse distante disparait : une page qu'on ne peut pas
-        # mettre en cache s'affiche en echec alors que la source repond.
+        # Le repli sur l'adresse distante disparait : aucune voie locale
+        # n'aboutit, et la page s'affiche en echec alors que la source repond.
+        # On mute la LIGNE qui memorise et rend ensemble — le `catch` d'urgence,
+        # lui, ne memorise pas, et une mutation posee sur lui viserait autre
+        # chose.
         "le repli sur l'adresse distante est retire",
         CACHE,
-        "  if (DOSSIER === null) return url;",
-        "  if (DOSSIER === null) return null;",
+        "      retenir(page, url);\n      return url;",
+        "      retenir(page, url);\n      return null;",
     ),
     (
-        # Une seule regle visee : la garde du cache disque dans `pageEnCache`.
-        # La retirer ne casse rien AUJOURD'HUI (`pretes` ne se remplit que du
-        # cote disque), et c'est exactement pourquoi la mutation est utile : elle
-        # montre que l'invariant tient la garde elle-meme, pas son effet du jour.
-        "pageEnCache ne verifie plus le cache disque",
+        # L'actif embarque n'est plus essaye en premier : l'affichage attend le
+        # reseau alors que la page est dans l'application, et la fluidite qu'on
+        # est venu chercher disparait.
+        "l'actif embarque n'est plus essaye en premier",
         CACHE,
-        "  return DOSSIER !== null && pretes.has(page);",
+        "      const embarque = await cheminActifEmbarque(page);\n      if (embarque !== null) {",
+        "      const embarque = null;\n      if (embarque !== null) {",
+    ),
+    (
+        # `pageEnCache` ne repond plus d'apres les chemins resolus : une page
+        # servie par l'actif embarque serait rapportee comme non prete a chaque
+        # affichage, et repasserait par l'indicateur d'attente — la lenteur
+        # qu'on vient de retirer, par une autre porte.
+        "pageEnCache ne repond plus d'apres les chemins resolus",
+        CACHE,
         "  return pretes.has(page);",
+        "  return false;",
     ),
 ]
 
