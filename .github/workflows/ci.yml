@@ -387,6 +387,16 @@ jobs:
       - name: Falsifier les contrôles des notifications
         run: npm run falsifier:notifications
 
+      # L'accord avec Firebase : le paquet d'`app.json` doit être celui de
+      # `google-services.json`, et le fichier doit être déclaré. Un désaccord fait
+      # répondre « 403 PERMISSION_DENIED » à Firebase, et l'application n'obtient
+      # jamais de jeton — sans qu'aucune compilation échoue. Le test
+      # (`tests/firebase.test.mjs`) transforme cette panne silencieuse en échec
+      # bruyant ; ce falsificateur vérifie que le test tombe vraiment, et sur le
+      # bon test, quand l'accord est rompu.
+      - name: Falsifier l'accord avec Firebase
+        run: npm run falsifier:firebase
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas
