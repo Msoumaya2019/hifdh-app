@@ -213,10 +213,12 @@ export default function AccueilScreen() {
         )}
       </Card>
 
-      {/* À renforcer. La carte EST le raccourci : un appui mène directement à
-          l'onglet « À renforcer », où la liste est groupée par sourate. Le
-          chevron est là pour que la carte se voie cliquable — sans lui, un
-          raccourci invisible ne vaut pas mieux que pas de raccourci. */}
+      {/* Révision. La carte EST le raccourci : un appui mène directement à
+          l'entrée « Révision » de l'onglet Programme, où la liste est groupée
+          par sourate. Le chevron est là pour que la carte se voie cliquable —
+          sans lui, un raccourci invisible ne vaut pas mieux que pas de
+          raccourci. Le titre reprend le mot de l'entrée qu'il ouvre : deux noms
+          pour un même endroit feraient douter d'y être arrivé. */}
       {aRenforcer > 0 && (
         <Pressable
           onPress={() =>
@@ -229,12 +231,12 @@ export default function AccueilScreen() {
             })
           }
           accessibilityRole="button"
-          accessibilityLabel={`Voir les ${aRenforcer} passage${aRenforcer > 1 ? 's' : ''} à renforcer`}
+          accessibilityLabel={`Voir les ${aRenforcer} passage${aRenforcer > 1 ? 's' : ''} en révision`}
           style={({ pressed }) => [styles.carteCliquable, pressed && styles.cartePressee]}
         >
           <Card>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>À renforcer</Text>
+              <Text style={styles.cardTitle}>Révision</Text>
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{aRenforcer}</Text>
               </View>

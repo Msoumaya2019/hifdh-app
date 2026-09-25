@@ -1,9 +1,28 @@
-// Écran Programme - Séances d'apprentissage et passages à renforcer
+// Écran Programme — deux entrées distinctes : Apprentissage et Révision.
 //
-// L'onglet « Révisions » a été remplacé par « À renforcer ». L'apprenant ne
-// reliait pas « révision » à son travail : ce qu'il connaît de son propre état,
-// c'est ce qu'il a marqué « à retravailler » dans le lecteur. La liste réunit
-// donc les deux signaux qui, ensemble, disent qu'un passage n'est pas solide :
+// POURQUOI DEUX ENTRÉES AVEC UNE ICÔNE, ET NON DEUX ONGLETS DE TEXTE
+// ------------------------------------------------------------------
+// La demande les nomme « Apprentissage » (livre ouvert) et « Révision » (deux
+// flèches circulaires), et veut qu'elles se distinguent. Un changement de
+// libellé n'y suffirait pas : chaque entrée porte donc son icône, et l'entrée
+// active se voit à sa couleur. Le contenu, lui, ne change pas.
+//
+// LE MOT « RÉVISION » A DÉJÀ ÉTÉ ÉCARTÉ UNE FOIS, ET VOICI POURQUOI IL REVIENT.
+// Ce fichier portait la décision inverse : « À renforcer » avait remplacé
+// « Révisions », parce que l'apprenant ne reliait pas le mot à son travail. Ce
+// qui avait réellement levé la confusion n'est pas le titre, c'est que CHAQUE
+// LIGNE dit d'où elle vient — « Marqué à retravailler » ou « Révision prévue ».
+// Cette ligne existe toujours ; le titre peut donc reprendre le mot de la
+// demande sans réintroduire ce qui avait gêné.
+//
+// ELLE RESTE VISIBLE QUAND LES RÉVISIONS SONT ÉTEINTES. L'interrupteur du profil
+// (section « Apprentissage ») décide si les passages à renforcer sont PROPOSÉS.
+// L'éteindre ne supprime rien : l'entrée demeure, la liste aussi, et un bandeau
+// dit l'état avec le moyen de le changer. Masquer l'entrée cacherait des données
+// que personne n'a demandé à supprimer.
+//
+// La liste réunit les deux signaux qui, ensemble, disent qu'un passage n'est pas
+// solide :
 //
 //   - le marquage explicite de l'apprenant ;
 //   - l'échéance de la révision espacée.
@@ -31,6 +50,7 @@ import { formatDate } from '@/lib/progress';
 import { aujourdHui, dansJours, ilYAjours } from '@/lib/dates';
 import { reporterSeance } from '@/lib/programGenerator';
 import { passagesARenforcer, type PassageARenforcer } from '@/lib/renforcement';
+import { revisionsActives } from '@/lib/apprentissage';
 import { getSurah } from '@/data/quranData';
 import { useAudio } from '@/lib/audio/ContexteAudio';
 import { versetsDeLaPlage } from '@/lib/audio/plan';
@@ -148,6 +168,11 @@ export default function ProgrammeScreen() {
     data: sess,
   }));
 
+  // Le réglage posé dans le profil. « Absent vaut actif » — la règle vit dans
+  // `@/lib/apprentissage` et nulle part ailleurs : recopiée ici, elle serait
+  // inversée un jour sans que rien ne le dise.
+  const revisionsOuvertes = revisionsActives(config);
+
   return (
     // La barre d'onglets occupe le HAUT : la marge du haut y est prise une
     // seule fois. Ici, c'est donc le BAS qu'il faut protéger (voir
@@ -169,26 +194,56 @@ export default function ProgrammeScreen() {
         </Pressable>
       </View>
 
-      {/* Onglets */}
-      <View style={styles.tabs}>
+      {/* Les deux entrées. Chacune porte son icône — un livre ouvert pour ce
+          qu'on apprend, deux flèches circulaires pour ce sur quoi on revient.
+          Le libellé seul ne les distinguait pas assez. */}
+      <View style={styles.entrees}>
         <Pressable
-          style={[styles.tab, activeTab === 'apprentissage' && styles.tabActive]}
+          style={[styles.entree, activeTab === 'apprentissage' && styles.entreeActive]}
           onPress={() => setActiveTab('apprentissage')}
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'apprentissage' }}
         >
-          <Text style={[styles.tabText, activeTab === 'apprentissage' && styles.tabTextActive]}>
+          <Ionicons
+            name="book-outline"
+            size={18}
+            color={activeTab === 'apprentissage' ? colors.textOnPrimary : colors.textSecondary}
+          />
+          <Text
+            style={[styles.entreeTexte, activeTab === 'apprentissage' && styles.entreeTexteActive]}
+          >
             Apprentissage
           </Text>
         </Pressable>
+
         <Pressable
-          style={[styles.tab, activeTab === 'renforcer' && styles.tabActive]}
+          style={[styles.entree, activeTab === 'renforcer' && styles.entreeActive]}
           onPress={() => setActiveTab('renforcer')}
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'renforcer' }}
+          accessibilityLabel={
+            revisionsOuvertes ? 'Révision' : 'Révision, désactivée dans le profil'
+          }
         >
-          <Text style={[styles.tabText, activeTab === 'renforcer' && styles.tabTextActive]}>
-            À renforcer{aRenforcer.length > 0 ? ` (${aRenforcer.length})` : ''}
+          {/* L'icône garde la MÊME teinte que sa voisine, même révisions
+              éteintes : l'entrée n'est pas désactivée — elle reste appuyable, et
+              la liste est là — donc une teinte éteinte le dirait à tort. Mesuré
+              au passage : `textTertiary` sur `surfaceVariant` donne 2,93 sur les
+              trois palettes claires, sous le seuil de 3,0 que ce projet tient
+              pour une icône. L'état, lui, se DIT — bandeau et libellé vocal. */}
+          <Ionicons
+            name="sync-outline"
+            size={18}
+            color={activeTab === 'renforcer' ? colors.textOnPrimary : colors.textSecondary}
+          />
+          <Text
+            style={[styles.entreeTexte, activeTab === 'renforcer' && styles.entreeTexteActive]}
+          >
+            {/* Le compte n'apparaît QUE si les révisions sont proposées : un
+                nombre à côté d'une entrée éteinte annoncerait un travail qui
+                n'est plus demandé. */}
+            Révision
+            {revisionsOuvertes && aRenforcer.length > 0 ? ` (${aRenforcer.length})` : ''}
           </Text>
         </Pressable>
       </View>
@@ -248,11 +303,37 @@ export default function ProgrammeScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ItemSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
           ListHeaderComponent={
-            aRenforcer.length > 0 ? (
-              <Text style={styles.intro}>
-                Ces passages ne sont pas encore solides. Lis-les, puis dis où tu en es.
-              </Text>
-            ) : null
+            <>
+              {/* Le bandeau dit l'état ET comment le changer. Sans lui, l'entrée
+                  « Révision » semblerait cassée : la liste est là, mais plus
+                  rien ne la propose. */}
+              {!revisionsOuvertes && (
+                <View style={styles.bandeau}>
+                  <View style={styles.bandeauLigne}>
+                    <Ionicons name="pause-circle-outline" size={20} color={colors.textSecondary} />
+                    <Text style={styles.bandeauTitre}>Révisions désactivées</Text>
+                  </View>
+                  <Text style={styles.bandeauAide}>
+                    Vos passages à renforcer sont conservés : rien n’est supprimé, et la liste
+                    reste consultable ci-dessous. Ils ne sont simplement plus mis en avant.
+                  </Text>
+                  <Pressable
+                    style={styles.bandeauBouton}
+                    onPress={() => router.push('/profil')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ouvrir le profil pour réactiver les révisions"
+                  >
+                    <Text style={styles.bandeauBoutonTexte}>Réactiver dans le profil</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {aRenforcer.length > 0 && (
+                <Text style={styles.intro}>
+                  Ces passages ne sont pas encore solides. Lis-les, puis dis où tu en es.
+                </Text>
+              )}
+            </>
           }
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -335,7 +416,7 @@ function SessionCard({ session, onComplete, onPostpone, onPress }: {
 }
 
 /**
- * Une ligne de « À renforcer ».
+ * Une ligne de la liste « Révision ».
  *
  * L'origine est écrite noir sur blanc : l'apprenant doit pouvoir distinguer ce
  * qu'il a lui-même signalé de ce que l'application lui propose de revoir. Sans
@@ -426,28 +507,33 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     fontWeight: fontWeights.bold,
     color: colors.textPrimary,
   },
-  tabs: {
+  entrees: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  tab: {
+  // Une entrée porte une ICÔNE et un libellé, sur une ligne : c'est ce qui la
+  // distingue de sa voisine sans qu'il faille lire le texte.
+  entree: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderRadius: radii.md,
-    alignItems: 'center',
     backgroundColor: colors.surfaceVariant,
   },
-  tabActive: {
+  entreeActive: {
     backgroundColor: colors.primary,
   },
-  tabText: {
+  entreeTexte: {
     fontSize: fontSizes.sm,
     color: colors.textSecondary,
     fontWeight: fontWeights.medium,
   },
-  tabTextActive: {
+  entreeTexteActive: {
     color: colors.textOnPrimary,
   },
   list: {
@@ -459,6 +545,43 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
     lineHeight: fontSizes.sm * 1.5,
+  },
+  // Le bandeau des révisions éteintes. Il est discret, mais il porte une SORTIE :
+  // dire « c'est désactivé » sans dire comment le rallumer laisserait la personne
+  // devant un état qu'elle ne saurait pas défaire.
+  bandeau: {
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  bandeauLigne: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bandeauTitre: {
+    fontSize: fontSizes.md,
+    fontWeight: fontWeights.semibold,
+    color: colors.textPrimary,
+  },
+  bandeauAide: {
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+    lineHeight: fontSizes.sm * 1.5,
+  },
+  bandeauBouton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.sm,
+    backgroundColor: colors.primary,
+  },
+  bandeauBoutonTexte: {
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.semibold,
+    color: colors.textOnPrimary,
   },
   sectionHeader: {
     fontSize: fontSizes.sm,

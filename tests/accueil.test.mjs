@@ -2,15 +2,20 @@
 //
 // Un écran d'accueil qui **affiche** un chiffre sans permettre d'agir dessus
 // laisse la personne devant un nombre. C'est ce qui s'était produit : la carte
-// « À renforcer » annonçait les passages à travailler sans qu'aucun appui n'y
-// mène, alors que l'onglet qui les liste existait déjà et savait s'ouvrir
-// directement dessus.
+// des passages à travailler annonçait un nombre sans qu'aucun appui n'y mène,
+// alors que l'onglet qui les liste existait déjà et savait s'ouvrir directement
+// dessus.
 //
 // Ce fichier tient l'accord entre deux écrans qui ne peuvent pas se lire :
 // l'accueil, qui **émet** le paramètre, et l'onglet Programme, qui le
 // **consomme**. Un nom de paramètre mal orthographié de l'autre côté ne casse
 // rien à la compilation, et rien à l'exécution non plus : l'onglet s'ouvrirait
 // simplement sur « Apprentissage », ce qui ressemblerait à un bouton sans effet.
+//
+// LE TITRE DE LA CARTE EST CELUI DE L'ENTRÉE QU'ELLE OUVRE. La carte s'appelait
+// « À renforcer » ; l'entrée du Programme s'appelle « Révision ». Deux noms pour
+// un même endroit font douter d'y être arrivé — et le libellé vocal, qui dit où
+// l'appui mène, doit nommer le même endroit que l'écran d'arrivée.
 //
 // Ce qui n'est **pas** éprouvé ici : que le geste soit agréable, ni que la
 // destination soit la bonne pour l'usage. Cela se voit sur l'appareil.
@@ -75,7 +80,7 @@ function baliseComplete(source, debut) {
   return source.slice(debut);
 }
 
-test('la carte « À renforcer » de l’accueil mène à l’onglet qui les liste', () => {
+test('la carte « Révision » de l’accueil mène à l’onglet qui les liste', () => {
   // La carte doit être **pressable**. C'est la règle même de cette demande :
   // afficher n'est pas agir.
   //
@@ -90,7 +95,7 @@ test('la carte « À renforcer » de l’accueil mène à l’onglet qui les lis
   const ouverture = CODE.lastIndexOf('<Pressable', indexStyle);
   assert.ok(
     ouverture > 0,
-    'la carte « À renforcer » n’est pas enveloppée dans un Pressable : elle ne réagit pas au doigt'
+    'la carte « Révision » n’est pas enveloppée dans un Pressable : elle ne réagit pas au doigt'
   );
 
   // Le `Pressable` trouvé doit être *celui de la carte* : rien ne doit s'ouvrir
@@ -98,7 +103,7 @@ test('la carte « À renforcer » de l’accueil mène à l’onglet qui les lis
   const balise = baliseComplete(CODE, ouverture);
   assert.ok(
     balise.includes('styles.carteCliquable'),
-    'le Pressable trouvé n’est pas celui de la carte « À renforcer »'
+    'le Pressable trouvé n’est pas celui de la carte « Révision »'
   );
 
   // Et l'appui navigue vers l'onglet Programme avec le bon onglet demandé.
@@ -117,7 +122,7 @@ test('la carte « À renforcer » de l’accueil mène à l’onglet qui les lis
   assert.match(
     appel,
     /onglet:\s*'renforcer'/,
-    'la carte ouvre l’onglet Programme sans demander l’onglet « À renforcer »'
+    'la carte ouvre l’onglet Programme sans demander l’entrée « Révision »'
   );
 
   // L'horodatage : sans une valeur qui change, l'écran Programme — qui reste
@@ -155,19 +160,19 @@ test('l’onglet Programme honore l’onglet demandé par l’accueil', () => {
   );
 });
 
-test('la carte « À renforcer » n’annonce que ce qu’elle peut ouvrir', () => {
+test('la carte « Révision » n’annonce que ce qu’elle peut ouvrir', () => {
   // La carte n'apparaît que s'il y a quelque chose à renforcer. Un lien vers
   // une liste vide serait un lien qui ne mène nulle part.
   assert.match(
     CODE,
     /\{aRenforcer > 0 && \(/,
-    'la carte « À renforcer » s’affiche même quand il n’y a rien à renforcer'
+    'la carte « Révision » s’affiche même quand il n’y a rien à renforcer'
   );
 
   // Et le libellé vocal dit où l'appui mène, au singulier comme au pluriel.
   assert.match(
     CODE,
-    /accessibilityLabel=\{`Voir les \$\{aRenforcer\} passage\$\{aRenforcer > 1 \? 's' : ''\} à renforcer`\}/,
+    /accessibilityLabel=\{`Voir les \$\{aRenforcer\} passage\$\{aRenforcer > 1 \? 's' : ''\} en révision`\}/,
     'le libellé d’accessibilité de la carte est absent ou ne dit pas où l’appui mène'
   );
 });

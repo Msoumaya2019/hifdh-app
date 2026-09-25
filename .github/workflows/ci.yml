@@ -443,6 +443,13 @@ jobs:
       - name: Falsifier la forme du profil
         run: npm run falsifier:profil
 
+      # L'écran Programme a lui aussi une forme à tenir, et deux propriétés qui
+      # ne se voient pas à la compilation : ses deux entrées se distinguent par
+      # une icône ET par un mot, et l'état « révisions éteintes » se DIT au lieu
+      # de faire disparaître la liste. Ce falsificateur défait chacune des deux.
+      - name: Falsifier la forme de l'écran Programme
+        run: npm run falsifier:programme-ecran
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

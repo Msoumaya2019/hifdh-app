@@ -20,8 +20,8 @@
 //     `primarySurface` : les quatre fonds sur lesquels il porte du texte ;
 //   - `textOnPrimary` sur `primary` : le libellé des boutons pleins ;
 //   - `primary` sur `primarySurface` : le nom du profil, la barre de plage, le
-//     libellé du bouton « À renforcer » — c'est `primary` qui sert de couleur de
-//     texte, et non `textOnPrimary` ;
+//     libellé du bouton « Renforcer mes passages » — c'est `primary` qui sert de
+//     couleur de texte, et non `textOnPrimary` ;
 //   - `textSecondary` sur `background` et `surface` : les phrases d'explication.
 
 import test from 'node:test';

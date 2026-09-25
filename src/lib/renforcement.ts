@@ -18,7 +18,7 @@
 
 import type { KnowledgeLevel, MemorizedPassage, ReviewItem, ReviewRating } from '@/types';
 
-/** Pourquoi un passage figure dans « À renforcer ». */
+/** Pourquoi un passage figure dans la liste « Révision ». */
 export type OrigineRenforcement = 'marque' | 'revision_prevue';
 
 export interface PassageARenforcer {

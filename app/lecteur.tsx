@@ -84,7 +84,7 @@ export default function LecteurScreen() {
     startAyah: string;
     endAyah: string;
     sessionId?: string;
-    /** « 1 » lorsque l'écran est ouvert depuis la liste « À renforcer ». */
+    /** « 1 » lorsque l'écran est ouvert depuis la liste « Révision ». */
     renforcer?: string;
   }>();
 
@@ -238,7 +238,7 @@ export default function LecteurScreen() {
    * Le verdict de l'apprenant sur la séance du jour.
    *
    * « J'ai mémorisé » et « À retravailler » passent par le même chemin que
-   * l'onglet « À renforcer » : `renforcerPassage` écrit le niveau de
+   * l'entrée « Révision » de l'onglet Programme : `renforcerPassage` écrit le niveau de
    * connaissance **et** fait avancer la révision espacée, dans une seule
    * transaction. Auparavant, seul « J'ai mémorisé » écrivait quelque chose ;
    * « À retravailler » se contentait d'un message et n'enregistrait rien, si
@@ -259,7 +259,7 @@ export default function LecteurScreen() {
   };
 
   /**
-   * « À retravailler » : le passage rejoint « À renforcer ».
+   * « À retravailler » : le passage rejoint la liste « Révision ».
    *
    * La séance reste à faire — l'apprenant ne l'a pas mémorisée — et la
    * révision espacée retombe au niveau 0, donc à demain.
@@ -267,14 +267,14 @@ export default function LecteurScreen() {
   const handleARetravailler = () => {
     renforcerPassage({ surah: surahNum, startAyah, endAyah }, false).then(() => {
       Alert.alert(
-        'À renforcer',
-        'Ce passage t’attend dans « À renforcer », dans l’onglet Programme. La séance reste à faire.',
+        'Révision',
+        'Ce passage t’attend dans « Révision », dans l’onglet Programme. La séance reste à faire.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     });
   };
 
-  /** « Renforcé », depuis la liste : le passage quitte « À renforcer ». */
+  /** « Renforcé », depuis la liste : le passage quitte la liste « Révision ». */
   const handleRenforce = () => {
     renforcerPassage({ surah: surahNum, startAyah, endAyah }, true).then(() => router.back());
   };
@@ -462,7 +462,7 @@ export default function LecteurScreen() {
       {/* Barre de validation.
           Elle a deux formes selon d'où l'on vient : une séance du programme se
           juge (« mémorisé / à retravailler / reporter »), un passage ouvert
-          depuis « À renforcer » se solde (« renforcé / pas encore »). Les deux
+          depuis la liste « Révision » se solde (« renforcé / pas encore »). Les deux
           écrivent la même chose au même endroit.
 
           Elle reste visible EN PLEIN ÉCRAN. Elle y disparaissait au motif que

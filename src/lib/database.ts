@@ -598,7 +598,7 @@ export async function getReviewItemParPassage(
  * Deux écritures, indissociables :
  *
  *   - le **niveau de connaissance**, qui décide de la présence du passage dans
- *     « À renforcer ». « Pas encore » l'y laisse, « Renforcé » l'en retire ;
+ *     la liste « Révision ». « Pas encore » l'y laisse, « Renforcé » l'en retire ;
  *   - la **révision espacée**, qui décide de la date à laquelle il reviendra.
  *     Un passage renforcé repart à un jour puis s'espace ; un passage qu'on
  *     n'a pas su renforcer retombe au niveau 0 et revient demain.

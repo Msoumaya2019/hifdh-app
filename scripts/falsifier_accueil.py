@@ -94,6 +94,17 @@ MUTATIONS = [
         "      {aRenforcer > 0 && (",
         "      {aRenforcer >= 0 && (",
     ),
+    (
+        # Ajoutee le jour ou l'entree du Programme a ete renommee « Revision » :
+        # le libelle vocal devait suivre, et l'assertion qui l'epingle n'avait
+        # jamais ete mise en echec -- elle ne prouvait donc rien. La mutation
+        # reste PLAUSIBLE : un libelle generique qui perd le compte et l'accord
+        # au pluriel compile, et ne se voit qu'au lecteur d'ecran.
+        "le libelle vocal de la carte perd le compte et l'accord",
+        ACCUEIL,
+        "accessibilityLabel={`Voir les ${aRenforcer} passage${aRenforcer > 1 ? 's' : ''} en révision`}",
+        "accessibilityLabel={`Voir les passages en révision`}",
+    ),
 ]
 
 print("=" * 74)

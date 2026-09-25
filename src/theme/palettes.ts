@@ -254,7 +254,7 @@ const BLEU: Palette = {
  *    `primary` sombre sur un fond noir aurait donné un bouton invisible.
  *  - `primarySurface` devient un vert très sombre, puisque c'est le fond sur
  *    lequel `primary` sert de couleur de texte (le nom du profil, la barre de
- *    plage, le bouton « À renforcer »).
+ *    plage, le bouton « Renforcer mes passages » de l'accueil).
  *  - les fonds « clairs » des états — `successLight`, `warningLight`,
  *    `errorLight`, `infoLight` — deviennent des fonds sombres teintés, lus avec
  *    la couleur d'état correspondante, désormais claire.

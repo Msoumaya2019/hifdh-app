@@ -1,4 +1,4 @@
-// Ce qui doit apparaître dans « À renforcer ».
+// Ce qui doit apparaître dans la liste « Révision ».
 //
 // Trois erreurs sont possibles ici, et aucune ne se verrait à l'écran :
 //

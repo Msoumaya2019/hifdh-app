@@ -302,10 +302,13 @@ export default function ProfilScreen() {
         </Pressable>
 
         {/* === 5. Apprentissage =============================================
-            Un interrupteur RÉEL, et pas une ligne qui y ressemble : la
-            révision espacée peut être éteinte, et le programme du jour doit
-            cesser de la proposer. Éteindre ne supprime AUCUN passage — c'est
-            un réglage d'affichage, pas un effacement. */}
+            Un interrupteur RÉEL, et pas une ligne qui y ressemble : sa position
+            est écrite en base et relue au chargement, et l'onglet Programme la
+            suit — le nombre disparaît de l'entrée « Révision », et un bandeau y
+            dit l'état avec le moyen de le changer. Éteindre ne supprime AUCUN
+            passage : c'est un réglage d'affichage, pas un effacement, et la
+            liste reste consultable. Le texte d'aide dit exactement cela, et rien
+            de plus — un libellé qui promet davantage ferait douter du réglage. */}
         <Text style={styles.sectionTitle}>Apprentissage</Text>
 
         <Card>
@@ -313,8 +316,8 @@ export default function ProfilScreen() {
             <View style={styles.reglageTexte}>
               <Text style={styles.reglageTitre}>Révisions</Text>
               <Text style={styles.reglageAide}>
-                Proposer les passages à renforcer dans mon programme du jour. Les désactiver ne
-                supprime aucun passage.
+                Afficher le nombre de passages à renforcer dans l’onglet Programme. Les désactiver
+                ne supprime aucun passage : la liste reste consultable.
               </Text>
             </View>
             <Switch
