@@ -1,16 +1,22 @@
-"""Falsifier le test des routes.
+"""Falsifier le test des routes, et celui du generateur de types.
 
 Un test qui n'a jamais rougi ne prouve rien. On defait, une par une, chacune des
-proprietes que `tests/routes.test.mjs` pretend tenir, et on exige qu'il TOMBE —
-sur le test NOMME pour elle, et pas sur un voisin.
+proprietes que `tests/routes.test.mjs` et `tests/types-routes.test.mjs`
+pretendent tenir, et on exige que le test TOMBE — sur le test NOMME pour elle, et
+pas sur un voisin. Chaque mutation declare donc le fichier de test qu'elle vise.
 
 CE QUE CE FALSIFICATEUR DOIT PROUVER, ET QUI N'EST PAS EVIDENT
 --------------------------------------------------------------
-Ce test remplace une garantie qu'on CROYAIT tenir : `experiments.typedRoutes`
-est actif, mais les types engendres vivent dans `.expo/`, exclu par `.gitignore`,
-et l'integration continue ne les engendre jamais. Le test ecrit ici est donc le
-SEUL controle des routes qui tourne partout — et un controle qui n'a jamais
-rougi ne vaut pas mieux qu'une croyance.
+`tests/routes.test.mjs` remplace une garantie qu'on CROYAIT tenir :
+`experiments.typedRoutes` est actif, mais les types engendres vivent dans
+`.expo/`, exclu par `.gitignore`, et l'integration continue ne les engendre
+jamais. Ce test est donc le SEUL controle des routes qui tourne partout — et un
+controle qui n'a jamais rougi ne vaut pas mieux qu'une croyance.
+
+`tests/types-routes.test.mjs` garde la meme famille par l'autre bout : le
+generateur de ces types doit ABOUTIR sur un clone, ou `.expo/` n'existe pas. Il a
+fonctionne pendant tout son developpement sur une machine ou le dossier existait
+deja, et deux poussees sont devenues rouges avant qu'on le voie.
 
 DEUX FORMES DE MUTATION
 -----------------------
@@ -34,21 +40,23 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parent.parent
 NODE = shutil.which("node") or "node"
 TEST = "tests/routes.test.mjs"
+TEST_TYPES = "tests/types-routes.test.mjs"
 
 PROFIL = "app/profil.tsx"
 SOURCES = "app/sources.tsx"
 COMPTE = "src/components/ReglagesCompteSection.tsx"
 PRENOM = "src/components/PrenomSection.tsx"
+GENERATEUR = "scripts/regenerer_types_routes.mjs"
 
-SURVEILLES = [PROFIL, SOURCES, COMPTE, PRENOM]
+SURVEILLES = [PROFIL, SOURCES, COMPTE, PRENOM, GENERATEUR]
 
 
 def sha(chemin: str) -> str:
     return hashlib.sha256((RACINE / chemin).read_bytes()).hexdigest()
 
 
-def lancer() -> tuple[int, str]:
-    """Lancer le test seul, et rendre (code, sortie)."""
+def lancer(test: str = TEST) -> tuple[int, str]:
+    """Lancer un fichier de test seul, et rendre (code, sortie)."""
     r = subprocess.run(
         [
             NODE,
@@ -56,7 +64,7 @@ def lancer() -> tuple[int, str]:
             "./scripts/register-alias.mjs",
             "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
             "--test",
-            TEST,
+            test,
         ],
         cwd=RACINE,
         capture_output=True,
@@ -158,37 +166,54 @@ def fermer_tous_les_liens_vers_le_profil_public():
 MUTATIONS = [
     (
         "une chaine de route porte une faute de frappe",
+        TEST,
         "les routes réclamées par le code existent toutes",
         mutation(PROFIL, "router.push('/reglages')", "router.push('/reglage')"),
     ),
     (
         "l'ecran des sources est renomme, et sa route n'existe plus",
+        TEST,
         "les routes réclamées par le code existent toutes",
         renommer_sources,
     ),
     (
         "l'ecran du profil public n'est plus ouvert par personne",
+        TEST,
         "aucun écran n’est laissé sans chemin pour l’ouvrir",
         fermer_tous_les_liens_vers_le_profil_public,
+    ),
+    # Le generateur de types a fonctionne pendant tout son developpement sur une
+    # machine ou `.expo/types/` existait depuis un `expo start`. Sur un clone, ce
+    # dossier n'existe pas — il est ignore par Git — et `writeFileSync` echoue
+    # sans creer le parent. Deux poussees sont devenues rouges pour cette raison.
+    # `tests/types-routes.test.mjs` lance le generateur vers un dossier NEUF ;
+    # cette mutation retire la creation du dossier et exige que le test tombe.
+    (
+        "le dossier de sortie du generateur de types n'est plus cree",
+        TEST_TYPES,
+        "le generateur aboutit quand son dossier de sortie n’existe pas encore",
+        mutation(GENERATEUR, "mkdirSync(sortie, { recursive: true });\n", ""),
     ),
 ]
 
 
 def main() -> int:
     # --- le temoin : sur l'arbre reel, tout doit etre vert -------------------
-    code, sortie = lancer()
-    executes = compter_executes(sortie)
     print("=" * 70)
-    print("Temoin : le test sur l'arbre reel")
+    print("Temoin : les deux fichiers de test sur l'arbre reel")
     print("=" * 70)
-    print(f"  code {code}, {executes} test(s) execute(s)")
-    if code != 0:
-        print("[ERR] le test est DEJA en echec : on ne peut rien falsifier")
-        print(sortie[-2000:])
-        return 1
-    if executes <= 0:
-        print("[ERR] aucun test n'a ete execute : le harnais ne prouve rien")
-        return 1
+
+    for test in (TEST, TEST_TYPES):
+        code, sortie = lancer(test)
+        executes = compter_executes(sortie)
+        print(f"  {test:<32} : code {code}, {executes} test(s) execute(s)")
+        if code != 0:
+            print("[ERR] le test est DEJA en echec : on ne peut rien falsifier")
+            print(sortie[-2000:])
+            return 1
+        if executes <= 0:
+            print("[ERR] aucun test n'a ete execute : le harnais ne prouve rien")
+            return 1
 
     empreintes = {chemin: sha(chemin) for chemin in SURVEILLES}
 
@@ -198,7 +223,7 @@ def main() -> int:
     print("=" * 70)
 
     detectees = 0
-    for nom, test_vise, fabrique in MUTATIONS:
+    for nom, test, test_vise, fabrique in MUTATIONS:
         try:
             rendre = fabrique()
         except AssertionError as erreur:
@@ -207,7 +232,7 @@ def main() -> int:
             continue
 
         try:
-            code, sortie = lancer()
+            code, sortie = lancer(test)
         finally:
             rendre()
 
@@ -238,17 +263,20 @@ def main() -> int:
     ecarte = (RACINE / "app/source.tsx").exists()
     print(f"  app/source.tsx encore present : {ecarte}")
 
-    code, sortie = lancer()
-    print(f"  test sur l'arbre restaure : code {code}")
-    if code != 0:
-        print(sortie[-1500:])
+    codes = []
+    for test in (TEST, TEST_TYPES):
+        code, sortie = lancer(test)
+        codes.append(code)
+        print(f"  {test} sur l'arbre restaure : code {code}")
+        if code != 0:
+            print(sortie[-1500:])
 
     print()
     if not identiques or ecarte:
         print("RESULTAT : l'arbre n'a PAS ete restaure — a corriger avant tout.")
         return 1
-    if code != 0:
-        print("RESULTAT : le test echoue apres restauration — l'arbre est suspect.")
+    if any(codes):
+        print("RESULTAT : un test echoue apres restauration — l'arbre est suspect.")
         return 1
     print(
         f"RESULTAT : {len(MUTATIONS)} mutation(s), {detectees} detectee(s), "
