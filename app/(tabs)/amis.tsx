@@ -291,16 +291,18 @@ export default function AmisScreen() {
   const aRepondre = recues.length > 0;
 
   return (
-    <SafeAreaView style={styles.ecran} edges={['top']}>
+    // `edges={['bottom']}` et non `['top']` : cet écran est un ONGLET, et la
+    // barre d'onglets occupe désormais le haut. `SafeAreaProviderCompat` ne
+    // retire pas la hauteur de la barre des marges qu'il transmet, donc garder
+    // `['top']` compterait l'encoche deux fois. Le bas, lui, n'est plus couvert
+    // par aucune barre : c'est là qu'il faut la marge, pour l'indicateur
+    // d'accueil des iPhone.
+    <SafeAreaView style={styles.ecran} edges={['bottom']}>
       <View style={styles.entete}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Revenir en arrière"
-        >
-          <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
-        </Pressable>
+        {/* Le chevron de retour a été RETIRÉ : cet écran n'est plus empilé sur
+            un autre, il est l'un des cinq onglets. Un retour, ici, ramènerait
+            à un onglet — c'est-à-dire nulle part. Il est remplacé par la
+            barre elle-même, qui dit où l'on est. */}
         <Text style={styles.titre}>Mes amis</Text>
         <Pressable
           onPress={() => router.push('/messages')}

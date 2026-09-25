@@ -1,54 +1,39 @@
-// Navigation par onglets - 5 onglets en bas
+// Navigation par onglets — cinq onglets, rendus EN HAUT de l'écran.
+//
+// Ce fichier ne décrit plus que la LISTE des onglets et leurs libellés : la
+// forme de la barre vit dans `src/components/BarreOngletsHaut.tsx`, où elle se
+// lit d'un seul endroit. La raison du déplacement en haut, et celle du compte
+// qui reste à cinq alors qu'« Amis » remplace « Profil », sont écrites là-bas.
+//
+// `tabBarPosition` est ici, dans `screenOptions`, et non sur `<Tabs>` : la
+// position se lit dans les OPTIONS de l'écran qui a le focus. Le détail et la
+// ligne du paquet qui le prouve sont dans l'en-tête de `BarreOngletsHaut`.
 
 import { Tabs } from 'expo-router';
-import { Pressable, Text, View, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, fontSizes, spacing, radii } from '@/theme';
+import { BarreOngletsHaut } from '@/components/BarreOngletsHaut';
 
 const TAB_CONFIG = [
-  { name: 'index', title: 'Accueil', icon: 'home' as const, iconOutline: 'home-outline' as const },
-  { name: 'coran', title: 'Coran', icon: 'book' as const, iconOutline: 'book-outline' as const },
-  { name: 'programme', title: 'Programme', icon: 'calendar' as const, iconOutline: 'calendar-outline' as const },
-  { name: 'progres', title: 'Progrès', icon: 'bar-chart' as const, iconOutline: 'bar-chart-outline' as const },
-  { name: 'profil', title: 'Profil', icon: 'person' as const, iconOutline: 'person-outline' as const },
+  { name: 'index', title: 'Accueil' },
+  { name: 'coran', title: 'Coran' },
+  { name: 'programme', title: 'Programme' },
+  { name: 'progres', title: 'Progrès' },
+  // « Amis » a pris la place de « Profil ». Le profil s'ouvre par l'avatar,
+  // à droite de la barre — il est déclaré comme écran empilé dans la pile
+  // racine (`app/_layout.tsx`), et vit dans `app/profil.tsx`.
+  { name: 'amis', title: 'Amis' },
 ];
 
 export default function TabLayout() {
   return (
     <Tabs
+      tabBar={(props) => <BarreOngletsHaut {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 6,
-          paddingTop: 6,
-        },
-        tabBarLabelStyle: {
-          fontSize: fontSizes.xs,
-          fontWeight: '500',
-        },
+        tabBarPosition: 'top',
       }}
     >
       {TAB_CONFIG.map((tab) => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{
-            title: tab.title,
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons
-                name={focused ? tab.icon : tab.iconOutline}
-                size={24}
-                color={color}
-              />
-            ),
-          }}
-        />
+        <Tabs.Screen key={tab.name} name={tab.name} options={{ title: tab.title }} />
       ))}
     </Tabs>
   );

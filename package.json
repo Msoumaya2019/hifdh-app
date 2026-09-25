@@ -15,6 +15,7 @@
     "verifier:pages-moushaf": "python scripts/verifier_pages_moushaf.py",
     "falsifier:pages-moushaf": "python scripts/falsifier_pages_moushaf.py",
     "falsifier:firebase": "python scripts/falsifier_firebase.py",
+    "falsifier:navigation": "python scripts/falsifier_navigation.py",
     "engendrer:actifs-pages": "python scripts/engendrer_actifs_pages.py",
     "verifier:actifs-pages": "python scripts/engendrer_actifs_pages.py --verifier",
     "recouper:pages": "python data/quran/verifier_pages.py --recouper-api",

@@ -304,7 +304,7 @@ test('la section des amis ne laisse pas « connecte » à null quand la session 
 });
 
 test('l’écran des amis arrête son indicateur dans un finally et offre un réessai', () => {
-  const source = lire('app/amis.tsx');
+  const source = lire('app/(tabs)/amis.tsx');
 
   assert.match(
     source,
@@ -456,7 +456,7 @@ test('aucun écran n’attend la session sans borne', () => {
   const fichiers = [
     'src/components/SauvegardeSection.tsx',
     'src/components/AmisSection.tsx',
-    'app/amis.tsx',
+    'app/(tabs)/amis.tsx',
     'src/lib/sync/amis.ts',
   ];
 

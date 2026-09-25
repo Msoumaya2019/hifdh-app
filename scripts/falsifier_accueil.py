@@ -53,10 +53,16 @@ MUTATIONS = [
         # `params` seul apparait deux fois (la carte et le bouton du bas), et une
         # mutation en aurait change un autre que celui vise -- l'ancre comptee a
         # d'ailleurs refuse d'ecrire, la premiere fois.
+        #
+        # Le remplacement a ete REPRIS le jour ou `profil` a quitte le groupe des
+        # onglets : il visait `/(tabs)/profil`, une route qui n'existe plus. Une
+        # mutation doit mener quelque part de PLAUSIBLE -- un autre onglet --
+        # sinon elle n'eprouve plus « la carte mene ailleurs », mais « la carte
+        # mene nulle part », ce qui est un autre defaut.
         "la carte mene ailleurs que sur l'onglet Programme",
         ACCUEIL,
         "            router.push({\n              pathname: '/(tabs)/programme',\n              params: { onglet: 'renforcer', t: String(Date.now()) },\n            })\n          }\n          accessibilityRole=\"button\"",
-        "            router.push({\n              pathname: '/(tabs)/profil',\n              params: { onglet: 'renforcer', t: String(Date.now()) },\n            })\n          }\n          accessibilityRole=\"button\"",
+        "            router.push({\n              pathname: '/(tabs)/progres',\n              params: { onglet: 'renforcer', t: String(Date.now()) },\n            })\n          }\n          accessibilityRole=\"button\"",
     ),
     (
         "la carte ouvre Programme sans demander l'onglet renforcer",

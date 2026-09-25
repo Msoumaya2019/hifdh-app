@@ -149,7 +149,10 @@ export default function ProgrammeScreen() {
   }));
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    // La barre d'onglets occupe le HAUT : la marge du haut y est prise une
+    // seule fois. Ici, c'est donc le BAS qu'il faut protéger (voir
+    // `src/components/BarreOngletsHaut.tsx`).
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.header}>
         <Text style={styles.title}>Programme</Text>
         {/* L'accès à la sélection manuelle. Il est ici, et non dans la barre

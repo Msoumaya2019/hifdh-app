@@ -175,8 +175,16 @@ export default function RootLayout() {
               name="ecouter"
               options={{ presentation: 'card', headerShown: false }}
             />
+            {/* « amis » N'EST PLUS ICI. Il est devenu un ONGLET, et il vit dans
+                `app/(tabs)/amis.tsx` : un écran déclaré deux fois — une fois
+                comme onglet, une fois comme écran empilé — se résoudrait vers
+                l'un des deux sans que rien ne le dise. */}
+            {/* Le profil, lui, a fait le trajet inverse : il a quitté la barre
+                d'onglets pour redevenir un écran empilé, atteint par l'avatar
+                de `BarreOngletsHaut`. Il garde donc son retour, comme la
+                maquette le montre. */}
             <Stack.Screen
-              name="amis"
+              name="profil"
               options={{ presentation: 'card', headerShown: false }}
             />
             <Stack.Screen

@@ -103,7 +103,10 @@ export default function CoranScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    // La barre d'onglets occupe le HAUT : la marge du haut y est prise une
+    // seule fois. Ici, c'est donc le BAS qu'il faut protéger (voir
+    // `src/components/BarreOngletsHaut.tsx`).
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.header}>
         <Text style={styles.title}>Le Coran</Text>
         <Text style={styles.subtitle}>114 sourates · 6236 versets</Text>

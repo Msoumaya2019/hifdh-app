@@ -157,13 +157,13 @@ MUTATIONS = [
     ),
     # === L'écran des amis ==================================================
     (
-        "app/amis.tsx",
+        "app/(tabs)/amis.tsx",
         "    } finally {\n      setChargement(false);\n    }",
         "    }\n    setChargement(false);",
         "« chargement » n'est plus retiré dans un finally",
     ),
     (
-        "app/amis.tsx",
+        "app/(tabs)/amis.tsx",
         "            ) : chargement ? (\n"
         "              <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />\n"
         "            ) : (",
@@ -173,7 +173,7 @@ MUTATIONS = [
         "l'indicateur tourne dès que le code manque : l'échec redevient un rond",
     ),
     (
-        "app/amis.tsx",
+        "app/(tabs)/amis.tsx",
         "                  accessibilityLabel=\"Réessayer d’obtenir le code\"",
         "                  accessibilityLabel=\"\"",
         "l'échec n'offre plus de moyen d'agir",
@@ -188,7 +188,7 @@ MUTATIONS = [
     # 0 occurrence(s) », c'est-à-dire qu'il ne mesurait plus rien. Une ancre se
     # relit dans le fichier, jamais de mémoire.
     (
-        "app/amis.tsx",
+        "app/(tabs)/amis.tsx",
         "    } catch {\n"
         "      // Un REJET, lui, n'était rattrapé par rien : il partait en rejet non\n"
         "      // traité, aucune phrase n'était posée, et l'écran se refermait sans rien\n"
@@ -199,7 +199,7 @@ MUTATIONS = [
         "le rejet de la lecture n'est plus rattrapé sur l'écran des amis",
     ),
     (
-        "app/amis.tsx",
+        "app/(tabs)/amis.tsx",
         "          {!chargement && amis === null && (",
         "          {false && (",
         "la liste n'a plus de sortie quand elle n'a pas pu être lue",

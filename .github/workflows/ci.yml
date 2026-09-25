@@ -397,6 +397,14 @@ jobs:
       - name: Falsifier l'accord avec Firebase
         run: npm run falsifier:firebase
 
+      # La barre d'onglets a changé de place et d'occupants : cinq onglets EN
+      # HAUT, « Amis » à la place de « Profil », le profil atteint par l'avatar.
+      # Aucune de ces décisions ne casse quoi que ce soit quand elle est
+      # défaite — l'application démarre encore —, donc rien ne les signale
+      # sinon un test de forme. Ce falsificateur éprouve ce test.
+      - name: Falsifier la navigation par onglets
+        run: npm run falsifier:navigation
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

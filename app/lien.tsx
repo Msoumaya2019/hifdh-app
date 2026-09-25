@@ -262,7 +262,7 @@ export default function LienScreen() {
         setMotDePasse('');
         // Le mot de passe est changé et la session est ouverte : l'écran
         // Profil est l'endroit où l'on voit qu'on est connecté.
-        router.replace('/(tabs)/profil');
+        router.replace('/profil');
       }
     } catch (erreur) {
       setMessage(
@@ -307,7 +307,7 @@ export default function LienScreen() {
             </View>
             <Pressable
               style={[styles.bouton, styles.boutonPrincipal]}
-              onPress={() => router.replace('/(tabs)/profil')}
+              onPress={() => router.replace('/profil')}
             >
               <Text style={styles.texteBoutonPrincipal}>Aller à mon profil</Text>
             </Pressable>
@@ -361,7 +361,7 @@ export default function LienScreen() {
             </View>
             <Pressable
               style={[styles.bouton, styles.boutonSecondaire]}
-              onPress={() => router.replace('/(tabs)/profil')}
+              onPress={() => router.replace('/profil')}
             >
               <Text style={styles.texteBoutonSecondaire}>Retour au profil</Text>
             </Pressable>

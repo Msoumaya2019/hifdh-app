@@ -23,17 +23,21 @@ import re
 import pathlib
 import sys
 
+# Les chemins suivent les DEPLACEMENTS d'ecrans : `amis` est passe dans le
+# groupe `(tabs)` le jour ou il est devenu un onglet, et `profil` en est sorti
+# le meme jour pour redevenir un ecran empile. Une entree qui ne designe plus
+# rien ferait echouer la conversion sur un fichier absent, sans dire pourquoi.
 FICHIERS = [
+    "app/(tabs)/amis.tsx",
     "app/(tabs)/coran.tsx",
     "app/(tabs)/index.tsx",
-    "app/(tabs)/profil.tsx",
     "app/(tabs)/programme.tsx",
     "app/(tabs)/progres.tsx",
-    "app/amis.tsx",
     "app/discussion.tsx",
     "app/lecteur.tsx",
     "app/lien.tsx",
     "app/onboarding.tsx",
+    "app/profil.tsx",
     "src/components/AmisSection.tsx",
     "src/components/Card.tsx",
     "src/components/LecteurPageMoushaf.tsx",
