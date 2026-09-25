@@ -27,6 +27,20 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      # AVANT la vérification de types, et pas après : les types des routes sont
+      # ENGENDRÉS, et ils vivent dans `.expo/types/router.d.ts` — un dossier que
+      # `.gitignore` écarte, donc ABSENT d'un clone. `tsconfig.json` l'inclut,
+      # mais un `include` qui ne désigne rien n'est pas une erreur : sans ce
+      # fichier, `tsc` retombe sur le type permissif d'expo-router et **ne
+      # vérifie aucune route** — ni une faute de frappe, ni un écran renommé.
+      # La vérification passait donc au vert sur des routes qui n'existent pas.
+      #
+      # `engendrer:routes` était déclaré dans `package.json` depuis longtemps et
+      # appelé par AUCUN flux : le remède existait, il n'était pas branché. Il
+      # appelle le générateur d'expo-router directement, sans serveur.
+      - name: Engendrer les types des routes
+        run: npm run engendrer:routes
+
       - name: Vérifier les types
         run: npm run typecheck
 
