@@ -172,6 +172,24 @@ export interface ReglagesAudio {
   };
 }
 
+/**
+ * Ce que l'apprenant garde actif dans son programme.
+ *
+ * ABSENT VAUT ACTIF, et ce n'est pas un détail : la configuration est déjà
+ * enregistrée chez ceux qui utilisent l'application, sans ce champ. Le lire
+ * comme « désactivé » éteindrait la révision de tout le monde à la mise à jour,
+ * et l'apprenant croirait avoir perdu ses passages. C'est donc `!== false` qu'il
+ * faut lire, jamais une valeur par défaut écrite dans le type.
+ *
+ * Désactiver ne SUPPRIME rien : les passages à revoir restent en base, avec leur
+ * échéance. Le réglage ne fait que les retirer de l'affichage — un choix
+ * d'écran, pas un effacement, et c'est ce qui permet de le défaire.
+ */
+export interface ReglagesApprentissage {
+  /** La révision espacée : les passages appris reviennent à échéance. */
+  revisions?: boolean;
+}
+
 export interface UserConfig {
   memorizedPassages: MemorizedPassage[];
   objective: Objective;
@@ -179,6 +197,7 @@ export interface UserConfig {
   onboardingCompleted: boolean;
   affichage?: { mode: ModeAffichage };
   audio?: ReglagesAudio;
+  apprentissage?: ReglagesApprentissage;
 }
 
 // === Programme d'apprentissage ===

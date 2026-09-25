@@ -38,8 +38,9 @@ TEST = "tests/routes.test.mjs"
 PROFIL = "app/profil.tsx"
 SOURCES = "app/sources.tsx"
 COMPTE = "src/components/ReglagesCompteSection.tsx"
+PRENOM = "src/components/PrenomSection.tsx"
 
-SURVEILLES = [PROFIL, SOURCES, COMPTE]
+SURVEILLES = [PROFIL, SOURCES, COMPTE, PRENOM]
 
 
 def sha(chemin: str) -> str:
@@ -110,6 +111,50 @@ def renommer_sources():
     return rendre
 
 
+def fermer_tous_les_liens_vers_le_profil_public():
+    """Retirer TOUS les liens vers le profil public, pour que plus rien ne l'ouvre.
+
+    CETTE MUTATION A DU ETRE ETENDUE, ET LA RAISON EST LE FOND DE L'AFFAIRE.
+
+    Elle ne touchait qu'un seul fichier, `ReglagesCompteSection.tsx`, et cela
+    suffisait tant qu'il etait le SEUL a nommer `/profil-public`. Depuis, la
+    section « Mon prenom » du profil ouvre le meme ecran. Retirer un seul lien ne
+    rend donc plus l'ecran inatteignable : le test restait vert, et il avait
+    RAISON de rester vert — la mutation ne simule plus le defaut qu'elle pretend
+    eprouver. Un falsificateur qui cesse d'etre detecte n'accuse pas toujours le
+    test ; il accuse parfois la mutation devenue fausse.
+
+    Le defaut, lui, n'a pas bouge : un ecran que plus rien n'ouvre est un ecran
+    mort. C'est donc les DEUX liens qu'il faut retirer — et le motif est verifie
+    unique dans chaque fichier, comme partout ailleurs ici.
+    """
+    cibles = [
+        (COMPTE, 'destination="/profil-public"', 'destination="/profil"'),
+        (PRENOM, "router.push('/profil-public')", "router.push('/profil')"),
+    ]
+
+    originaux = []
+    for chemin, motif, remplacement in cibles:
+        fichier = RACINE / chemin
+        original = fichier.read_bytes()
+        texte = original.decode("utf-8")
+
+        occurrences = texte.count(motif)
+        if occurrences != 1:
+            raise AssertionError(
+                f"{chemin} : {occurrences} occurrence(s) de {motif!r}, une seule attendue"
+            )
+
+        originaux.append((fichier, original))
+        fichier.write_bytes(texte.replace(motif, remplacement).encode("utf-8"))
+
+    def rendre():
+        for fichier, original in originaux:
+            fichier.write_bytes(original)
+
+    return rendre
+
+
 MUTATIONS = [
     (
         "une chaine de route porte une faute de frappe",
@@ -122,9 +167,9 @@ MUTATIONS = [
         renommer_sources,
     ),
     (
-        "la justification d'une route atteinte autrement est retiree",
+        "l'ecran du profil public n'est plus ouvert par personne",
         "aucun écran n’est laissé sans chemin pour l’ouvrir",
-        mutation(COMPTE, 'destination="/profil-public"', 'destination="/profil"'),
+        fermer_tous_les_liens_vers_le_profil_public,
     ),
 ]
 

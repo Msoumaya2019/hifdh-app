@@ -432,6 +432,17 @@ jobs:
       - name: Falsifier l'existence des routes
         run: npm run falsifier:routes
 
+      # Le profil est réorganisé en SIX sections, dans un ordre demandé — « Ne
+      # change pas cet ordre. » Déplacer une section ne casse rien : l'écran
+      # s'affiche, les données sont là, et aucun test de comportement ne bronche.
+      # Il ne manque que l'ordre, et c'est précisément ce que rien ne voit.
+      # `tests/profil.test.mjs` lit la suite des six titres, l'accord de leur
+      # style, et le fait que l'interrupteur des révisions ÉCRIVE ; ce
+      # falsificateur défait chacune de ces trois propriétés et exige que le test
+      # tombe sur celle qui la garde.
+      - name: Falsifier la forme du profil
+        run: npm run falsifier:profil
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

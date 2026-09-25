@@ -250,13 +250,25 @@ export function AmisSection() {
 }
 
 const creerStyles = (colors: Palette) => StyleSheet.create({
+  // SOUS-TITRE, ET NON TITRE DE SECTION.
+  //
+  // « Mes amis » était un titre de section quand il était seul sur l'écran du
+  // profil. Depuis, le profil a six sections et celle-ci s'appelle « Amis et
+  // entraide » : deux gros titres qui veulent dire la même chose, empilés à
+  // quelques lignes d'écart. Ce composant reçoit donc le style discret qui
+  // était déjà celui de « Sauvegarde en ligne », son voisin immédiat — trois
+  // sous-titres identiques sous un seul titre de section.
+  //
+  // RIEN N'EST PERDU : le mot, les cinq états qui l'affichent et le contenu de
+  // la section sont intacts. Seule sa taille change — le titre de section, lui,
+  // est au-dessus, dans `app/profil.tsx`.
   sectionTitle: {
-    fontSize: fontSizes.lg,
+    fontSize: fontSizes.sm,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-    marginTop: spacing.xl,
-    marginHorizontal: spacing.xs,
+    color: colors.textTertiary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginTop: spacing.sm,
   },
   texte: {
     fontSize: fontSizes.sm,

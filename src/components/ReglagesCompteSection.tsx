@@ -158,13 +158,19 @@ function Ligne({
 }
 
 const creerStyles = (colors: Palette) => StyleSheet.create({
+  // SOUS-TITRE, ET NON TITRE DE SECTION — même raison que dans `AmisSection`.
+  //
+  // « Mon compte » était un titre de section quand le profil n'en avait pas.
+  // Il vit maintenant sous « Amis et entraide », à côté de « Sauvegarde en
+  // ligne » et de « Mes amis » : trois blocs sous un titre, donc trois
+  // sous-titres dans le même style discret. Le mot et le contenu sont intacts.
   sectionTitle: {
-    fontSize: fontSizes.lg,
+    fontSize: fontSizes.sm,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-    marginTop: spacing.xl,
-    marginHorizontal: spacing.xs,
+    color: colors.textTertiary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginTop: spacing.sm,
   },
   texte: {
     fontSize: fontSizes.sm,
