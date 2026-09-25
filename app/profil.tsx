@@ -1,4 +1,14 @@
-// Écran Profil - Configuration et réglages
+// Écran Profil — ce qui parle de la personne.
+//
+// CE QUI A QUITTÉ CET ÉCRAN, ET POURQUOI. Le profil portait aussi le choix du
+// thème, les sources du Coran et la remise à zéro. La maquette les rassemble
+// dans un écran de réglages, et le partage est plus juste : ce sont des
+// décisions SUR l'application, alors que cet écran montre des choses SUR soi.
+// L'engrenage de l'en-tête ouvre les réglages.
+//
+// RIEN N'A ÉTÉ PERDU AU PASSAGE : les trois blocs ont déménagé, ils n'ont pas
+// été retirés. Le thème est dans `app/apparence.tsx`, les sources dans
+// `app/sources.tsx`, la remise à zéro dans `app/reglages.tsx`.
 
 import { useState, useCallback } from 'react';
 import {
@@ -9,7 +19,6 @@ import {
   Pressable,
   Alert,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,55 +26,31 @@ import { Card } from '@/components/Card';
 import { SauvegardeSection } from '@/components/SauvegardeSection';
 import { AmisSection } from '@/components/AmisSection';
 import { ReglagesCompteSection } from '@/components/ReglagesCompteSection';
+// Seulement le TYPE : le profil n'affiche pas de ligne de menu, il emprunte
+// juste le nom d'icône typé — `string` + `as any` ne vérifiait rien.
+import type { NomIcone } from '@/components/LigneMenu';
 import {
   colors,
   fontSizes,
-  fonts,
   spacing,
   radii,
   fontWeights,
   useStyles,
-  useTheme,
-  LIBELLES_PALETTES,
-  ORDRE_PALETTES,
-  PALETTES,
-  PALETTE_PAR_DEFAUT,
-  type NomPalette,
   type Palette,
 } from '@/theme';
-import { getUserConfig, saveUserConfig, getMemorizedPassages, getReviewItemCount } from '@/lib/database';
-import { EFFACEURS_APPAREIL } from '@/lib/effaceursAppareil';
-import {
-  messageDeSucces,
-  messageEnCasDEchec,
-  reinitialiserTout,
-} from '@/lib/reinitialisation';
-import { getCompteLimitesEstimees } from '@/data/quranData';
+import { getUserConfig, getMemorizedPassages, getReviewItemCount } from '@/lib/database';
 import { formatDate, getDayName } from '@/lib/progress';
 import { libelleObjectif, libelleRythme } from '@/lib/libelles';
 import type { UserConfig, MemorizedPassage } from '@/types';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Constants from 'expo-constants';
-
-// Le compte des limites estimees se lit dans les donnees, pour la meme raison
-// que la version se lit dans `app.json` : ecrit en dur, il finirait par mentir.
-// Une limite relue quitte `estimated_offset`, et l'ecran continuerait d'annoncer
-// le chiffre d'avant la relecture.
-const compteToumoun = getCompteLimitesEstimees();
 
 export default function ProfilScreen() {
   const styles = useStyles(creerStyles);
   const router = useRouter();
-  const { nom: nomTheme, changerTheme } = useTheme();
-  // La version se lit dans `app.json`, par `expo-constants`. La recopier ici en
-  // dur l'a fait mentir dès la première montée de version : l'écran annonçait
-  // 1.0.0 alors que le paquet était estampillé 1.0.2.
-  const version = Constants.expoConfig?.version ?? 'inconnue';
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [memorized, setMemorized] = useState<MemorizedPassage[]>([]);
   const [reviewCount, setReviewCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const [remiseAZero, setRemiseAZero] = useState(false);
 
   const loadData = useCallback(async () => {
     const cfg = await getUserConfig();
@@ -110,73 +95,9 @@ export default function ProfilScreen() {
     );
   };
 
-  /**
-   * La remise à zéro, en deux temps.
-   *
-   * Deux confirmations, et non une seule : la première annonce ce qui va être
-   * perdu, la seconde demande de le confirmer une fois que c'est lu. Un
-   * effacement définitif de la progression ne se déclenche pas sur un appui
-   * mal placé.
-   */
-  const handleReinitialiser = () => {
-    Alert.alert(
-      'Tout réinitialiser ?',
-      'Cette action efface définitivement ta progression : passages mémorisés, séances, révisions espacées, pages gardées hors ligne, et ta connexion. Elle est irréversible.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Continuer', style: 'destructive', onPress: confirmerReinitialisation },
-      ]
-    );
-  };
-
-  const confirmerReinitialisation = () => {
-    Alert.alert(
-      'Confirmer définitivement',
-      'Dernière vérification : tout sera effacé, et l’application repartira comme à l’installation. Confirmer ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Tout effacer', style: 'destructive', onPress: executerReinitialisation },
-      ]
-    );
-  };
-
-  const executerReinitialisation = async () => {
-    setRemiseAZero(true);
-    try {
-      const resultat = await reinitialiserTout(EFFACEURS_APPAREIL);
-
-      // Le magasin clé-valeur vient d'être vidé : la préférence de thème est
-      // partie avec lui. Le fournisseur, lui, garde la palette en mémoire —
-      // il faut donc la lui redire, sans quoi l'écran resterait rose après une
-      // remise à zéro, alors que l'ouverture suivante afficherait du vert :
-      // deux affichages différents de la même application.
-      changerTheme(PALETTE_PAR_DEFAUT);
-
-      if (resultat.echecs.length === 0) {
-        Alert.alert('Remise à zéro', messageDeSucces(), [
-          { text: 'Recommencer', onPress: () => router.replace('/onboarding') },
-        ]);
-        return;
-      }
-
-      // Une partie seulement a été effacée. On ne renvoie PAS au questionnaire :
-      // y aller alors que la progression est restée ferait recalculer le
-      // programme sur les anciennes données, et l'utilisateur croirait avoir
-      // tout perdu sans que rien n'ait changé.
-      Alert.alert('Remise à zéro incomplète', messageEnCasDEchec(resultat));
-    } catch (erreur) {
-      // `reinitialiserTout` rapporte ses échecs au lieu de les lever ; ce
-      // `catch` ne doit donc jamais servir. Il est là pour qu'une panne
-      // inattendue soit DITE, plutôt que de laisser l'écran sans réponse.
-      Alert.alert(
-        'Remise à zéro',
-        "La remise à zéro n'a pas pu être menée à son terme. Ferme puis rouvre l'application, et réessaie."
-      );
-      void erreur;
-    } finally {
-      setRemiseAZero(false);
-    }
-  };
+  // La remise à zéro a QUITTÉ cet écran, avec ses deux confirmations. Elle vit
+  // maintenant dans `app/reglages.tsx`, sous « Tout remettre à 0 » : c'est une
+  // commande sur l'application, pas une information sur la personne.
 
   const memorizedCount = memorized.filter((m) => m.level !== 'unknown')
     .reduce((sum, m) => sum + (m.endAyah - m.startAyah + 1), 0);
@@ -185,6 +106,18 @@ export default function ProfilScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Profil</Text>
+        {/* L'engrenage, et pas une ligne de plus dans la page : les réglages ne
+            sont pas une information SUR soi. Ils étaient pourtant ici, mêlés au
+            thème et à la remise à zéro ; ils vivent maintenant dans leur propre
+            écran, et c'est ce bouton qui les ouvre. */}
+        <Pressable
+          onPress={() => router.push('/reglages')}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir les réglages"
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -229,25 +162,9 @@ export default function ProfilScreen() {
           />
         </Card>
 
-        {/* Apparence */}
-        <Text style={styles.sectionTitle}>Apparence</Text>
-
-        <Card>
-          <Text style={styles.aide}>
-            Choisis la couleur de l’application. Le changement est immédiat, et
-            conservé à la prochaine ouverture.
-          </Text>
-          <View style={styles.themeRow}>
-            {ORDRE_PALETTES.map((nom) => (
-              <ChoixTheme
-                key={nom}
-                nom={nom}
-                actif={nom === nomTheme}
-                onChoisir={changerTheme}
-              />
-            ))}
-          </View>
-        </Card>
+        {/* L'apparence a quitté cet écran : elle est devenue une entrée des
+            réglages. Changer de couleur n'est pas une information sur soi,
+            c'est un réglage de l'application. */}
 
         {/* Connaissances */}
         <Text style={styles.sectionTitle}>Mes connaissances</Text>
@@ -294,106 +211,25 @@ export default function ProfilScreen() {
 
         <ReglagesCompteSection />
 
-        {/* À propos */}
-        <Text style={styles.sectionTitle}>À propos</Text>
-        <Card>
-          <Text style={styles.aboutText}>
-            Hifdh - Application de mémorisation du Coran{'\n'}
-            Récitation: Hafs an Asim{'\n'}
-            Texte: Tanzil (Uthmani){'\n'}
-            Métadonnées: quran-meta (MIT){'\n'}
-            Divisions: {compteToumoun.total} toumoun, dont {compteToumoun.estimees} bornes estimées{'\n'}
-            Version: {version}
-          </Text>
-        </Card>
-
-        {/* La remise à zéro. En dernier, et sous un titre qui prévient : c'est
-            la seule commande de l'écran qui détruise quelque chose. */}
-        <Text style={styles.sectionTitle}>Repartir de zéro</Text>
-
-        <Pressable
-          style={[styles.actionRow, styles.actionDanger]}
-          onPress={handleReinitialiser}
-          disabled={remiseAZero}
-          accessibilityRole="button"
-          accessibilityLabel="Tout réinitialiser"
-          accessibilityState={{ disabled: remiseAZero }}
-        >
-          {remiseAZero ? (
-            <ActivityIndicator size="small" color={colors.error} />
-          ) : (
-            <Ionicons name="trash-outline" size={20} color={colors.error} />
-          )}
-          <Text style={[styles.actionText, styles.actionTextDanger]}>
-            {remiseAZero ? 'Effacement en cours…' : 'Tout réinitialiser'}
-          </Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-        </Pressable>
-
-        <Text style={styles.avertissement}>
-          Efface la progression, les séances, les révisions, les pages gardées
-          hors ligne et la connexion. L’application redevient comme au premier
-          lancement.
-        </Text>
-
+        {/* Ce qui n'est PLUS ici, et pourquoi : les sources du Coran et la
+            remise à zéro. Les deux sont devenues des entrées des réglages,
+            ouvertes par l'engrenage en haut de cet écran. Le profil ne garde
+            que ce qui parle de la personne : sa configuration, ses
+            connaissances, sa sauvegarde, ses amis, son compte. */}
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-/**
- * Une pastille de thème.
- *
- * L'aperçu montre les DEUX jetons qui font un thème : le fond de l'écran et la
- * couleur principale. Une pastille qui n'en montrerait qu'un — la principale,
- * par exemple — ne dirait rien du thème noir, dont le fond est l'essentiel.
- */
-function ChoixTheme({
-  nom,
-  actif,
-  onChoisir,
-}: {
-  nom: NomPalette;
-  actif: boolean;
-  onChoisir: (nom: NomPalette) => void;
-}) {
-  const styles = useStyles(creerStyles);
-  const palette = PALETTES[nom];
+// `ChoixTheme` a suivi l'apparence : la pastille de thème vit maintenant dans
+// `app/apparence.tsx`, avec l'écran qui la montre.
 
-  return (
-    <Pressable
-      style={styles.themeChoix}
-      onPress={() => onChoisir(nom)}
-      accessibilityRole="radio"
-      accessibilityState={{ selected: actif }}
-      accessibilityLabel={`Thème ${LIBELLES_PALETTES[nom]}`}
-    >
-      <View
-        style={[
-          styles.themeApercu,
-          { backgroundColor: palette.background },
-          actif && { borderColor: colors.primary, borderWidth: 2 },
-        ]}
-      >
-        <View style={[styles.themePastille, { backgroundColor: palette.primary }]}>
-          {actif && (
-            <Ionicons name="checkmark" size={14} color={palette.textOnPrimary} />
-          )}
-        </View>
-      </View>
-      <Text style={[styles.themeNom, actif && styles.themeNomActif]}>
-        {LIBELLES_PALETTES[nom]}
-      </Text>
-    </Pressable>
-  );
-}
-
-function ConfigRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function ConfigRow({ icon, label, value }: { icon: NomIcone; label: string; value: string }) {
   const styles = useStyles(creerStyles);
   return (
     <View style={styles.configRow}>
-      <Ionicons name={icon as any} size={20} color={colors.primary} />
+      <Ionicons name={icon} size={20} color={colors.primary} />
       <View style={styles.configInfo}>
         <Text style={styles.configLabel}>{label}</Text>
         <Text style={styles.configValue}>{value}</Text>
@@ -416,6 +252,10 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    // Une rangée, et non un bloc : le titre à gauche, l'engrenage à droite.
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: spacing.lg,
     paddingBottom: spacing.sm,
   },
@@ -462,46 +302,6 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
     marginTop: spacing.sm,
-  },
-  aide: {
-    fontSize: fontSizes.sm,
-    color: colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: spacing.md,
-  },
-  themeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  themeChoix: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  themeApercu: {
-    width: 52,
-    height: 52,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  themePastille: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  themeNom: {
-    fontSize: fontSizes.xs,
-    color: colors.textSecondary,
-  },
-  themeNomActif: {
-    color: colors.textPrimary,
-    fontWeight: fontWeights.semibold,
   },
   configRow: {
     flexDirection: 'row',
@@ -553,22 +353,5 @@ const creerStyles = (colors: Palette) => StyleSheet.create({
     flex: 1,
     fontSize: fontSizes.md,
     color: colors.textPrimary,
-  },
-  actionDanger: {
-    borderColor: colors.error,
-  },
-  actionTextDanger: {
-    color: colors.error,
-  },
-  avertissement: {
-    fontSize: fontSizes.xs,
-    color: colors.textTertiary,
-    lineHeight: 18,
-    paddingHorizontal: spacing.xs,
-  },
-  aboutText: {
-    fontSize: fontSizes.sm,
-    color: colors.textSecondary,
-    lineHeight: 22,
   },
 });

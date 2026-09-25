@@ -405,6 +405,19 @@ jobs:
       - name: Falsifier la navigation par onglets
         run: npm run falsifier:navigation
 
+      # On pourrait croire que `tsc` garde les routes : `experiments.typedRoutes`
+      # est actif dans `app.json`. Il ne les garde pas, et c'est mesuré : les
+      # types de routes sont ENGENDRÉS par le serveur de développement d'Expo
+      # dans `.expo/types/router.d.ts`, un dossier que `.gitignore` exclut. En
+      # intégration continue ce fichier n'existe pas, et un `include` de
+      # `tsconfig.json` qui ne désigne rien n'est pas une erreur : expo-router
+      # retombe alors sur un type permissif. AUCUNE route n'y est donc jamais
+      # vérifiée — ni une route mal orthographiée, ni un écran renommé.
+      # `tests/routes.test.mjs` comble ce trou sans dépendre d'un fichier
+      # engendré ; ce falsificateur éprouve ce test.
+      - name: Falsifier l'existence des routes
+        run: npm run falsifier:routes
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

@@ -187,6 +187,22 @@ export default function RootLayout() {
               name="profil"
               options={{ presentation: 'card', headerShown: false }}
             />
+            {/* Les réglages, et les deux écrans qu'ils ouvrent. Ils sont
+                déclarés ici pour la même raison que les autres : une route non
+                déclarée afficherait « écran introuvable » au moment précis où
+                l'utilisateur attend que son appui fasse quelque chose. */}
+            <Stack.Screen
+              name="reglages"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            <Stack.Screen
+              name="apparence"
+              options={{ presentation: 'card', headerShown: false }}
+            />
+            <Stack.Screen
+              name="sources"
+              options={{ presentation: 'card', headerShown: false }}
+            />
             <Stack.Screen
               name="discussion"
               options={{ presentation: 'card', headerShown: false }}
