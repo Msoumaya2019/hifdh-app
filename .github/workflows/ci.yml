@@ -450,6 +450,14 @@ jobs:
       - name: Falsifier la forme de l'écran Programme
         run: npm run falsifier:programme-ecran
 
+      # Le choix du récitateur a trois propriétés qui ne se voient pas non plus à
+      # la compilation : la ligne nomme le récitateur courant et reste visible
+      # même quand rien ne joue, un seul geste ouvre la liste des dix et
+      # l'applique, et il n'y a qu'UN endroit où le changer. Ce falsificateur
+      # défait chacune des trois.
+      - name: Falsifier la forme du choix du récitateur
+        run: npm run falsifier:lecteur-recitateur
+
   # Le tableau de bord a ses propres données, ses propres tests et ses propres
   # contrôles, et il n'était dans aucun flux : rien ne disait qu'il tenait
   # debout. Un falsificateur dont les ancres visent du code renommé ne le dit pas

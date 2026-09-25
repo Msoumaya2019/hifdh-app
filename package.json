@@ -19,6 +19,7 @@
     "falsifier:routes": "python scripts/falsifier_routes.py",
     "falsifier:profil": "python scripts/falsifier_profil.py",
     "falsifier:programme-ecran": "python scripts/falsifier_programme_ecran.py",
+    "falsifier:lecteur-recitateur": "python scripts/falsifier_lecteur_recitateur.py",
     "engendrer:actifs-pages": "python scripts/engendrer_actifs_pages.py",
     "verifier:actifs-pages": "python scripts/engendrer_actifs_pages.py --verifier",
     "recouper:pages": "python data/quran/verifier_pages.py --recouper-api",

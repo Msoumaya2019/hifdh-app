@@ -15,9 +15,20 @@
 // gestes du transport. C'est l'état ordinaire pendant une récitation — l'écran
 // doit rester à la page.
 //
-// Dépliée, elle donne les réglages : récitateur, vitesse, mode de répétition,
-// nombre, pause, et le suivi automatique. Ils changent rarement, et les garder
-// affichés prendrait à la page la place qu'elle réclame.
+// Dépliée, elle donne les réglages : vitesse, mode de répétition, nombre, pause,
+// et le suivi automatique. Ils changent rarement, et les garder affichés
+// prendrait à la page la place qu'elle réclame.
+//
+// LE RÉCITATEUR N'EST PAS UN RÉGLAGE PARMI D'AUTRES
+// -------------------------------------------------
+// Il a sa propre ligne, visible en permanence — « Récitateur : … ⌄ » — y compris
+// quand rien ne joue, parce qu'on le choisit avant de commencer. Un seul geste
+// ouvre la liste des dix, et un seul geste sur un nom l'applique. Il n'est donc
+// **pas** dans le panneau des réglages : le laisser aux deux endroits en ferait
+// deux, et l'un des deux finirait par mentir sur l'état de l'autre.
+//
+// Changer de récitateur **arrête** la séance en cours et en ouvre une neuve —
+// c'est la règle de `plan.ts`, et la ligne ne fait que la déclencher.
 //
 // LE COMPTEUR EST CELUI DU PLAN, PAS UN COMPTE À REBOURS
 // -----------------------------------------------------
@@ -33,7 +44,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fonts, radii, spacing, useColors, useStyles, type Palette } from '@/theme';
 import { getSurah } from '@/data/quranData';
 import { useAudio } from '@/lib/audio/ContexteAudio';
-import { RECITATEURS } from '@/lib/audio/recitateurs';
+import { RECITATEURS, type Recitateur } from '@/lib/audio/recitateurs';
 import {
   NOMBRES_REPETITION,
   PAUSES_SECONDES,
@@ -95,11 +106,14 @@ export function LecteurAudio({ onOuvrir = null, libelleOuvrir = 'Écouter' }: Le
     ? Math.min(1, progression.positionMillis / progression.dureeMillis)
     : 0;
 
-  // Rien n'est ouvert : la barre n'est qu'une invitation à écouter.
+  // Rien n'est ouvert : la barre n'est qu'une invitation à écouter — mais le
+  // récitateur se choisit AVANT de commencer, donc sa ligne est déjà là.
   if (!enSeance) {
     if (onOuvrir === null) return null;
     return (
       <View style={styles.barreRepliee}>
+        <ChoixRecitateur courant={recitateur} choisir={changerRecitateur} />
+
         <Pressable
           style={styles.boutonOuvrir}
           onPress={onOuvrir}
@@ -126,11 +140,14 @@ export function LecteurAudio({ onOuvrir = null, libelleOuvrir = 'Écouter' }: Le
           <Text style={styles.titre} numberOfLines={1}>
             {etape === null ? 'Récitation' : titreDeLaSeance(etape.surah, etape.ayah)}
           </Text>
-          <Text style={styles.sousTitre} numberOfLines={1}>
-            {etape === null
-              ? recitateur.nom
-              : `${libelleCompteur(etape.repetition, etape.totalRepetitions)} · ${recitateur.nom}`}
-          </Text>
+          {/* Le nom du récitateur a quitté cette ligne : il a la sienne, juste
+              en dessous, et deux fois le même nom à deux endroits inviterait à
+              se demander lequel des deux fait foi. */}
+          {etape !== null && (
+            <Text style={styles.sousTitre} numberOfLines={1}>
+              {libelleCompteur(etape.repetition, etape.totalRepetitions)}
+            </Text>
+          )}
         </View>
 
         <Pressable
@@ -192,6 +209,10 @@ export function LecteurAudio({ onOuvrir = null, libelleOuvrir = 'Écouter' }: Le
         </Pressable>
       </View>
 
+      {/* Le récitateur courant, sous les commandes : toujours lisible, et à un
+          geste de la liste. */}
+      <ChoixRecitateur courant={recitateur} choisir={changerRecitateur} />
+
       {/* Une panne se dit ici, à sa place : sur la barre qui joue, pas dans une
           alerte qui interromprait la lecture. Le bouton « reprendre » reste
           actif — c'est lui qui réessaie le même verset. */}
@@ -207,17 +228,6 @@ export function LecteurAudio({ onOuvrir = null, libelleOuvrir = 'Écouter' }: Le
           contentContainerStyle={styles.reglagesContenu}
           keyboardShouldPersistTaps="handled"
         >
-          <Section titre="Récitateur">
-            {RECITATEURS.map((r) => (
-              <Puce
-                key={r.id}
-                libelle={r.nom}
-                choisi={r.id === recitateur.id}
-                onPress={() => changerRecitateur(r.id)}
-              />
-            ))}
-          </Section>
-
           <Section titre="Répétitions">
             {NOMBRES_REPETITION.map((nombre) => (
               <Puce
@@ -275,6 +285,95 @@ export function LecteurAudio({ onOuvrir = null, libelleOuvrir = 'Écouter' }: Le
             />
             <Puce libelle="Recommencer le verset" choisi={false} onPress={recommencer} />
           </Section>
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Le récitateur courant, toujours lisible, et sa liste dans une petite fenêtre.
+ *
+ * La ligne est visible même quand rien ne joue : on choisit son récitateur
+ * **avant** de commencer, et le cacher jusque-là obligeait à ouvrir les réglages
+ * pour savoir ce qu'on allait entendre.
+ */
+function ChoixRecitateur({
+  courant,
+  choisir,
+}: {
+  courant: Recitateur;
+  choisir: (id: string) => void;
+}) {
+  const styles = useStyles(creerStyles);
+  const palette = useColors();
+  const [ouverte, setOuverte] = useState(false);
+
+  /**
+   * Choisir referme la liste.
+   *
+   * La laisser ouverte après le choix donnerait à croire qu'il reste quelque
+   * chose à confirmer, alors que le récitateur s'applique à l'instant même.
+   */
+  const choisirEtFermer = (id: string) => {
+    choisir(id);
+    setOuverte(false);
+  };
+
+  return (
+    <View>
+      <Pressable
+        style={styles.ligneRecitateur}
+        onPress={() => setOuverte((v) => !v)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: ouverte }}
+        accessibilityLabel={`Récitateur : ${courant.nom}. Appuyer pour changer.`}
+      >
+        <Ionicons name="mic-outline" size={15} color={palette.textSecondary} />
+        <Text style={styles.recitateurTexte} numberOfLines={1}>
+          Récitateur : {courant.nom}
+        </Text>
+        <Ionicons
+          name={ouverte ? 'chevron-up' : 'chevron-down'}
+          size={15}
+          color={palette.textSecondary}
+        />
+      </Pressable>
+
+      {/* La liste s'ouvre SOUS la ligne, dans la barre, et non dans une fenêtre
+          posée par-dessus. Ce n'est pas un renoncement : la palette de ce projet
+          n'accepte que des couleurs `#RRGGBB` — `tests/theme.test.mjs` le
+          vérifie jeton par jeton — et un voile de fenêtre est translucide par
+          nature. Plutôt que d'assouplir cette règle pour un seul écran, on
+          réemploie le panneau que la barre ouvre déjà pour ses réglages : un
+          seul motif d'ouverture dans tout le lecteur. */}
+      {ouverte && (
+        <ScrollView
+          style={styles.listeRecitateurs}
+          contentContainerStyle={styles.listeRecitateursContenu}
+          keyboardShouldPersistTaps="handled"
+        >
+          {RECITATEURS.map((r) => {
+            const choisi = r.id === courant.id;
+            return (
+              <Pressable
+                key={r.id}
+                style={[styles.option, choisi && styles.optionChoisie]}
+                onPress={() => choisirEtFermer(r.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: choisi }}
+                accessibilityLabel={r.nom}
+              >
+                <View style={styles.optionTextes}>
+                  <Text style={[styles.optionNom, choisi && styles.optionNomChoisi]}>
+                    {r.nom}
+                  </Text>
+                  <Text style={styles.optionArabe}>{r.nomArabe}</Text>
+                </View>
+                {choisi && <Ionicons name="checkmark" size={20} color={palette.primary} />}
+              </Pressable>
+            );
+          })}
         </ScrollView>
       )}
     </View>
@@ -342,6 +441,59 @@ const creerStyles = (colors: Palette) =>
         fontFamily: fonts.medium,
         fontSize: 15,
         color: colors.textOnPrimary,
+      },
+      ligneRecitateur: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+      },
+      recitateurTexte: {
+        flex: 1,
+        minWidth: 0,
+        fontFamily: fonts.regular,
+        fontSize: 12,
+        color: colors.textSecondary,
+      },
+      listeRecitateurs: {
+        maxHeight: 280,
+        borderTopWidth: 1,
+        borderTopColor: colors.borderLight,
+      },
+      listeRecitateursContenu: {
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+      },
+      option: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
+        borderRadius: radii.sm,
+      },
+      optionChoisie: {
+        backgroundColor: colors.primarySurface,
+      },
+      optionTextes: {
+        flex: 1,
+        minWidth: 0,
+      },
+      optionNom: {
+        fontFamily: fonts.regular,
+        fontSize: 15,
+        color: colors.textPrimary,
+      },
+      optionNomChoisi: {
+        fontFamily: fonts.medium,
+        color: colors.primary,
+      },
+      optionArabe: {
+        fontFamily: fonts.araby,
+        fontSize: 13,
+        color: colors.textTertiary,
+        marginTop: 1,
       },
       railProgression: {
         height: 3,
